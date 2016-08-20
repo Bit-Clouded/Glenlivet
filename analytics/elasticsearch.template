@@ -1,0 +1,580 @@
+{
+	"AWSTemplateFormatVersion": "2010-09-09",
+
+	"Description": "A template to launch elasticsearch cluster.",
+
+	"Metadata" : {
+		"DefaultName" : "Elasticsearch"
+	},
+
+	"Parameters": {
+		"KeyPairName": {
+			"Description": "Name of an existing EC2 KeyPair to enable SSH access to the instances",
+			"Type": "AWS::EC2::KeyPair::KeyName"
+		},
+
+		"DataNodeInstanceType" : {
+			"Description" : "WebServer EC2 instance type",
+			"Type" : "String",
+			"Default" : "m3.medium",
+			"AllowedValues": [
+				"m3.medium",
+				"m4.large",
+				"m4.xlarge",
+				"m4.2xlarge",
+				"r3.large",
+				"r3.xlarge",
+				"r3.2xlarge",
+				"r3.4xlarge",
+				"r3.8xlarge"
+			],
+			"ConstraintDescription" : "must be a valid EC2 instance type."
+		},
+		"MasterNodeInstanceType" : {
+			"Description" : "WebServer EC2 instance type",
+			"Type" : "String",
+			"Default" : "t2.small",
+			"AllowedValues": [
+				"t2.small",
+				"t2.medium",
+				"m3.medium",
+				"m4.large",
+				"m4.xlarge",
+				"m4.2xlarge"
+			],
+			"ConstraintDescription" : "must be a valid EC2 instance type."
+		},
+		"EsClusterAmi": {
+			"Description": "AMI to use. Note Ubuntu is prefered.",
+			"Default": "ami-fddabdc7",
+			"Type": "AWS::EC2::Image::Id"
+		},
+		"EsDataDiskSize": {
+			"Description": "Size of the SSD for the elasticsearch to write to.",
+			"Default": "150",
+			"Type": "Number",
+			"MinValue": "50",
+			"MaxValue": "1000"
+		},
+
+		"EsConfShard": {
+			"Description": "Number of shards per index.",
+			"Default": "5",
+			"Type": "Number"
+		},
+		"EsConfReplica": {
+			"Description": "Number of replicas.",
+			"Default": "1",
+			"Type": "Number"
+		},
+		"EsConfClusterName": {
+			"Description": "Name of cluster. This is used for discovery.",
+			"Type": "String",
+			"Default": "EsCluster"
+		},
+
+		"VpcId": {
+			"Description" : "VPCid associated with the subnets. [elb-subnets.parameters.VpcId]",
+			"Type": "AWS::EC2::VPC::Id"
+		},
+
+		"ServerSubnet1Id": {
+			"Description" : "Subnet to run HA web cluster on. [elb-subnets.resources.PvtWebSubnet1]",
+			"Type": "AWS::EC2::Subnet::Id"
+		},
+		"ServerSubnet2Id": {
+			"Description" : "Subnet to run HA web cluster on. [elb-subnets.resources.PvtWebSubnet2]",
+			"Type": "String",
+			"Default": ""
+		},
+		"ServerSubnet3Id": {
+			"Description" : "Subnet to run HA web cluster on. [elb-subnets.resources.PvtWebSubnet3]",
+			"Type": "String",
+			"Default": ""
+		},
+
+		"ElbSubnet1Id": {
+			"Description" : "Subnet to run HA web cluster on. [elb-subnets.resources.ElbSubnet1]",
+			"Type": "AWS::EC2::Subnet::Id"
+		},
+		"ElbSubnet2Id": {
+			"Description" : "Subnet to run HA web cluster on. [elb-subnets.resources.ElbSubnet2]",
+			"Type": "String",
+			"Default": ""
+		},
+		"ElbSubnet3Id": {
+			"Description" : "Subnet to run HA web cluster on. [elb-subnets.resources.ElbSubnet3]",
+			"Type": "String",
+			"Default": ""
+		},
+
+		"SnapshotBucketName" : {
+			"Description" : "Bucket where the elasticsearch snapshots goes into.",
+			"Type": "String"
+		},
+
+		"EsContainerName": {
+			"Description": "Name of container to run elasticsearch.",
+			"Type": "String",
+			"Default": "sleepersmith/aws-lego-elasticsearch:v0.1.0"
+		},
+		"KibanaContainerName": {
+			"Description": "Name of container to run elasticsearch.",
+			"Type": "String",
+			"Default": "kibana:4.4"
+		},
+		"AzCount" : {
+			"Description" : "Number of AZ. Third subnet will only be created if number is 3 [vpc.outputs.AzCount]",
+			"Type" : "String"
+		},
+
+		"AvailableAzs" : {
+			"Description" : "Comma-delimited list of three IP blocks",
+			"Type" : "CommaDelimitedList",
+			"Default" : ""
+		},
+
+		"CwlUbuntuAgentDocker": {
+			"Description": "Name of cluster. This is used for discovery.",
+			"Type": "String",
+			"Default": "sleepersmith/aws-lego-awscwlagent-ubuntu:v0.2.0"
+		},
+		"CwlLinuxParams" : {
+			"Description": "Environment variables for syslog and authlog cwl group names [logs-store.outputs.LxDockerLogParams]",
+			"Type": "String"
+		},
+		"CwlDockerParams" : {
+			"Description": "Docker log driver params [logs-store.outputs.DockerCwlParams]",
+			"Type": "String"
+		},
+		"CwlPolicy" : {
+			"Description": "Managed policy for linux logging. [logs-store.resources.LinuxLogPolicy]",
+			"Type": "String"
+		}
+	},
+
+	"Mappings" : {
+		"InstanceVariables" : {
+			"t2.micro": { "ram" : "450" },
+			"t2.small": { "ram" : "950" },
+			"t2.medium": { "ram" : "1950" },
+			"m3.medium": { "ram" : "1800" },
+			"m4.large": { "ram" : "3600" },
+			"m4.xlarge": { "ram" : "7000" },
+			"m4.2xlarge": { "ram" : "14500" },
+			"r3.large": { "ram" : "7500" },
+			"r3.xlarge": { "ram" : "15000" },
+			"r3.2xlarge": { "ram" : "30000" },
+			"r3.4xlarge": { "ram" : "60000" },
+			"r3.8xlarge": { "ram" : "120000" }
+		}
+	},
+
+	"Conditions" : {
+		"IsThreeAz" : { "Fn::Equals" : [{"Ref" : "AzCount"}, "3"]},
+		"IsAzSupplied" : { "Fn::Not" : [{ "Fn::Equals" : [
+			{"Fn::Select": ["0", {"Ref" : "AvailableAzs"}]}, ""
+		]}]}
+	},
+
+	"Resources" : {
+
+		"EsDataNodeGroupOneLc" : {
+			"Type" : "AWS::AutoScaling::LaunchConfiguration",
+			"Properties": {
+				"InstanceType" : { "Ref" : "DataNodeInstanceType" },
+				"ImageId" : { "Ref" : "EsClusterAmi" },
+				"KeyName" : { "Ref" : "KeyPairName" },
+				"AssociatePublicIpAddress": "false",
+				"SecurityGroups": [
+					{ "Ref" : "EsClusterNodeSg" }
+				],
+				"IamInstanceProfile": { "Ref" : "EsDataNodeInstanceProfile" },
+				"UserData" : { "Fn::Base64" : { "Fn::Join" : ["", [
+                    "#!/bin/bash\n",
+                    "ifconfig eth0 mtu 1500\n",
+                    "wget -qO- https://get.docker.com/ | sh\n",
+
+					"mkdir /mnt/xvdk\n",
+					"mkfs -t ext4 /dev/xvdk\n",
+					"mount /dev/xvdk /mnt/xvdk\n",
+
+					"ECID=$(curl http://instance-data/latest/meta-data/instance-id)\n",
+					"CWLA=cwlagent_$ECID\n",
+					"docker run -d --restart=always ",
+						"--name $CWLA --log-opt awslogs-stream=$CWLA ",
+						"-v /var/log:/var/log-host:ro ",
+						{"Ref":"CwlLinuxParams"}," ",
+						{"Ref":"CwlDockerParams"}," ",
+						{"Ref":"CwlUbuntuAgentDocker"},"\n",
+					"docker run -d --restart=always --name cwlcron ",
+						{"Ref":"CwlUbuntuAgentDocker"}," cron\n",
+
+					"ESDN=es-data_$ECID\n",
+                    "docker run --restart=always -p 9200:9200 -p 9300:9300 -d --cap-add=IPC_LOCK --ulimit memlock=-1:-1 -v /mnt/xvdk:/mnt/xvdk ",
+						"--name $ESDN --log-opt awslogs-stream=$ESDN ",
+						{"Ref":"CwlLinuxParams"}," ",
+                        {"Ref":"EsContainerName"}, " ", {"Ref":"EsConfClusterName"}, " ",
+                        {"Ref":"EsClusterNodeSg"}, " false true grp_one ",
+                        {"Ref":"EsConfReplica"}, " ", {"Ref":"EsConfShard"}, " ",
+                        { "Fn::FindInMap": [ "InstanceVariables", { "Ref": "DataNodeInstanceType" }, "ram" ] }
+				]]}},
+				"BlockDeviceMappings" : [
+					{
+						"DeviceName" : "/dev/sda1",
+						"Ebs" : { "VolumeSize" : "30", "VolumeType" : "gp2" }
+					},
+					{
+						"DeviceName" : "/dev/xvdk",
+						"Ebs" : { "VolumeSize" : {"Ref": "EsDataDiskSize"}, "VolumeType" : "gp2" }
+					}
+				]
+			}
+		},
+		"EsDataNodeGroupOneAsg" : {
+			"Type" : "AWS::AutoScaling::AutoScalingGroup",
+			"Properties" : {
+				"VPCZoneIdentifier": [
+					{ "Ref" : "ServerSubnet1Id" }
+				],
+				"AvailabilityZones" : [{ "Fn::Select": ["0",  { "Fn::GetAZs": "" }]}],
+				"LaunchConfigurationName" : { "Ref" : "EsDataNodeGroupOneLc" },
+				"MinSize" : "1",
+				"MaxSize" : "10",
+				"Tags" : [{"Key": "Name", "Value" : "Elasticsearch Cluster Data Node Grp One", "PropagateAtLaunch" : "True"}]
+			}
+		},
+		"EsDataNodeGroupTwoLc" : {
+			"Type" : "AWS::AutoScaling::LaunchConfiguration",
+			"Properties": {
+				"InstanceType" : { "Ref" : "DataNodeInstanceType" },
+				"ImageId" : { "Ref" : "EsClusterAmi" },
+				"KeyName" : { "Ref" : "KeyPairName" },
+				"AssociatePublicIpAddress": "false",
+				"SecurityGroups": [
+					{ "Ref" : "EsClusterNodeSg" }
+				],
+				"IamInstanceProfile": { "Ref" : "EsDataNodeInstanceProfile" },
+				"UserData" : { "Fn::Base64" : { "Fn::Join" : ["", [
+                    "#!/bin/bash\n",
+                    "ifconfig eth0 mtu 1500\n",
+                    "wget -qO- https://get.docker.com/ | sh\n",
+
+					"mkdir /mnt/xvdk\n",
+					"mkfs -t ext4 /dev/xvdk\n",
+					"mount /dev/xvdk /mnt/xvdk\n",
+
+					"ECID=$(curl http://instance-data/latest/meta-data/instance-id)\n",
+					"CWLA=cwlagent_$ECID\n",
+					"docker run -d --restart=always ",
+						"--name $CWLA --log-opt awslogs-stream=$CWLA ",
+						"-v /var/log:/var/log-host:ro ",
+						{"Ref":"CwlLinuxParams"}," ",
+						{"Ref":"CwlDockerParams"}," ",
+						{"Ref":"CwlUbuntuAgentDocker"},"\n",
+					"docker run -d --restart=always --name cwlcron ",
+						{"Ref":"CwlUbuntuAgentDocker"}," cron\n",
+
+					"ESDN=es-data_$ECID\n",
+                    "docker run --restart=always -p 9200:9200 -p 9300:9300 -d --cap-add=IPC_LOCK --ulimit memlock=-1:-1 -v /mnt/xvdk:/mnt/xvdk ",
+						"--name $ESDN --log-opt awslogs-stream=$ESDN ",
+						{"Ref":"CwlLinuxParams"}," ",
+                        {"Ref":"EsContainerName"}, " ", {"Ref":"EsConfClusterName"}, " ",
+                        {"Ref":"EsClusterNodeSg"}, " false true grp_two ",
+                        {"Ref":"EsConfReplica"}, " ", {"Ref":"EsConfShard"}, " ",
+                        { "Fn::FindInMap": [ "InstanceVariables", { "Ref": "DataNodeInstanceType" }, "ram" ] }
+				]]}},
+				"BlockDeviceMappings" : [
+					{
+						"DeviceName" : "/dev/sda1",
+						"Ebs" : { "VolumeSize" : "30", "VolumeType" : "gp2" }
+					},
+					{
+						"DeviceName" : "/dev/xvdk",
+						"Ebs" : { "VolumeSize" : {"Ref": "EsDataDiskSize"}, "VolumeType" : "gp2" }
+					}
+				]
+			}
+		},
+		"EsDataNodeGroupTwoAsg" : {
+		  "Type" : "AWS::AutoScaling::AutoScalingGroup",
+		  "Properties" : {
+		    "VPCZoneIdentifier": [
+				{ "Ref" : "ServerSubnet2Id" }
+			],
+			"AvailabilityZones" : [{ "Fn::Select": ["1",  { "Fn::GetAZs": "" }]}],
+			"LaunchConfigurationName" : { "Ref" : "EsDataNodeGroupTwoLc" },
+			"MinSize" : "1",
+			"MaxSize" : "10",
+			"Tags" : [{"Key": "Name", "Value" : "Elasticsearch Cluster Data Node Grp Two", "PropagateAtLaunch" : "True"}]
+		  }
+		},
+
+		"EsMasterNodeLc" : {
+			"Type" : "AWS::AutoScaling::LaunchConfiguration",
+			"Properties": {
+				"InstanceType" : { "Ref" : "MasterNodeInstanceType" },
+				"ImageId" : { "Ref" : "EsClusterAmi" },
+				"KeyName" : { "Ref" : "KeyPairName" },
+				"AssociatePublicIpAddress": "false",
+				"SecurityGroups": [
+					{ "Ref" : "EsClusterNodeSg" },
+					{ "Ref" : "EsClusterGatewayNodeSg" }
+				],
+				"IamInstanceProfile": { "Ref" : "EsDataNodeInstanceProfile" },
+				"UserData" : { "Fn::Base64" : { "Fn::Join" : ["", [
+                    "#!/bin/bash\n",
+                    "ifconfig eth0 mtu 1500\n",
+                    "wget -qO- https://get.docker.com/ | sh\n",
+                    "mkdir /home/xvdk\n",
+
+					"ECID=$(curl http://instance-data/latest/meta-data/instance-id)\n",
+					"CWLA=cwlagent_$ECID\n",
+					"docker run -d --restart=always ",
+						"--name $CWLA --log-opt awslogs-stream=$CWLA ",
+						"-v /var/log:/var/log-host:ro ",
+						{"Ref":"CwlLinuxParams"}," ",
+						{"Ref":"CwlDockerParams"}," ",
+						{"Ref":"CwlUbuntuAgentDocker"},"\n",
+					"docker run -d --restart=always --name cwlcron ",
+						{"Ref":"CwlUbuntuAgentDocker"}," cron\n",
+
+					"ESMN=es-master_$ECID\n",
+                    "docker run --restart=always -p 9200:9200 -p 9300:9300 -d --cap-add=IPC_LOCK --ulimit memlock=-1:-1 -v /home/xvdk:/mnt/xvdk ",
+						"--name $ESMN --log-opt awslogs-stream=$ESMN ",
+						{"Ref":"CwlLinuxParams"}," ",
+                        {"Ref":"EsContainerName"}, " ", {"Ref":"EsConfClusterName"}, " ",
+                        {"Ref":"EsClusterNodeSg"}, " true false master ",
+                        {"Ref":"EsConfReplica"}, " ", {"Ref":"EsConfShard"}, " ",
+                        { "Fn::FindInMap": [ "InstanceVariables", { "Ref": "MasterNodeInstanceType" }, "ram" ] }, "\n",
+					"KDN=kibana_$ECID\n",
+					"docker run --name kibana -p 80:5601 -d --restart=always ",
+						"--name $KDN --log-opt awslogs-stream=$KDN ",
+						{"Ref":"CwlLinuxParams"}," ",
+						" -e ELASTICSEARCH_URL=http://", {"Fn::GetAtt":["EsMasterLoadBalancer","DNSName"]}, ":9200 ", {"Ref":"KibanaContainerName"}
+				]]}},
+				"BlockDeviceMappings" : [
+					{
+						"DeviceName" : "/dev/sda1",
+						"Ebs" : { "VolumeSize" : "30", "VolumeType" : "gp2" }
+					}
+				]
+			}
+		},
+		"EsMasterNodeAsg" : {
+		  "Type" : "AWS::AutoScaling::AutoScalingGroup",
+		  "Properties" : {
+		    "VPCZoneIdentifier": [
+				{ "Ref" : "ServerSubnet1Id" },
+				{ "Ref" : "ServerSubnet2Id" },
+				{ "Fn::If" : ["IsThreeAz",
+					{"Ref":"ServerSubnet3Id"},
+					{"Ref":"AWS::NoValue"}] }
+			],
+			"AvailabilityZones" : {"Fn::If": ["IsAzSupplied",
+				{ "Ref":"AvailableAzs" },
+				{ "Fn::GetAZs": "" }]},
+			"LaunchConfigurationName" : { "Ref" : "EsMasterNodeLc" },
+			"MinSize" : "1",
+			"MaxSize" : "7",
+			"LoadBalancerNames" : [ { "Ref" : "EsMasterLoadBalancer" } ],
+			"Tags" : [{"Key": "Name", "Value" : "Elasticsearch Cluster Master Node", "PropagateAtLaunch" : "True"}]
+		  }
+		},
+		"EsMasterLoadBalancer" : {
+			"Type" : "AWS::ElasticLoadBalancing::LoadBalancer",
+			"Properties" : {
+				"Subnets": [
+					{ "Ref" : "ElbSubnet1Id" },
+					{ "Ref" : "ElbSubnet2Id" },
+					{ "Fn::If" : ["IsThreeAz",
+						{"Ref":"ElbSubnet3Id"},
+						{"Ref":"AWS::NoValue"}] }
+				],
+				"Listeners" : [
+				{
+					"LoadBalancerPort" : "9300",
+					"InstancePort" : "9300",
+					"Protocol" : "TCP"
+				},
+				{
+					"LoadBalancerPort" : "9200",
+					"InstancePort" : "9200",
+					"Protocol" : "HTTP"
+				},
+				{
+					"LoadBalancerPort" : "80",
+					"InstancePort" : "80",
+					"Protocol" : "HTTP"
+				}],
+				"HealthCheck" : {
+					"Target" : { "Fn::Join" : [ "", ["HTTP:9200/"]]},
+					"HealthyThreshold" : "3",
+					"UnhealthyThreshold" : "5",
+					"Interval" : "30",
+					"Timeout" : "5"
+				},
+				"SecurityGroups": [{ "Ref": "EsElbSg" }],
+				"Scheme": "internal"
+			}
+		},
+
+		"EsDataNodeInstanceProfile": {
+			"Type": "AWS::IAM::InstanceProfile",
+			"Properties": {
+				"Path": "/elasticsearch/data/",
+				"Roles": [{ "Ref": "EsDataNodeRole" }]
+			}
+		},
+		"EsDataNodeRole": {
+			"Type": "AWS::IAM::Role",
+			"Properties": {
+				"AssumeRolePolicyDocument": {
+					"Version": "2012-10-17",
+					"Statement": [
+						{
+							"Effect": "Allow",
+							"Principal": {
+								"Service": [ "ec2.amazonaws.com" ]
+							},
+							"Action": [ "sts:AssumeRole" ]
+						}
+					]
+				},
+				"Path": "/elasticsearch/data/",
+				"Policies": [{
+					"PolicyName": "root",
+					"PolicyDocument": {
+						"Version" : "2012-10-17",
+						"Statement": [{
+							"Effect": "Allow",
+							"Action": "EC2:Describe*",
+							"Resource": "*"
+						},
+						{
+							"Effect": "Allow",
+							"Action": [
+								"s3:GetObject",
+								"s3:PutObject",
+								"s3:DeleteObject"
+							],
+							"Resource": [
+								{ "Fn::Join" : ["", [
+									"arn:aws:s3:::", {"Ref":"SnapshotBucketName"}, "/*"
+								]]},
+								{ "Fn::Join" : ["", [
+									"arn:aws:s3:::", {"Ref":"SnapshotBucketName"}
+								]]}
+							]
+						}]
+					}
+				}],
+				"ManagedPolicyArns" : [
+					{"Ref":"CwlPolicy"}
+				]
+			}
+		},
+
+		"EsClusterNodeSg" : {
+			"Type" : "AWS::EC2::SecurityGroup",
+			"Properties" : {
+				"GroupDescription" : "Security group for elasticsearch cluster nodes to cluster.",
+				"SecurityGroupEgress" : [
+					{ "IpProtocol" : "6" ,  "CidrIp": "0.0.0.0/0", "FromPort" : "80", "ToPort" : "80"  },
+					{ "IpProtocol" : "6" ,  "CidrIp": "0.0.0.0/0", "FromPort" : "443", "ToPort" : "443"  }
+				],
+				"VpcId" : { "Ref" : "VpcId"},
+				"Tags": [{"Key": "Name", "Value" : "Es Cluster Data Nodes"}]
+			}
+		},
+		"EsClusterNodeSgSelfIngress" : {
+			"Type" : "AWS::EC2::SecurityGroupIngress",
+			"Properties" : {
+				"IpProtocol" : "tcp",
+				"ToPort" : "9300",
+				"FromPort" : "9300",
+				"GroupId" : { "Ref" : "EsClusterNodeSg" },
+				"SourceSecurityGroupId" : { "Ref" : "EsClusterNodeSg" }
+			}
+		},
+		"EsClusterNodeSgSelfEgress" : {
+			"Type": "AWS::EC2::SecurityGroupEgress",
+			"Properties":{
+				"IpProtocol": "tcp",
+				"FromPort": "9300",
+				"ToPort": "9300",
+				"GroupId": { "Ref" : "EsClusterNodeSg" },
+				"DestinationSecurityGroupId": { "Ref" : "EsClusterNodeSg" }
+			}
+		},
+
+		"EsClusterGatewayNodeSg" : {
+			"Type" : "AWS::EC2::SecurityGroup",
+			"Properties" : {
+				"GroupDescription" : "Load Balancer targets.",
+				"SecurityGroupIngress" : [
+					{ "IpProtocol": "6", "SourceSecurityGroupId" : { "Ref" : "EsElbSg" }, "FromPort" : "9200", "ToPort" : "9200" },
+					{ "IpProtocol": "6", "SourceSecurityGroupId" : { "Ref" : "EsElbSg" }, "FromPort" : "80", "ToPort" : "80" }
+				],
+				"VpcId" : { "Ref" : "VpcId"},
+				"Tags": [{"Key": "Name", "Value" : "Es Cluster Gateway Nodes"}]
+			}
+		},
+		"EsMasterElbKibanaIngress" : {
+			"Type" : "AWS::EC2::SecurityGroupIngress",
+			"Properties" : {
+				"IpProtocol" : "tcp",
+				"ToPort" : "9200",
+				"FromPort" : "9200",
+				"GroupId" : { "Ref" : "EsElbSg" },
+				"SourceSecurityGroupId" : { "Ref" : "EsClusterGatewayNodeSg" }
+			}
+		},
+		"EsElbSg" : {
+			"Type" : "AWS::EC2::SecurityGroup",
+			"Properties" : {
+				"GroupDescription" : "Gateway to master nodes of the Elasticsearch Cluster",
+				"SecurityGroupIngress" : [
+					{ "IpProtocol" : "6" ,  "CidrIp": "0.0.0.0/0", "FromPort" : "9200", "ToPort" : "9200"  }
+				],
+				"VpcId" : { "Ref" : "VpcId"},
+				"Tags": [{"Key": "Name", "Value" : "Es Cluster Load Balancer"}]
+			}
+		},
+		"EsElbToEsClusterGatewayNodeEgress" : {
+			"Type": "AWS::EC2::SecurityGroupEgress",
+			"Properties":{
+				"IpProtocol": "tcp",
+				"FromPort": "9200",
+				"ToPort": "9200",
+				"GroupId": { "Ref" : "EsElbSg" },
+				"DestinationSecurityGroupId": { "Ref" : "EsClusterGatewayNodeSg" }
+			}
+		},
+		"EsElbToEsClusterGatewayNodeKibanaEgress" : {
+			"Type": "AWS::EC2::SecurityGroupEgress",
+			"Properties":{
+				"IpProtocol": "tcp",
+				"FromPort": "80",
+				"ToPort": "80",
+				"GroupId": { "Ref" : "EsElbSg" },
+				"DestinationSecurityGroupId": { "Ref" : "EsClusterGatewayNodeSg" }
+			}
+		},
+
+		"SnapshotBucket" : {
+			"Type" : "AWS::S3::Bucket",
+			"Properties" : {
+				"BucketName" : {"Ref":"SnapshotBucketName"}
+			},
+			"DeletionPolicy" : "Retain"
+		}
+	},
+
+	"Outputs" : {
+		"EsElb" : {
+			"Value" : { "Fn::GetAtt" : ["EsMasterLoadBalancer", "DNSName"] },
+			"Description" : "Private A record for ES Master Node ELB"
+		}
+	}
+}
