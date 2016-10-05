@@ -84,8 +84,7 @@
 		},
 		"ServerSubnet2Id": {
 			"Description" : "Subnet to run HA web cluster on. [elb-subnets.resources.PvtWebSubnet2]",
-			"Type": "String",
-			"Default": ""
+			"Type": "AWS::EC2::Subnet::Id"
 		},
 		"ServerSubnet3Id": {
 			"Description" : "Subnet to run HA web cluster on. [elb-subnets.resources.PvtWebSubnet3]",
@@ -99,8 +98,7 @@
 		},
 		"ElbSubnet2Id": {
 			"Description" : "Subnet to run HA web cluster on. [elb-subnets.resources.ElbSubnet2]",
-			"Type": "String",
-			"Default": ""
+			"Type": "AWS::EC2::Subnet::Id"
 		},
 		"ElbSubnet3Id": {
 			"Description" : "Subnet to run HA web cluster on. [elb-subnets.resources.ElbSubnet3]",
