@@ -92,9 +92,6 @@
 			"Properties" :
 			{
 				"GroupDescription" : "A generic security group for targets that serve http(s) traffic.",
-				"SecurityGroupEgress" : [
-					{ "CidrIp": "127.0.0.1/32", "IpProtocol": "-1" }
-				],
 				"SecurityGroupIngress" : [
 					{ "IpProtocol" : "6" , "CidrIp": "0.0.0.0/0", "FromPort" : "80", "ToPort" : "80" },
 					{ "IpProtocol" : "6" , "CidrIp": "0.0.0.0/0", "FromPort" : "443", "ToPort" : "443" }
@@ -135,9 +132,6 @@
 			},
 			"Properties" : {
 				"GroupDescription" : "A generic security group for the elb targets.",
-				"SecurityGroupEgress" : [
-					{ "CidrIp": "127.0.0.1/32", "IpProtocol": "-1" }
-				],
 				"SecurityGroupIngress" : [],
 				"Tags" : [{"Key": "Name", "Value" : "Elb-Web(Web)"}],
 				"VpcId" : {"Ref":"Vpc"}
