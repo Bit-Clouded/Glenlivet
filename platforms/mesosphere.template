@@ -1,19 +1,38 @@
 {
   "AWSTemplateFormatVersion": "2010-09-09",
   "Parameters": {
-    "PrivateSubnet": {
-      "Description": "",
-      "Type": "String"
-    },
-    "PublicSubnet": {
-      "Type": "String",
-      "Description": ""
-    },
     "VpcId": {
         "Description" : "VPCid associated with the subnets. [elb-subnets.parameters.VpcId]",
         "Type": "AWS::EC2::VPC::Id"
     },
 
+    "ServerSubnet1Id": {
+        "Description" : "Subnet to run HA web cluster on. [elb-subnets.resources.PvtWebSubnet1]",
+        "Type": "AWS::EC2::Subnet::Id"
+    },
+    "ServerSubnet2Id": {
+        "Description" : "Subnet to run HA web cluster on. [elb-subnets.resources.PvtWebSubnet2]",
+        "Type": "AWS::EC2::Subnet::Id"
+    },
+    "ServerSubnet3Id": {
+        "Description" : "Subnet to run HA web cluster on. [elb-subnets.resources.PvtWebSubnet3]",
+        "Type": "String",
+        "Default": ""
+    },
+
+    "ElbSubnet1Id": {
+        "Description" : "Subnet to run HA web cluster on. [elb-subnets.resources.ElbSubnet1]",
+        "Type": "AWS::EC2::Subnet::Id"
+    },
+    "ElbSubnet2Id": {
+        "Description" : "Subnet to run HA web cluster on. [elb-subnets.resources.ElbSubnet2]",
+        "Type": "AWS::EC2::Subnet::Id"
+    },
+    "ElbSubnet3Id": {
+        "Description" : "Subnet to run HA web cluster on. [elb-subnets.resources.ElbSubnet3]",
+        "Type": "String",
+        "Default": ""
+    },
     "SlaveInstanceCount": {
       "Description": "Required: Specify the number of private agent nodes or accept the default.",
       "Default": "5",
@@ -28,8 +47,8 @@
       "Type": "AWS::EC2::Image::Id"
     },
     "OAuthEnabled": {
-      "Description": "\nEnable OAuth authentication",
-      "Default": "true",
+      "Description": "Enable OAuth authentication",
+      "Default": "false",
       "AllowedValues": [
         "true",
         "false"
@@ -137,9 +156,8 @@
           }
         ],
         "Subnets": [
-          {
-            "Ref": "PublicSubnet"
-          }
+          { "Ref": "ElbSubnet1Id" },
+          { "Ref": "ElbSubnet2Id" }
         ]
       }
     },
@@ -214,9 +232,8 @@
           }
         ],
         "Subnets": [
-          {
-            "Ref": "PublicSubnet"
-          }
+          { "Ref": "ElbSubnet1Id" },
+          { "Ref": "ElbSubnet2Id" }
         ]
       }
     },
@@ -794,9 +811,8 @@
           }
         ],
         "VPCZoneIdentifier": [
-          {
-            "Ref": "PublicSubnet"
-          }
+          { "Ref": "ServerSubnet1Id" },
+          { "Ref": "ServerSubnet2Id" }
         ],
         "MinSize": 3
       },
@@ -1314,9 +1330,8 @@
           }
         ],
         "Subnets": [
-          {
-            "Ref": "PublicSubnet"
-          }
+          { "Ref": "ElbSubnet1Id" },
+          { "Ref": "ElbSubnet2Id" }
         ]
       }
     },
@@ -1354,9 +1369,8 @@
           }
         ],
         "VPCZoneIdentifier": [
-          {
-            "Ref": "PublicSubnet"
-          }
+          { "Ref": "ServerSubnet1Id" },
+          { "Ref": "ServerSubnet2Id" }
         ],
         "MinSize": {
           "Ref": "PublicSlaveInstanceCount"
@@ -1891,9 +1905,8 @@
           }
         ],
         "VPCZoneIdentifier": [
-          {
-            "Ref": "PrivateSubnet"
-          }
+          { "Ref": "ServerSubnet1Id" },
+          { "Ref": "ServerSubnet2Id" }
         ],
         "MinSize": {
           "Ref": "SlaveInstanceCount"
