@@ -480,13 +480,13 @@
 			"Properties" : {
 				"NetworkAclId" : { "Ref" : "PvtAcl" },
 				"RuleNumber" : "1004",
-				"Protocol" : "6",
+				"Protocol" : "-1",
 				"RuleAction" : "allow",
 				"Egress" : "false",
 				"CidrBlock" : { "Fn::Join" : [ "", [
-					{ "Ref" : "VpcPrefix" }, ".", { "Ref" : "ElbSubnet1Suffix" }, ".0/24"
+					{ "Ref" : "VpcPrefix" }, ".", { "Ref" : "PvtSubnet1Suffix" }, ".0/24"
 				]]},
-				"PortRange" : { "From" : "0", "To" : "32768" }
+				"PortRange" : { "From" : "0", "To" : "65535" }
 			}
 		},
 		"PvtAclEntryInInterSubnet2" : {
@@ -494,13 +494,13 @@
 			"Properties" : {
 				"NetworkAclId" : { "Ref" : "PvtAcl" },
 				"RuleNumber" : "1005",
-				"Protocol" : "6",
+				"Protocol" : "-1",
 				"RuleAction" : "allow",
 				"Egress" : "false",
 				"CidrBlock" : { "Fn::Join" : [ "", [
-					{ "Ref" : "VpcPrefix" }, ".", { "Ref" : "ElbSubnet2Suffix" }, ".0/24"
+					{ "Ref" : "VpcPrefix" }, ".", { "Ref" : "PvtSubnet2Suffix" }, ".0/24"
 				]]},
-				"PortRange" : { "From" : "0", "To" : "32768" }
+				"PortRange" : { "From" : "0", "To" : "65535" }
 			}
 		},
 		"PvtAclEntryInInterSubnet3" : {
@@ -508,13 +508,25 @@
 			"Properties" : {
 				"NetworkAclId" : { "Ref" : "PvtAcl" },
 				"RuleNumber" : "1006",
-				"Protocol" : "6",
+				"Protocol" : "-1",
 				"RuleAction" : "allow",
 				"Egress" : "false",
 				"CidrBlock" : { "Fn::Join" : [ "", [
-					{ "Ref" : "VpcPrefix" }, ".", { "Ref" : "ElbSubnet3Suffix" }, ".0/24"
+					{ "Ref" : "VpcPrefix" }, ".", { "Ref" : "PvtSubnet3Suffix" }, ".0/24"
 				]]},
-				"PortRange" : { "From" : "0", "To" : "32768" }
+				"PortRange" : { "From" : "0", "To" : "65535" }
+			}
+		},
+		"PvtAclEntryInUdp" : {
+			"Type" : "AWS::EC2::NetworkAclEntry",
+			"Properties" : {
+				"NetworkAclId" : { "Ref" : "PvtAcl" },
+				"RuleNumber" : "1007",
+				"Protocol" : "17",
+				"RuleAction" : "allow",
+				"Egress" : "false",
+				"CidrBlock" : "0.0.0.0/0",
+				"PortRange" : { "From" : "0", "To" : "65535" }
 			}
 		},
 		"PvtAclEntryOutPublicRequests" : {
@@ -576,13 +588,13 @@
 			"Properties" : {
 				"NetworkAclId" : { "Ref" : "PvtAcl" },
 				"RuleNumber" : "1004",
-				"Protocol" : "6",
+				"Protocol" : "-1",
 				"RuleAction" : "allow",
 				"Egress" : "true",
 				"CidrBlock" : { "Fn::Join" : [ "", [
-					{ "Ref" : "VpcPrefix" }, ".", { "Ref" : "ElbSubnet1Suffix" }, ".0/24"
+					{ "Ref" : "VpcPrefix" }, ".", { "Ref" : "PvtSubnet1Suffix" }, ".0/24"
 				]]},
-				"PortRange" : { "From" : "32768", "To" : "65535" }
+				"PortRange" : { "From" : "0", "To" : "65535" }
 			}
 		},
 		"PvtAclEntryOutInterSubnet2" : {
@@ -590,13 +602,13 @@
 			"Properties" : {
 				"NetworkAclId" : { "Ref" : "PvtAcl" },
 				"RuleNumber" : "1005",
-				"Protocol" : "6",
+				"Protocol" : "-1",
 				"RuleAction" : "allow",
 				"Egress" : "true",
 				"CidrBlock" : { "Fn::Join" : [ "", [
-					{ "Ref" : "VpcPrefix" }, ".", { "Ref" : "ElbSubnet2Suffix" }, ".0/24"
+					{ "Ref" : "VpcPrefix" }, ".", { "Ref" : "PvtSubnet2Suffix" }, ".0/24"
 				]]},
-				"PortRange" : { "From" : "32768", "To" : "65535" }
+				"PortRange" : { "From" : "0", "To" : "65535" }
 			}
 		},
 		"PvtAclEntryOutInterSubnet3" : {
@@ -604,13 +616,25 @@
 			"Properties" : {
 				"NetworkAclId" : { "Ref" : "PvtAcl" },
 				"RuleNumber" : "1006",
-				"Protocol" : "6",
+				"Protocol" : "-1",
 				"RuleAction" : "allow",
 				"Egress" : "true",
 				"CidrBlock" : { "Fn::Join" : [ "", [
-					{ "Ref" : "VpcPrefix" }, ".", { "Ref" : "ElbSubnet3Suffix" }, ".0/24"
+					{ "Ref" : "VpcPrefix" }, ".", { "Ref" : "PvtSubnet3Suffix" }, ".0/24"
 				]]},
-				"PortRange" : { "From" : "32768", "To" : "65535" }
+				"PortRange" : { "From" : "0", "To" : "65535" }
+			}
+		},
+		"PvtAclEntryOutUdp" : {
+			"Type" : "AWS::EC2::NetworkAclEntry",
+			"Properties" : {
+				"NetworkAclId" : { "Ref" : "PvtAcl" },
+				"RuleNumber" : "1007",
+				"Protocol" : "17",
+				"RuleAction" : "allow",
+				"Egress" : "true",
+				"CidrBlock" : "0.0.0.0/0",
+				"PortRange" : { "From" : "0", "To" : "65535" }
 			}
 		}
 

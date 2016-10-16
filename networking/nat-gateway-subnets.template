@@ -188,6 +188,18 @@
 				"PortRange" : { "From" : "1024", "To" : "65535" }
 			}
 		},
+		"AclEntryInUdp" : {
+			"Type" : "AWS::EC2::NetworkAclEntry",
+			"Properties" : {
+				"NetworkAclId" : { "Ref" : "Acl" },
+				"RuleNumber" : "1002",
+				"Protocol" : "17",
+				"RuleAction" : "allow",
+				"Egress" : "false",
+				"CidrBlock" : "0.0.0.0/0",
+				"PortRange" : { "From" : "0", "To" : "65535" }
+			}
+		},
 		"AclEntryOutPublicRequests" : {
 			"Type" : "AWS::EC2::NetworkAclEntry",
 			"Properties" : {
@@ -212,6 +224,18 @@
 					{ "Ref" : "VpcPrefix" }, ".0.0/16"
 				]]},
 				"PortRange" : { "From" : "32768", "To" : "65535" }
+			}
+		},
+		"AclEntryOutUdp" : {
+			"Type" : "AWS::EC2::NetworkAclEntry",
+			"Properties" : {
+				"NetworkAclId" : { "Ref" : "Acl" },
+				"RuleNumber" : "1002",
+				"Protocol" : "17",
+				"RuleAction" : "allow",
+				"Egress" : "true",
+				"CidrBlock" : "0.0.0.0/0",
+				"PortRange" : { "From" : "0", "To" : "65535" }
 			}
 		},
 		

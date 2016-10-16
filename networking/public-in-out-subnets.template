@@ -141,7 +141,7 @@
 					{ "Ref" : "VpcPrefix" }, ".", { "Ref" : "Subnet3Suffix" }, ".0/24"
 				]]},
 				"AvailabilityZone": { "Fn::Select": [
-					"0", {"Fn::If" : [ "IsAzSupplied", {"Ref" : "AvailableAzs"}, { "Fn::GetAZs": "" } ]}
+					"2", {"Fn::If" : [ "IsAzSupplied", {"Ref" : "AvailableAzs"}, { "Fn::GetAZs": "" } ]}
 				]},
 				"Tags" : [],
 				"MapPublicIpOnLaunch" : "True"

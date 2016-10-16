@@ -35,7 +35,7 @@
     },
     "SlaveInstanceCount": {
       "Description": "Required: Specify the number of private agent nodes or accept the default.",
-      "Default": "5",
+      "Default": "2",
       "Type": "Number"
     },
     "KeyName": {
@@ -73,13 +73,13 @@
   "Mappings": {
     "Parameters": {
       "PublicSlaveInstanceType": {
-        "default": "m3.xlarge"
+        "default": "m4.large"
       },
       "MasterInstanceType": {
-        "default": "m3.xlarge"
+        "default": "m4.large"
       },
       "SlaveInstanceType": {
-        "default": "m3.xlarge"
+        "default": "m4.large"
       },
       "StackCreationTimeout": {
         "default": "PT45M"
@@ -282,7 +282,6 @@
             "default"
           ]
         },
-        "EbsOptimized": "true",
         "KeyName": {
           "Ref": "KeyName"
         },
@@ -965,7 +964,6 @@
             "default"
           ]
         },
-        "EbsOptimized": "true",
         "KeyName": {
           "Ref": "KeyName"
         },
@@ -1466,7 +1464,6 @@
             "default"
           ]
         },
-        "EbsOptimized": "true",
         "KeyName": {
           "Ref": "KeyName"
         },
