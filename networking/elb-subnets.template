@@ -637,6 +637,28 @@
 				"PortRange" : { "From" : "0", "To" : "65535" }
 			}
 		}
+	},
 
+	"Outputs" : {
+		"ElbSubnets" : {
+			"Description" : "The list of subnets for the ELBs",
+			"Value" : { "Fn::Join" : ["", [
+				{"Ref":"ElbSubnet1"}, ",", {"Ref":"ElbSubnet2"},
+				{ "Fn::If" : ["IsThreeAz",
+					{ "Fn::Join" : ["", [",", {"Ref":"ElbSubnet3"}]] },
+					{ "Ref" : "AWS::NoValue" }
+				]}
+			]]}
+		},
+		"WebServerSubnets" : {
+			"Description" : "The list of subnets for the ELBs",
+			"Value" : { "Fn::Join" : ["", [
+				{"Ref":"PvtWebSubnet1"}, ",", {"Ref":"PvtWebSubnet2"},
+				{ "Fn::If" : ["IsThreeAz",
+					{ "Fn::Join" : ["", [",", {"Ref":"PvtWebSubnet3"}]] },
+					{ "Ref" : "AWS::NoValue" }
+				]}
+			]]}
+		}
 	}
 }
