@@ -6,10 +6,10 @@
 			"Type": "AWS::EC2::KeyPair::KeyName"
 		},
 
-		"IsPublic": {
+		"AdminElbScheme": {
 			"Type" : "String",
-			"Default" : "false",
-			"AllowedValues" : ["true", "false"],
+			"Default" : "internal",
+			"AllowedValues" : ["internet-facing", "internal"],
 			"Description" : "Whether the site has a public ip address and is publicly available."
 		},
 		"DbStorageQuota" : {
@@ -57,12 +57,6 @@
 			"Description" : "Subnet Group for hosting the MariaDB server. [private-subnets.resources.RdsSubnetGroup]",
 			"Type" : "String"
 		},
-        "RepoDiskSnapshot" : {
-			"Description" : "Snapshot of repository disk",
-			"Type" : "String",
-			"Default" : ""
-		},
-
 		"WebInstanceTyp" : {
 			"Description" : "Phabricator server instance type",
 			"Type" : "String",
@@ -83,35 +77,31 @@
             "Type": "String",
             "Default": "ami-67172604"
         },
-		"PublicSubnet1Id": {
-			"Description" : "Subnet to run HA web cluster on.",
-			"Type": "AWS::EC2::Subnet::Id"
-		},
 		"VpcId": {
-			"Description" : "VPCid associated with the subnets. [public-in-out-subnets.parameters.VpcId]",
+			"Description" : "VPCid associated with the subnets. [elb-subnets.parameters.VpcId]",
 			"Type": "AWS::EC2::VPC::Id"
-		}
+		},
+        "ElbSubnets" : {
+			"Description" : "VPCid associated with the subnets. [elb-subnets.outputs.ElbSubnets]",
+			"Type": "List<AWS::EC2::Subnet::Id>"
+        },
+        "ServerSubnets" : {
+			"Description" : "VPCid associated with the subnets. [elb-subnets.outputs.WebServerSubnets]",
+			"Type": "List<AWS::EC2::Subnet::Id>"
+        }
   },
 
   	"Conditions" : {
 		"HasDbSnapshot" : {"Fn::Not": [{"Fn::Equals": [
 			{"Ref": "DbSnapshot"}, ""
-		]}]},
-		"HasRepoSnapshot" : {"Fn::Not": [{"Fn::Equals": [
-			{"Ref": "RepoDiskSnapshot"}, ""
-		]}]},
-		"IsPublicCond" : {"Fn::Equals": [
-			{"Ref": "IsPublic"}, "true"
-		]}
+		]}]}
 	},
 
     "Resources": {
         "AdminAsg": {
             "Type": "AWS::AutoScaling::AutoScalingGroup",
             "Properties": {
-                "VPCZoneIdentifier" : [
-                    { "Ref" : "PublicSubnet1Id" }
-                ],
+                "VPCZoneIdentifier" : {"Ref":"ServerSubnets"},
                 "Tags": [{
                     "Value": "Rancher Server",
                     "PropagateAtLaunch": true,
@@ -156,7 +146,7 @@
         "WorkerAsg": {
             "Type": "AWS::AutoScaling::AutoScalingGroup",
             "Properties": {
-                "VPCZoneIdentifier" : [{ "Ref" : "PublicSubnet1Id" }],
+                "VPCZoneIdentifier" : {"Ref":"ServerSubnets"},
                 "Tags": [{
                     "Value": "Rancher Node",
                     "PropagateAtLaunch": true,
@@ -188,7 +178,8 @@
                     "      command:\n",
                     "      - http://", { "Fn::GetAtt": ["AdminGateway", "DNSName"] }
                 ]]}}
-            }
+            },
+            "DependsOn": "AdminAsg"
         },
         "AdminGatewaySg": {
             "Type": "AWS::EC2::SecurityGroup",
@@ -239,7 +230,8 @@
         "AdminGateway": {
             "Type": "AWS::ElasticLoadBalancing::LoadBalancer",
             "Properties": {
-                "Subnets": [{ "Ref": "PublicSubnet1Id" }],
+                "Subnets": {"Ref":"ElbSubnets"},
+                "Scheme" : {"Ref":"AdminElbScheme"},
                 "Listeners": [{
                     "InstancePort": 8080,
                     "LoadBalancerPort": 80,
