@@ -2,100 +2,100 @@
     "AWSTemplateFormatVersion": "2010-09-09",
     "Parameters": {
         "KeyPairName": {
-			"Description": "Name of an existing EC2 KeyPair to enable SSH access to the instances",
-			"Type": "AWS::EC2::KeyPair::KeyName"
-		},
+            "Description": "Name of an existing EC2 KeyPair to enable SSH access to the instances",
+            "Type": "AWS::EC2::KeyPair::KeyName"
+        },
 
-		"AdminElbScheme": {
-			"Type" : "String",
-			"Default" : "internal",
-			"AllowedValues" : ["internet-facing", "internal"],
-			"Description" : "Whether the site has a public ip address and is publicly available."
-		},
-		"DbStorageQuota" : {
-			"Description": "Disk size of MariaDB server.",
-			"Default": "20",
-			"Type": "Number"
-		},
-		"DbInstanceTyp" : {
-			"Description" : "MariaDB server instance type",
-			"Type" : "String",
-			"Default" : "db.t2.medium",
-			"AllowedValues": [
-				"db.t2.micro",
-				"db.t2.small",
-				"db.t2.medium",
-				"db.t2.large",
-				"db.m3.medium",
-				"db.m4.large",
-				"db.m4.xlarge",
-				"db.m4.2xlarge",
-				"db.r3.large",
-				"db.r3.xlarge",
-				"db.r3.2xlarge",
-				"db.r3.4xlarge",
-				"db.r3.8xlarge"
-			],
-			"ConstraintDescription" : "must be a valid RDS instance type."
-		},
-		"DbUsername" : {
-			"Description" : "MariaDB server username",
-			"Type" : "String",
-			"Default" : "sqladmin"
-		},
-		"DbPassword" : {
-			"Description" : "MariaDB server password",
-			"Type" : "String",
-			"NoEcho" : "True"
-		},
-		"DbSnapshot" : {
-			"Description" : "MariaDB server snapshot",
-			"Type" : "String",
-			"Default" : ""
-		},
-		"DbSubnetGroup" : {
-			"Description" : "Subnet Group for hosting the MariaDB server. [private-subnets.resources.RdsSubnetGroup]",
-			"Type" : "String"
-		},
-		"WebInstanceTyp" : {
-			"Description" : "Phabricator server instance type",
-			"Type" : "String",
-			"Default" : "t2.medium",
-			"AllowedValues": [
-				"t2.micro",
-				"t2.small",
-				"t2.medium",
-				"t2.large",
-				"m3.medium",
-				"m4.large",
-				"m4.xlarge",
-				"m4.2xlarge"
-			],
-			"ConstraintDescription" : "must be a valid EC2 instance type."
-		},
+        "AdminElbScheme": {
+            "Type" : "String",
+            "Default" : "internal",
+            "AllowedValues" : ["internet-facing", "internal"],
+            "Description" : "Whether the site has a public ip address and is publicly available."
+        },
+        "DbStorageQuota" : {
+            "Description": "Disk size of MariaDB server.",
+            "Default": "20",
+            "Type": "Number"
+        },
+        "DbInstanceTyp" : {
+            "Description" : "MariaDB server instance type",
+            "Type" : "String",
+            "Default" : "db.t2.medium",
+            "AllowedValues": [
+                "db.t2.micro",
+                "db.t2.small",
+                "db.t2.medium",
+                "db.t2.large",
+                "db.m3.medium",
+                "db.m4.large",
+                "db.m4.xlarge",
+                "db.m4.2xlarge",
+                "db.r3.large",
+                "db.r3.xlarge",
+                "db.r3.2xlarge",
+                "db.r3.4xlarge",
+                "db.r3.8xlarge"
+            ],
+            "ConstraintDescription" : "must be a valid RDS instance type."
+        },
+        "DbUsername" : {
+            "Description" : "MariaDB server username",
+            "Type" : "String",
+            "Default" : "sqladmin"
+        },
+        "DbPassword" : {
+            "Description" : "MariaDB server password",
+            "Type" : "String",
+            "NoEcho" : "True"
+        },
+        "DbSnapshot" : {
+            "Description" : "MariaDB server snapshot",
+            "Type" : "String",
+            "Default" : ""
+        },
+        "DbSubnetGroup" : {
+            "Description" : "Subnet Group for hosting the MariaDB server. [private-subnets.resources.RdsSubnetGroup]",
+            "Type" : "String"
+        },
+        "WebInstanceTyp" : {
+            "Description" : "Phabricator server instance type",
+            "Type" : "String",
+            "Default" : "t2.medium",
+            "AllowedValues": [
+                "t2.micro",
+                "t2.small",
+                "t2.medium",
+                "t2.large",
+                "m3.medium",
+                "m4.large",
+                "m4.xlarge",
+                "m4.2xlarge"
+            ],
+            "ConstraintDescription" : "must be a valid EC2 instance type."
+        },
         "RancherAmiId": {
             "Type": "String",
             "Default": "ami-67172604"
         },
-		"VpcId": {
-			"Description" : "VPCid associated with the subnets. [elb-subnets.parameters.VpcId]",
-			"Type": "AWS::EC2::VPC::Id"
-		},
+        "VpcId": {
+            "Description" : "VPCid associated with the subnets. [elb-subnets.parameters.VpcId]",
+            "Type": "AWS::EC2::VPC::Id"
+        },
         "ElbSubnets" : {
-			"Description" : "VPCid associated with the subnets. [elb-subnets.outputs.ElbSubnets]",
-			"Type": "List<AWS::EC2::Subnet::Id>"
+            "Description" : "VPCid associated with the subnets. [elb-subnets.outputs.ElbSubnets]",
+            "Type": "List<AWS::EC2::Subnet::Id>"
         },
         "ServerSubnets" : {
-			"Description" : "VPCid associated with the subnets. [elb-subnets.outputs.WebServerSubnets]",
-			"Type": "List<AWS::EC2::Subnet::Id>"
+            "Description" : "VPCid associated with the subnets. [elb-subnets.outputs.WebServerSubnets]",
+            "Type": "List<AWS::EC2::Subnet::Id>"
         }
-  },
+    },
 
-  	"Conditions" : {
-		"HasDbSnapshot" : {"Fn::Not": [{"Fn::Equals": [
-			{"Ref": "DbSnapshot"}, ""
-		]}]}
-	},
+    "Conditions" : {
+        "HasDbSnapshot" : {"Fn::Not": [{"Fn::Equals": [
+            {"Ref": "DbSnapshot"}, ""
+        ]}]}
+    },
 
     "Resources": {
         "AdminAsg": {
@@ -264,38 +264,38 @@
             }
         },
         "Database" : {
-			"Type" : "AWS::RDS::DBInstance",
-			"Properties" : {
-				"VPCSecurityGroups" : [
-					{ "Ref": "RancherDbSg" }
-				],
-				"AllocatedStorage" : {"Ref": "DbStorageQuota"},
-				"DBInstanceClass" : {"Ref": "DbInstanceTyp"},
-				"DBParameterGroupName" : {"Ref": "DbParamGroup"},
+            "Type" : "AWS::RDS::DBInstance",
+            "Properties" : {
+                "VPCSecurityGroups" : [
+                    { "Ref": "RancherDbSg" }
+                ],
+                "AllocatedStorage" : {"Ref": "DbStorageQuota"},
+                "DBInstanceClass" : {"Ref": "DbInstanceTyp"},
+                "DBParameterGroupName" : {"Ref": "DbParamGroup"},
                 "DBName": "rancher",
-				"Engine" : "mariadb",
-				"EngineVersion" : "10.1.14",
-				"MasterUsername" : {"Ref": "DbUsername"},
-				"MasterUserPassword" : {"Ref": "DbPassword"},
-				"DBSnapshotIdentifier" : {"Fn::If": [
-					"HasDbSnapshot", {"Ref": "DbSnapshot"}, {"Ref" : "AWS::NoValue"}
-				]},
-				"DBSubnetGroupName" : {"Ref":"DbSubnetGroup"},
-				"Tags" : [{"Key": "Name", "Value" : "RancherOS Database"}],
-				"StorageType" : "gp2",
+                "Engine" : "mariadb",
+                "EngineVersion" : "10.1.14",
+                "MasterUsername" : {"Ref": "DbUsername"},
+                "MasterUserPassword" : {"Ref": "DbPassword"},
+                "DBSnapshotIdentifier" : {"Fn::If": [
+                    "HasDbSnapshot", {"Ref": "DbSnapshot"}, {"Ref" : "AWS::NoValue"}
+                ]},
+                "DBSubnetGroupName" : {"Ref":"DbSubnetGroup"},
+                "Tags" : [{"Key": "Name", "Value" : "RancherOS Database"}],
+                "StorageType" : "gp2",
                 "MultiAZ": "true"
-			},
-			"DeletionPolicy" : "Snapshot"
-		}, 
-		"DbParamGroup": {
-			"Type": "AWS::RDS::DBParameterGroup",
-			"Properties": {
-				"Description": "CloudFormation Sample Database Parameter Group", 
-				"Family": "mariadb10.1",
-				"Parameters": {
-				}
-			} 
-		},
+            },
+            "DeletionPolicy" : "Snapshot"
+        }, 
+        "DbParamGroup": {
+            "Type": "AWS::RDS::DBParameterGroup",
+            "Properties": {
+                "Description": "CloudFormation Sample Database Parameter Group", 
+                "Family": "mariadb10.1",
+                "Parameters": {
+                }
+            } 
+        },
         "RancherDbSg": {
             "Type": "AWS::EC2::SecurityGroup",
             "Properties": {
