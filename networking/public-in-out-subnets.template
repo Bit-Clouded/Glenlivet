@@ -1,264 +1,264 @@
 {
-	"AWSTemplateFormatVersion" : "2010-09-09",
+    "AWSTemplateFormatVersion" : "2010-09-09",
 
-	"Description" : "A simple empty subnet",
+    "Description" : "A simple empty subnet",
 
-	"Metadata" : {
-		"DefaultName" : "WebServerSubnets"
-	},
+    "Metadata" : {
+        "DefaultName" : "WebServerSubnets"
+    },
 
-	"Parameters" : {
+    "Parameters" : {
 
-		"Subnet1Suffix" : {
-			"Description" : "Subnet suffix to be concatenated with the VPC prefix. ",
-			"Type" : "Number",
-			"Default" : "0"
-		},
+        "Subnet1Suffix" : {
+            "Description" : "Subnet suffix to be concatenated with the VPC prefix. ",
+            "Type" : "Number",
+            "Default" : "0"
+        },
 
-		"Subnet2Suffix" : {
-			"Description" : "Subnet suffix to be concatenated with the VPC prefix. ",
-			"Type" : "Number",
-			"Default" : "1"
-		},
+        "Subnet2Suffix" : {
+            "Description" : "Subnet suffix to be concatenated with the VPC prefix. ",
+            "Type" : "Number",
+            "Default" : "1"
+        },
 
-		"Subnet3Suffix" : {
-			"Description" : "Subnet suffix to be concatenated with the VPC prefix. ",
-			"Type" : "Number",
-			"Default" : "2"
-		},
+        "Subnet3Suffix" : {
+            "Description" : "Subnet suffix to be concatenated with the VPC prefix. ",
+            "Type" : "Number",
+            "Default" : "2"
+        },
 
-		"VpcPrefix" : {
-			"Description" : "Prefix for the VPC [vpc.parameters.VpcPrefix]",
-			"Type" : "String"
-		},
+        "VpcPrefix" : {
+            "Description" : "Prefix for the VPC [vpc.parameters.VpcPrefix]",
+            "Type" : "String"
+        },
 
-		"VpcId" : {
-			"Description" : "VPC id [vpc.resources.Vpc]",
-			"Type" : "String"
-		},
+        "VpcId" : {
+            "Description" : "VPC id [vpc.resources.Vpc]",
+            "Type" : "String"
+        },
 
-		"RouteTable" : {
-			"Description" : "VPC id [public-out-subnets.resources.RouteTable]",
-			"Type" : "String"
-		},
+        "RouteTable" : {
+            "Description" : "VPC id [public-out-subnets.resources.RouteTable]",
+            "Type" : "String"
+        },
 
-		"AzCount" : {
-			"Description" : "Number of AZ. Third subnet will only be created if number is 3 [vpc.outputs.AzCount]",
-			"Type" : "String"
-		},
+        "AzCount" : {
+            "Description" : "Number of AZ. Third subnet will only be created if number is 3 [vpc.outputs.AzCount]",
+            "Type" : "String"
+        },
 
-		"AvailableAzs" : {
-			"Description" : "Comma-delimited list of three IP blocks",
-			"Type" : "CommaDelimitedList",
-			"Default" : ""
-		},
+        "AvailableAzs" : {
+            "Description" : "Comma-delimited list of three IP blocks",
+            "Type" : "CommaDelimitedList",
+            "Default" : ""
+        },
 
-		"EnableExtraDataPort" : {
-			"Description" : "If set to true, 1024~32768 will be open for 0.0.0.0/0. Default is false.",
-			"Type" : "String",
-			"AllowedValues" : [
-				"true", "false"
-			],
-			"Default" : "false",
-			"ConstraintDescription" : "Must be 'true' or 'false'."
-		}
-	},
+        "EnableExtraDataPort" : {
+            "Description" : "If set to true, 1024~32768 will be open for 0.0.0.0/0. Default is false.",
+            "Type" : "String",
+            "AllowedValues" : [
+                "true", "false"
+            ],
+            "Default" : "false",
+            "ConstraintDescription" : "Must be 'true' or 'false'."
+        }
+    },
 
-	"Conditions" : {
-		"IsThreeAz" : { "Fn::Equals" : [{"Ref" : "AzCount"}, "3"]},
-		"IsAzSupplied" : { "Fn::Not" : [{ "Fn::Equals" : [
-			{"Fn::Select": ["0", {"Ref" : "AvailableAzs"}]}, ""
-		]}]},
-		"IsExtraDataPortOpen" : { "Fn::Equals" : [{"Ref" : "EnableExtraDataPort"}, "true"]}
-	},
+    "Conditions" : {
+        "IsThreeAz" : { "Fn::Equals" : [{"Ref" : "AzCount"}, "3"]},
+        "IsAzSupplied" : { "Fn::Not" : [{ "Fn::Equals" : [
+            {"Fn::Select": ["0", {"Ref" : "AvailableAzs"}]}, ""
+        ]}]},
+        "IsExtraDataPortOpen" : { "Fn::Equals" : [{"Ref" : "EnableExtraDataPort"}, "true"]}
+    },
 
-	"Resources" : {
+    "Resources" : {
 
-		"Subnet1" : {
-			"Type" : "AWS::EC2::Subnet",
-			"Properties" : {
-				"VpcId" : { "Ref" : "VpcId" },
-				"CidrBlock" : { "Fn::Join" : [ "", [
-					{ "Ref" : "VpcPrefix" }, ".", { "Ref" : "Subnet1Suffix" }, ".0/24"
-				]]},
-				"AvailabilityZone": { "Fn::Select": [
-					"0", {"Fn::If" : [ "IsAzSupplied", {"Ref" : "AvailableAzs"}, { "Fn::GetAZs": "" } ]}
-				]},
-				"Tags" : [],
-				"MapPublicIpOnLaunch" : "True"
-			}
-		},
-		"RouteTableAssociation1" : {
-			"Type" : "AWS::EC2::SubnetRouteTableAssociation",
-			"Properties" : {
-				"SubnetId" : { "Ref" : "Subnet1" },
-				"RouteTableId" : { "Ref" : "RouteTable" }
-			}
-		},
-		"AclAssociation1" : {
-			"Type" : "AWS::EC2::SubnetNetworkAclAssociation",
-			"Properties" : {
-				"SubnetId" : { "Ref" : "Subnet1" },
-				"NetworkAclId" : { "Ref" : "Acl" }
-			}
-		},
+        "Subnet1" : {
+            "Type" : "AWS::EC2::Subnet",
+            "Properties" : {
+                "VpcId" : { "Ref" : "VpcId" },
+                "CidrBlock" : { "Fn::Join" : [ "", [
+                    { "Ref" : "VpcPrefix" }, ".", { "Ref" : "Subnet1Suffix" }, ".0/24"
+                ]]},
+                "AvailabilityZone": { "Fn::Select": [
+                    "0", {"Fn::If" : [ "IsAzSupplied", {"Ref" : "AvailableAzs"}, { "Fn::GetAZs": "" } ]}
+                ]},
+                "Tags" : [],
+                "MapPublicIpOnLaunch" : "True"
+            }
+        },
+        "RouteTableAssociation1" : {
+            "Type" : "AWS::EC2::SubnetRouteTableAssociation",
+            "Properties" : {
+                "SubnetId" : { "Ref" : "Subnet1" },
+                "RouteTableId" : { "Ref" : "RouteTable" }
+            }
+        },
+        "AclAssociation1" : {
+            "Type" : "AWS::EC2::SubnetNetworkAclAssociation",
+            "Properties" : {
+                "SubnetId" : { "Ref" : "Subnet1" },
+                "NetworkAclId" : { "Ref" : "Acl" }
+            }
+        },
 
-		"Subnet2" : {
-			"Type" : "AWS::EC2::Subnet",
-			"Properties" : {
-				"VpcId" : { "Ref" : "VpcId" },
-				"CidrBlock" : { "Fn::Join" : [ "", [
-					{ "Ref" : "VpcPrefix" }, ".", { "Ref" : "Subnet2Suffix" }, ".0/24"
-				]]},
-				"AvailabilityZone": { "Fn::Select": [
-					"1", {"Fn::If" : [ "IsAzSupplied", {"Ref" : "AvailableAzs"}, { "Fn::GetAZs": "" } ]}
-				]},
-				"Tags" : [],
-				"MapPublicIpOnLaunch" : "True"
-			}
-		},
-		"RouteTableAssociation2" : {
-			"Type" : "AWS::EC2::SubnetRouteTableAssociation",
-			"Properties" : {
-				"SubnetId" : { "Ref" : "Subnet2" },
-				"RouteTableId" : { "Ref" : "RouteTable" }
-			}
-		},
-		"AclAssociation2" : {
-			"Type" : "AWS::EC2::SubnetNetworkAclAssociation",
-			"Properties" : {
-				"SubnetId" : { "Ref" : "Subnet2" },
-				"NetworkAclId" : { "Ref" : "Acl" }
-			}
-		},
+        "Subnet2" : {
+            "Type" : "AWS::EC2::Subnet",
+            "Properties" : {
+                "VpcId" : { "Ref" : "VpcId" },
+                "CidrBlock" : { "Fn::Join" : [ "", [
+                    { "Ref" : "VpcPrefix" }, ".", { "Ref" : "Subnet2Suffix" }, ".0/24"
+                ]]},
+                "AvailabilityZone": { "Fn::Select": [
+                    "1", {"Fn::If" : [ "IsAzSupplied", {"Ref" : "AvailableAzs"}, { "Fn::GetAZs": "" } ]}
+                ]},
+                "Tags" : [],
+                "MapPublicIpOnLaunch" : "True"
+            }
+        },
+        "RouteTableAssociation2" : {
+            "Type" : "AWS::EC2::SubnetRouteTableAssociation",
+            "Properties" : {
+                "SubnetId" : { "Ref" : "Subnet2" },
+                "RouteTableId" : { "Ref" : "RouteTable" }
+            }
+        },
+        "AclAssociation2" : {
+            "Type" : "AWS::EC2::SubnetNetworkAclAssociation",
+            "Properties" : {
+                "SubnetId" : { "Ref" : "Subnet2" },
+                "NetworkAclId" : { "Ref" : "Acl" }
+            }
+        },
 
-		"Subnet3" : {
-			"Type" : "AWS::EC2::Subnet",
-			"Condition" : "IsThreeAz",
-			"Properties" : {
-				"VpcId" : { "Ref" : "VpcId" },
-				"CidrBlock" : { "Fn::Join" : [ "", [
-					{ "Ref" : "VpcPrefix" }, ".", { "Ref" : "Subnet3Suffix" }, ".0/24"
-				]]},
-				"AvailabilityZone": { "Fn::Select": [
-					"2", {"Fn::If" : [ "IsAzSupplied", {"Ref" : "AvailableAzs"}, { "Fn::GetAZs": "" } ]}
-				]},
-				"Tags" : [],
-				"MapPublicIpOnLaunch" : "True"
-			}
-		},
-		"RouteTableAssociation3" : {
-			"Type" : "AWS::EC2::SubnetRouteTableAssociation",
-			"Condition" : "IsThreeAz",
-			"Properties" : {
-				"SubnetId" : { "Ref" : "Subnet3" },
-				"RouteTableId" : { "Ref" : "RouteTable" }
-			}
-		},
-		"AclAssociation3" : {
-			"Type" : "AWS::EC2::SubnetNetworkAclAssociation",
-			"Condition" : "IsThreeAz",
-			"Properties" : {
-				"SubnetId" : { "Ref" : "Subnet3" },
-				"NetworkAclId" : { "Ref" : "Acl" }
-			}
-		},
+        "Subnet3" : {
+            "Type" : "AWS::EC2::Subnet",
+            "Condition" : "IsThreeAz",
+            "Properties" : {
+                "VpcId" : { "Ref" : "VpcId" },
+                "CidrBlock" : { "Fn::Join" : [ "", [
+                    { "Ref" : "VpcPrefix" }, ".", { "Ref" : "Subnet3Suffix" }, ".0/24"
+                ]]},
+                "AvailabilityZone": { "Fn::Select": [
+                    "2", {"Fn::If" : [ "IsAzSupplied", {"Ref" : "AvailableAzs"}, { "Fn::GetAZs": "" } ]}
+                ]},
+                "Tags" : [],
+                "MapPublicIpOnLaunch" : "True"
+            }
+        },
+        "RouteTableAssociation3" : {
+            "Type" : "AWS::EC2::SubnetRouteTableAssociation",
+            "Condition" : "IsThreeAz",
+            "Properties" : {
+                "SubnetId" : { "Ref" : "Subnet3" },
+                "RouteTableId" : { "Ref" : "RouteTable" }
+            }
+        },
+        "AclAssociation3" : {
+            "Type" : "AWS::EC2::SubnetNetworkAclAssociation",
+            "Condition" : "IsThreeAz",
+            "Properties" : {
+                "SubnetId" : { "Ref" : "Subnet3" },
+                "NetworkAclId" : { "Ref" : "Acl" }
+            }
+        },
 
-		"Acl" : {
-			"Type" : "AWS::EC2::NetworkAcl",
-			"Properties" : {
-				"VpcId" : {"Ref": "VpcId"},
-				"Tags" : []
-			}
-		},
+        "Acl" : {
+            "Type" : "AWS::EC2::NetworkAcl",
+            "Properties" : {
+                "VpcId" : {"Ref": "VpcId"},
+                "Tags" : []
+            }
+        },
 
-		"AclEntryInAllRequests" : {
-			"Type" : "AWS::EC2::NetworkAclEntry",
-			"Properties" : {
-				"NetworkAclId" : { "Ref" : "Acl" },
-				"RuleNumber" : "1000",
-				"Protocol" : "6",
-				"RuleAction" : "allow",
-				"Egress" : "true",
-				"CidrBlock" : "0.0.0.0/0",
-				"PortRange" : { "From" : "0", "To" : "32768" }
-			}
-		},
-		"AclEntryInDataPort" : {
-			"Type" : "AWS::EC2::NetworkAclEntry",
-			"Properties" : {
-				"NetworkAclId" : { "Ref" : "Acl" },
-				"RuleNumber" : "1002",
-				"Protocol" : "6",
-				"RuleAction" : "allow",
-				"Egress" : "true",
-				"CidrBlock" : "0.0.0.0/0",
-				"PortRange" : { "From" : "32768", "To" : "65535" }
-			}
-		},
-		"AclEntryInAllToVpc" : {
-			"Type" : "AWS::EC2::NetworkAclEntry",
-			"Properties" : {
-				"NetworkAclId" : { "Ref" : "Acl" },
-				"RuleNumber" : "1003",
-				"Protocol" : "6",
-				"RuleAction" : "allow",
-				"Egress" : "false",
-				"CidrBlock" : { "Fn::Join" : [ "", [
-					{ "Ref" : "VpcPrefix" }, ".0.0/16"
-				]]},
-				"PortRange" : { "From" : "0", "To" : "32768" }
-			}
-		},
+        "AclEntryInAllRequests" : {
+            "Type" : "AWS::EC2::NetworkAclEntry",
+            "Properties" : {
+                "NetworkAclId" : { "Ref" : "Acl" },
+                "RuleNumber" : "1000",
+                "Protocol" : "6",
+                "RuleAction" : "allow",
+                "Egress" : "true",
+                "CidrBlock" : "0.0.0.0/0",
+                "PortRange" : { "From" : "0", "To" : "32768" }
+            }
+        },
+        "AclEntryInDataPort" : {
+            "Type" : "AWS::EC2::NetworkAclEntry",
+            "Properties" : {
+                "NetworkAclId" : { "Ref" : "Acl" },
+                "RuleNumber" : "1002",
+                "Protocol" : "6",
+                "RuleAction" : "allow",
+                "Egress" : "true",
+                "CidrBlock" : "0.0.0.0/0",
+                "PortRange" : { "From" : "32768", "To" : "65535" }
+            }
+        },
+        "AclEntryInAllToVpc" : {
+            "Type" : "AWS::EC2::NetworkAclEntry",
+            "Properties" : {
+                "NetworkAclId" : { "Ref" : "Acl" },
+                "RuleNumber" : "1003",
+                "Protocol" : "6",
+                "RuleAction" : "allow",
+                "Egress" : "false",
+                "CidrBlock" : { "Fn::Join" : [ "", [
+                    { "Ref" : "VpcPrefix" }, ".0.0/16"
+                ]]},
+                "PortRange" : { "From" : "0", "To" : "32768" }
+            }
+        },
 
-		"AclEntryOutHttp" : {
-			"Type" : "AWS::EC2::NetworkAclEntry",
-			"Properties" : {
-				"NetworkAclId" : { "Ref" : "Acl" },
-				"RuleNumber" : "1000",
-				"Protocol" : "6",
-				"RuleAction" : "allow",
-				"Egress" : "false",
-				"CidrBlock" : "0.0.0.0/0",
-				"PortRange" : { "From" : "80", "To" : "80" }
-			}
-		},
-		"AclEntryOutHttps" : {
-			"Type" : "AWS::EC2::NetworkAclEntry",
-			"Properties" : {
-				"NetworkAclId" : { "Ref" : "Acl" },
-				"RuleNumber" : "1001",
-				"Protocol" : "6",
-				"RuleAction" : "allow",
-				"Egress" : "false",
-				"CidrBlock" : "0.0.0.0/0",
-				"PortRange" : { "From" : "443", "To" : "443" }
-			}
-		},
-		"AclEntryOutDataPort" : {
-			"Type" : "AWS::EC2::NetworkAclEntry",
-			"Properties" : {
-				"NetworkAclId" : { "Ref" : "Acl" },
-				"RuleNumber" : "1002",
-				"Protocol" : "6",
-				"RuleAction" : "allow",
-				"Egress" : "false",
-				"CidrBlock" : "0.0.0.0/0",
-				"PortRange" : { "From" : "32768", "To" : "65535" }
-			}
-		},
-		"AclEntryOutElbDataPort" : {
-			"Type" : "AWS::EC2::NetworkAclEntry",
-			"Condition" : "IsExtraDataPortOpen",
-			"Properties" : {
-				"NetworkAclId" : { "Ref" : "Acl" },
-				"RuleNumber" : "1004",
-				"Protocol" : "6",
-				"RuleAction" : "allow",
-				"Egress" : "false",
-				"CidrBlock" : "0.0.0.0/0",
-				"PortRange" : { "From" : "1024", "To" : "32768" }
-			}
-		}
-	}
+        "AclEntryOutHttp" : {
+            "Type" : "AWS::EC2::NetworkAclEntry",
+            "Properties" : {
+                "NetworkAclId" : { "Ref" : "Acl" },
+                "RuleNumber" : "1000",
+                "Protocol" : "6",
+                "RuleAction" : "allow",
+                "Egress" : "false",
+                "CidrBlock" : "0.0.0.0/0",
+                "PortRange" : { "From" : "80", "To" : "80" }
+            }
+        },
+        "AclEntryOutHttps" : {
+            "Type" : "AWS::EC2::NetworkAclEntry",
+            "Properties" : {
+                "NetworkAclId" : { "Ref" : "Acl" },
+                "RuleNumber" : "1001",
+                "Protocol" : "6",
+                "RuleAction" : "allow",
+                "Egress" : "false",
+                "CidrBlock" : "0.0.0.0/0",
+                "PortRange" : { "From" : "443", "To" : "443" }
+            }
+        },
+        "AclEntryOutDataPort" : {
+            "Type" : "AWS::EC2::NetworkAclEntry",
+            "Properties" : {
+                "NetworkAclId" : { "Ref" : "Acl" },
+                "RuleNumber" : "1002",
+                "Protocol" : "6",
+                "RuleAction" : "allow",
+                "Egress" : "false",
+                "CidrBlock" : "0.0.0.0/0",
+                "PortRange" : { "From" : "32768", "To" : "65535" }
+            }
+        },
+        "AclEntryOutElbDataPort" : {
+            "Type" : "AWS::EC2::NetworkAclEntry",
+            "Condition" : "IsExtraDataPortOpen",
+            "Properties" : {
+                "NetworkAclId" : { "Ref" : "Acl" },
+                "RuleNumber" : "1004",
+                "Protocol" : "6",
+                "RuleAction" : "allow",
+                "Egress" : "false",
+                "CidrBlock" : "0.0.0.0/0",
+                "PortRange" : { "From" : "1024", "To" : "32768" }
+            }
+        }
+    }
 }
