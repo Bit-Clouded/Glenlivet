@@ -185,5 +185,15 @@
                 "Roles": [{ "Ref": "Ec2Role" }]
             }
         }
+    },
+
+    "Outputs" : {
+        "EcsAdminUrl" : {
+            "Description" : "Ec2 Container Service Cluster",
+            "Value" : { "Fn::Join": ["", [
+                "https://", { "Ref": "AWS::Region"}, ".console.aws.amazon.com/ecs/home?region=",
+                    { "Ref": "AWS::Region"}, "#/clusters/", { "Ref": "EcsCluster"}, "/containerInstances"
+            ]] }
+        }
     }
 }
