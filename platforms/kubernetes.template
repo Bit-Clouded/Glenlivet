@@ -1,0 +1,957 @@
+{
+    "AWSTemplateFormatVersion": "2010-09-09",
+    "Description": "kube-aws Kubernetes cluster my-cluster",
+    "Parameters" : {
+        "CoreOsAmi" : {
+            "Description": "AMI Id for CoreOs",
+            "Type": "AWS::EC2::Image::Id"
+        },
+        "SshGatewayScheme" : {
+            "Description" : "Determines whether SSH gateway is public facing or internal facing",
+            "AllowedValues" : ["internet-facing", "internal"],
+            "Default" : "internal",
+            "Type" : "String"
+        },
+        "VpcId": {
+            "Description" : "VPCid associated with the subnets. [elb-subnets.parameters.VpcId]",
+            "Type": "AWS::EC2::VPC::Id"
+        },
+        "ElbSubnets" : {
+            "Description" : "VPCid associated with the subnets. [elb-subnets.outputs.ElbSubnets]",
+            "Type": "List<AWS::EC2::Subnet::Id>"
+        },
+        "ServerSubnet1Id": {
+            "Description" : "Subnet to run HA web cluster on. [elb-subnets.resources.PvtWebSubnet1]",
+            "Type": "AWS::EC2::Subnet::Id"
+        },
+        "ServerSubnets" : {
+            "Description" : "VPCid associated with the subnets. [elb-subnets.outputs.WebServerSubnets]",
+            "Type": "List<AWS::EC2::Subnet::Id>"
+        }
+    },
+
+    "Resources": {
+        "AutoScaleWorker": {
+            "Type": "AWS::AutoScaling::AutoScalingGroup",
+            "Properties": {
+                "AvailabilityZones": [
+                    "ap-southeast-2a"
+                ],
+                "DesiredCapacity": "1",
+                "HealthCheckGracePeriod": 600,
+                "HealthCheckType": "EC2",
+                "LaunchConfigurationName": {
+                    "Ref": "LaunchConfigurationWorker"
+                },
+                "MaxSize": "1",
+                "MinSize": "1",
+                "Tags": [
+                    {
+                        "Key": "KubernetesCluster",
+                        "PropagateAtLaunch": "true",
+                        "Value": "my-cluster"
+                    },
+                    {
+                        "Key": "Name",
+                        "PropagateAtLaunch": "true",
+                        "Value": "my-cluster-kube-aws-worker"
+                    }
+                ],
+                "VPCZoneIdentifier": { "Ref": "ServerSubnets" }
+            },
+            "UpdatePolicy": {
+                "AutoScalingRollingUpdate": {
+                    "MinInstancesInService": "1",
+                    "MaxBatchSize": "1",
+                    "PauseTime": "PT2M"
+                }
+            }
+        },
+        "EIPController": {
+            "Properties": {
+                "Domain": "vpc",
+                "InstanceId": {
+                    "Ref": "InstanceController"
+                }
+            },
+            "Type": "AWS::EC2::EIP"
+        },
+        "ExternalDNS": {
+            "Type": "AWS::Route53::RecordSet",
+            "Properties": {
+                "HostedZoneId": "/hostedzone/Z2TSTDP4M1X11P",
+                "Name": "kube.bit-clouded.io",
+                "TTL": 300,
+                "ResourceRecords": [
+                    {
+                        "Ref": "EIPController"
+                    }
+                ],
+                "Type": "A"
+            }
+        },
+        "IAMInstanceProfileController": {
+            "Properties": {
+                "Path": "/",
+                "Roles": [
+                    {
+                        "Ref": "IAMRoleController"
+                    }
+                ]
+            },
+            "Type": "AWS::IAM::InstanceProfile"
+        },
+        "IAMInstanceProfileWorker": {
+            "Properties": {
+                "Path": "/",
+                "Roles": [
+                    {
+                        "Ref": "IAMRoleWorker"
+                    }
+                ]
+            },
+            "Type": "AWS::IAM::InstanceProfile"
+        },
+        "IAMRoleController": {
+            "Properties": {
+                "AssumeRolePolicyDocument": {
+                    "Statement": [
+                        {
+                            "Action": [
+                                "sts:AssumeRole"
+                            ],
+                            "Effect": "Allow",
+                            "Principal": {
+                                "Service": [
+                                    "ec2.amazonaws.com"
+                                ]
+                            }
+                        }
+                    ],
+                    "Version": "2012-10-17"
+                },
+                "Path": "/",
+                "Policies": [
+                    {
+                        "PolicyDocument": {
+                            "Statement": [
+                                {
+                                    "Action": "ec2:*",
+                                    "Effect": "Allow",
+                                    "Resource": "*"
+                                },
+                                {
+                                    "Action": "elasticloadbalancing:*",
+                                    "Effect": "Allow",
+                                    "Resource": "*"
+                                },
+                                {
+                                    "Action": "kms:Decrypt",
+                                    "Effect": "Allow",
+                                    "Resource": "arn:aws:kms:ap-southeast-2:380048663093:key/5ab19e90-00df-4b40-b13e-637b8bb0ed54"
+                                }
+                            ],
+                            "Version": "2012-10-17"
+                        },
+                        "PolicyName": "root"
+                    }
+                ]
+            },
+            "Type": "AWS::IAM::Role"
+        },
+        "IAMRoleWorker": {
+            "Properties": {
+                "AssumeRolePolicyDocument": {
+                    "Statement": [
+                        {
+                            "Action": [
+                                "sts:AssumeRole"
+                            ],
+                            "Effect": "Allow",
+                            "Principal": {
+                                "Service": [
+                                    "ec2.amazonaws.com"
+                                ]
+                            }
+                        }
+                    ],
+                    "Version": "2012-10-17"
+                },
+                "Path": "/",
+                "Policies": [
+                    {
+                        "PolicyDocument": {
+                            "Statement": [
+                                {
+                                    "Action": "ec2:Describe*",
+                                    "Effect": "Allow",
+                                    "Resource": "*"
+                                },
+                                {
+                                    "Action": "ec2:AttachVolume",
+                                    "Effect": "Allow",
+                                    "Resource": "*"
+                                },
+                                {
+                                    "Action": "ec2:DetachVolume",
+                                    "Effect": "Allow",
+                                    "Resource": "*"
+                                },
+                                {
+                                    "Action": "kms:Decrypt",
+                                    "Effect": "Allow",
+                                    "Resource": "arn:aws:kms:ap-southeast-2:380048663093:key/5ab19e90-00df-4b40-b13e-637b8bb0ed54"
+                                },
+                                {
+                                    "Action": [
+                                        "ecr:GetAuthorizationToken",
+                                        "ecr:BatchCheckLayerAvailability",
+                                        "ecr:GetDownloadUrlForLayer",
+                                        "ecr:GetRepositoryPolicy",
+                                        "ecr:DescribeRepositories",
+                                        "ecr:ListImages",
+                                        "ecr:BatchGetImage"
+                                    ],
+                                    "Resource": "*",
+                                    "Effect": "Allow"
+                                }
+                            ],
+                            "Version": "2012-10-17"
+                        },
+                        "PolicyName": "root"
+                    }
+                ]
+            },
+            "Type": "AWS::IAM::Role"
+        },
+        "InstanceController": {
+            "Properties": {
+                "AvailabilityZone": "ap-southeast-2a",
+                "BlockDeviceMappings": [
+                    {
+                        "DeviceName": "/dev/xvda",
+                        "Ebs": {
+                            "VolumeSize": "30",
+                            "VolumeType": "gp2"
+                        }
+                    }
+                ],
+                "IamInstanceProfile": {
+                    "Ref": "IAMInstanceProfileController"
+                },
+                "ImageId": "ami-36427f55",
+                "InstanceType": "m3.medium",
+                "KeyName": "none-prod",
+                "NetworkInterfaces": [
+                    {
+                        "AssociatePublicIpAddress": false,
+                        "DeleteOnTermination": true,
+                        "DeviceIndex": "0",
+                        "GroupSet": [
+                            {
+                                "Ref": "SecurityGroupController"
+                            }
+                        ],
+                        "PrivateIpAddress": "10.0.0.50",
+                        "SubnetId": {
+                            "Ref": "ServerSubnet1Id"
+                        }
+                    }
+                ],
+                "Tags": [
+                    {
+                        "Key": "KubernetesCluster",
+                        "Value": "my-cluster"
+                    },
+                    {
+                        "Key": "Name",
+                        "Value": "my-cluster-kube-aws-controller"
+                    }
+                ],
+                "UserData": { "Fn::Base64": { "Fn::Join": ["", [
+"#cloud-config\n",
+"coreos:\n",
+"  update:\n",
+"    reboot-strategy: \"off\"\n",
+"  flannel:\n",
+"    interface: $private_ipv4\n",
+"    etcd_endpoints: http://10.0.0.50:2379\n",
+"  etcd2:\n",
+"    name: controller\n",
+"    advertise-client-urls: http://$private_ipv4:2379\n",
+"    initial-advertise-peer-urls: http://$private_ipv4:2380\n",
+"    listen-client-urls: http://0.0.0.0:2379\n",
+"    listen-peer-urls: http://0.0.0.0:2380\n",
+"    initial-cluster: controller=http://$private_ipv4:2380\n",
+"  units:\n",
+"    - name: etcd2.service\n",
+"      command: start\n",
+"      runtime: true\n",
+"\n",
+"    - name: docker.service\n",
+"      drop-ins:\n",
+"        - name: 40-flannel.conf\n",
+"          content: |\n",
+"            [Unit]\n",
+"            Requires=flanneld.service\n",
+"            After=flanneld.service\n",
+"            [Service]\n",
+"            EnvironmentFile=/etc/kubernetes/cni/docker_opts_cni.env\n",
+"\n",
+"    - name: flanneld.service\n",
+"      drop-ins:\n",
+"        - name: 10-etcd.conf\n",
+"          content: |\n",
+"            [Service]\n",
+"            ExecStartPre=/usr/bin/curl --silent -X PUT -d \\\n",
+"            \"value={\\\"Network\\\" : \\\"10.2.0.0/16\\\", \\\"Backend\\\" : {\\\"Type\\\" : \\\"vxlan\\\"}}\" \\\n",
+"            http://localhost:2379/v2/keys/coreos.com/network/config?prevExist=false\n",
+"    - name: kubelet-prereq-files.service\n",
+"      command: start\n",
+"      runtime: true\n",
+"      content: |\n",
+"        [Unit]\n",
+"        Before=kubelet.service docker.service\n",
+"\n",
+"        [Service]\n",
+"        Type=simple\n",
+"        StartLimitInterval=0\n",
+"        Restart=on-failure\n",
+"        ExecStart=docker run \\\n",
+"        -v /srv/kubernetes/manifests:/srv/kubernetes/manifests \\\n",
+"        -v /etc/kubernetes/manifests:/etc/kubernetes/manifests \\\n",
+"        sleepersmith/test-misc:kube-files\n",
+"    - name: kubelet.service\n",
+"      command: start\n",
+"      runtime: true\n",
+"      content: |\n",
+"        [Service]\n",
+"        Environment=KUBELET_VERSION=v1.4.3_coreos.0\n",
+"        Environment=KUBELET_ACI=quay.io/coreos/hyperkube\n",
+"        Environment=\"RKT_OPTS=--volume dns,kind=host,source=/etc/resolv.conf \\\n",
+"        --mount volume=dns,target=/etc/resolv.conf \\\n",
+"        --volume rkt,kind=host,source=/opt/bin/host-rkt \\\n",
+"        --mount volume=rkt,target=/usr/bin/rkt \\\n",
+"        --volume var-lib-rkt,kind=host,source=/var/lib/rkt \\\n",
+"        --mount volume=var-lib-rkt,target=/var/lib/rkt \\\n",
+"        --volume stage,kind=host,source=/tmp \\\n",
+"        --mount volume=stage,target=/tmp \\\n",
+"        --volume var-log,kind=host,source=/var/log \\\n",
+"        --mount volume=var-log,target=/var/log\"\n",
+"        ExecStartPre=/usr/bin/mkdir -p /var/log/containers\n",
+"        ExecStart=/usr/lib/coreos/kubelet-wrapper \\\n",
+"        --api-servers=http://localhost:8080 \\\n",
+"        --cni-conf-dir=/etc/kubernetes/cni/net.d \\\n",
+"        --network-plugin=cni \\\n",
+"        --container-runtime=docker \\\n",
+"        --rkt-path=/usr/bin/rkt \\\n",
+"        --rkt-stage1-image=coreos.com/rkt/stage1-coreos \\\n",
+"        --register-schedulable=false \\\n",
+"        --allow-privileged=true \\\n",
+"        --config=/etc/kubernetes/manifests \\\n",
+"        --cluster_dns=10.3.0.10 \\\n",
+"        --cluster_domain=cluster.local \\\n",
+"        --cloud-provider=aws\n",
+"        Restart=always\n",
+"        RestartSec=10\n",
+"\n",
+"        [Install]\n",
+"        WantedBy=multi-user.target\n",
+"\n",
+"\n",
+"\n",
+"\n",
+"\n",
+"    - name: decrypt-tls-assets.service\n",
+"      enable: true\n",
+"      content: |\n",
+"        [Unit]\n",
+"        Description=decrypt kubelet tls assets using amazon kms\n",
+"        Before=kubelet.service\n",
+"\n",
+"        [Service]\n",
+"        Type=oneshot\n",
+"        RemainAfterExit=yes\n",
+"        ExecStart=/opt/bin/decrypt-tls-assets\n",
+"\n",
+"        [Install]\n",
+"        RequiredBy=kubelet.service\n",
+"\n",
+"    - name: install-kube-system.service\n",
+"      command: start\n",
+"      runtime: true\n",
+"      content: |\n",
+"        [Unit]\n",
+"        Requires=kubelet.service docker.service\n",
+"        After=kubelet.service docker.service\n",
+"\n",
+"        [Service]\n",
+"        Type=simple\n",
+"        StartLimitInterval=0\n",
+"        Restart=on-failure\n",
+"        ExecStartPre=/usr/bin/curl http://127.0.0.1:8080/version\n",
+"        ExecStart=/opt/bin/install-kube-system\n",
+"\n",
+"\n",
+"\n",
+"write_files:\n",
+"  - path: /opt/bin/install-kube-system\n",
+"    permissions: 0700\n",
+"    owner: root:root\n",
+"    content: |\n",
+"      #!/bin/bash -e\n",
+"      /usr/bin/curl  -H \"Content-Type: application/yaml\" -XPOST \\\n",
+"      -d\"$(cat /srv/kubernetes/manifests/kube-dns-rc.yaml)\" \\\n",
+"      \"http://127.0.0.1:8080/api/v1/namespaces/kube-system/replicationcontrollers\"\n",
+"\n",
+"      /usr/bin/curl  -H \"Content-Type: application/yaml\" -XPOST \\\n",
+"      -d\"$(cat /srv/kubernetes/manifests/kube-dashboard-rc.yaml)\" \\\n",
+"      \"http://127.0.0.1:8080/api/v1/namespaces/kube-system/replicationcontrollers\"\n",
+"\n",
+"      /usr/bin/curl  -H \"Content-Type: application/yaml\" -XPOST \\\n",
+"      -d\"$(cat /srv/kubernetes/manifests/heapster-de.yaml)\" \\\n",
+"      \"http://127.0.0.1:8080/apis/extensions/v1beta1/namespaces/kube-system/deployments\"\n",
+"\n",
+"      for manifest in {kube-dns,heapster,kube-dashboard}-svc.yaml;do\n",
+"          /usr/bin/curl  -H \"Content-Type: application/yaml\" -XPOST \\\n",
+"          -d\"$(cat /srv/kubernetes/manifests/$manifest)\" \\\n",
+"          \"http://127.0.0.1:8080/api/v1/namespaces/kube-system/services\"\n",
+"      done\n",
+"\n",
+"  - path: /etc/kubernetes/cni/docker_opts_cni.env\n",
+"    content: |\n",
+"      DOCKER_OPT_BIP=\"\"\n",
+"      DOCKER_OPT_IPMASQ=\"\"\n",
+"\n",
+"  - path: /opt/bin/host-rkt\n",
+"    permissions: 0755\n",
+"    owner: root:root\n",
+"    content: |\n",
+"      #!/bin/sh\n",
+"      # This is bind mounted into the kubelet rootfs and all rkt shell-outs go\n",
+"      # through this rkt wrapper. It essentially enters the host mount namespace\n",
+"      # (which it is already in) only for the purpose of breaking out of the chroot\n",
+"      # before calling rkt. It makes things like rkt gc work and avoids bind mounting\n",
+"      # in certain rkt filesystem dependancies into the kubelet rootfs. This can\n",
+"      # eventually be obviated when the write-api stuff gets upstream and rkt gc is\n",
+"      # through the api-server. Related issue:\n",
+"      # https://github.com/coreos/rkt/issues/2878\n",
+"      exec nsenter -m -u -i -n -p -t 1 -- /usr/bin/rkt \"$@\"\n",
+"\n",
+"\n",
+"\n",
+"  - path: /opt/bin/decrypt-tls-assets\n",
+"    owner: root:root\n",
+"    permissions: 0700\n",
+"    content: |\n",
+"      #!/bin/bash -e\n",
+"\n",
+"      for encKey in $(find /etc/kubernetes/ssl/*.pem.enc);do\n",
+"        sudo rkt run \\\n",
+"        --volume=ssl,kind=host,source=/etc/kubernetes/ssl,readOnly=false \\\n",
+"        --mount=volume=ssl,target=/etc/kubernetes/ssl \\\n",
+"        --uuid-file-save=/var/run/coreos/decrypt-tls-assets.uuid \\\n",
+"        --dns=8.8.8.8 --dns=8.8.4.4 \\\n",
+"        --net=host \\\n",
+"        --trust-keys-from-https \\\n",
+"        quay.io/coreos/awscli --exec=/bin/bash -- \\\n",
+"          -c \\\n",
+"          \"/usr/bin/aws \\\n",
+"            --region ap-southeast-2 kms decrypt \\\n",
+"            --ciphertext-blob fileb://$encKey \\\n",
+"            --output text \\\n",
+"            --query Plaintext \\\n",
+"            > $encKey.b64\"\n",
+"\n",
+"        base64 --decode < $encKey.b64 > ${encKey%.enc}\n",
+"        sudo rkt rm --uuid-file=/var/run/coreos/decrypt-tls-assets.uuid\n",
+"      done\n",
+"\n",
+"  - path: /etc/kubernetes/ssl/ca.pem.enc\n",
+"    encoding: gzip+base64\n",
+"    content: H4sIAAAJbogA/wC/BED7AQECAHhfKBsgImwnXUxxvgu2wDKJzqfxJolC8Lko7USTah5mEgAABJYwggSSBgkqhkiG9w0BBwagggSDMIIEfwIBADCCBHgGCSqGSIb3DQEHATAeBglghkgBZQMEAS4wEQQMzTc2LDa88j7Jrek8AgEQgIIESf0kabT2aYhz48t8N1WWgZ3LD3+UeteVaxNv3vyuHR0WCOgph5l7dUM/xrfYEMjhRQKs2S8fFP6xax+yDIeRJ75N3PRcGe452loZeZCFO8CL0/llktTfA16pPGByjNXJrly5Y7/3BOT8LE0iDwFYtdD35D588ohZRmTxngHBVIT2xyseep8UO/ETn6skyL/i9Qy85X4IE987MT2KuS1wCTXSlaWGOWDtPxZhX65cU037IXfBH5Il8Mkt2AcLlibXRfTp6hPNrz+afz1eyEOAgE28CNAQz1g8Jd56fH1SNfRqBwYWDlDLEiSNSynd9uLgHdxKqcq1xYc4Vsz6arLXEIxjcC9hxvUmx0kOgcO5oCnTnXoO6bOXZ5P2FSM6f30Sp9Ge5OWpiL00OTchtm6JWWVhUu/QUMpcAHD59PTYFzdq81VlS/M1dUZyLE3QonsetQeafjZujh7qfoJbfyGcGHhqeofFtEnGj+YqaQiefTtaT84U6ppxg5BvOQ7qwyM2voSq4onaVYzvSM61yZZWmRYJROHhUuA7h4IpU0tTCl06zLbTeTOBT6Ve46PGdcBeqnVPOsC1GTT+1xD4HUTYf+FdNaj/xJSDrJftOAPUZHY8VGH/qSbyh9GPTd5sfoS84ibsRE+01bMy57Ht22GRkcFbsH+KKBs+sGCMMa0PYtKv4qQB8lL1exAebWFbN3wxZ7t727g7SiYdCj4/T5EdbeJeEWvhZgmyjB+CH+I4UIMnZ8yQQwXL796/T24+wIFwwpKHMir1MndzdsjO+nyooVkiwpJzuupB94fhplfniijPOmmrQE+VF8Q5YGq5ZuZIxGlY6jOV9YK3cT/yUny4gM8fPaD8sTYXwOn2PMgK6Ye95R0CGsnzbq1PWTDEaqJ0kparqEPpLHj6rT3XtpnlPs6EIodfk+2JSzJLELMd7+eZHzXg6gdieDFLOevqI+R1V11yqbNust/M8o3tFWKc38dGzo+QAUsC4ZElBktnaNiXEUC62pRoXuVfYw5b4QTdlhd98DCRRevN96JJDVxnMgop4oKRIlnUvKHbX/HA4P1LN8Zr08jel+B2fLYbonN75ohno++Z20w/nzQecJVBnlWYkqsnAwuGaS7FUDcoVB5qv45QxLzwolXEItypJ9e+1JELbtz3Rvpr3kQoJQN26s06diasgJRVMaDin+e8U4sdIbn/N37vH6iTnhnVL3sc2QT4CCJm6WrJoDmXkNp+/J83Jq1LSxgXdXozwHzALePCQ8h/+ltS6RegbhDUdauIKAqN0/VQ77bmKPAUn7g1HJE/vbNNfc2hlNEoPdvzVWn9EELSZrzbjgidePO8QdAdQe1FYN2SCKSbZQ/P176bgBjv+i+CtFMddybnA8qKiiConGunSdQnqWm5UZRP8yrb8JMEjyerLHKYlhpr/dGX2nVl1VoqQIMdeGGZsSxFHENMid0366+PYurPAQAA///rzmAgvwQAAA==\n",
+"\n",
+"  - path: /etc/kubernetes/ssl/apiserver.pem.enc\n",
+"    encoding: gzip+base64\n",
+"    content: H4sIAAAJbogA/wCWBWn6AQECAHhfKBsgImwnXUxxvgu2wDKJzqfxJolC8Lko7USTah5mEgAABW0wggVpBgkqhkiG9w0BBwagggVaMIIFVgIBADCCBU8GCSqGSIb3DQEHATAeBglghkgBZQMEAS4wEQQM4Lbp7dmKOQFHIvLMAgEQgIIFIMSCL2Rdu9lxTfdEzOFB4dr5gNsWQEMQ2dAQ2zZXWLGGxyyDWHG/KsukiqQEQhbP7wwxU+GnCZ7mew76Vhb6IaTUqJDHvVx/ZBFPjTa3PGPhorO1z6VN6h8yA7SN5/WHuaQsj1hCDVizA0yRo0OI6iC2Q0nHHx5tt8wZ7chrzdg0Wv4S86yndnW9iJcsuSFUCfjXovyyJ6LUTa78G98up3j+4KPgqADezHRaZ6LrJ1pIpAj+5SvQRVo1sWUAZvPNu7tQzTUgCFB7+O7ox/mCuLCV2kbH1OK9No6oCE9Mr7G+1Fe8JeCvxWHGfp7ovvevigjfB9kK8pu2KLbPcCdwEXKX+0GluHI1VN7PksM5Mq4tuavQAxlVU1vE2oHEvnedyuLb3EkYqAsOkQ3fiWaJATrOzegyGwOVkw1XkRsLJpXKlw8n0lkHIz0fHh3Cq13DawTankNTQl+tHsaQKHmdmWfq8c+Uws1LMoSvd/ASqqAi2pUt4p9z9ZRf5WytGvjDShLNYsA1I94jphkqZll5Xmv886S32bCkW76/abPPSHbB5DsTcEvz+bW5ayPmk3v0twL3T0xwn3wjGRTC2QwE3mKyd4Usb7JLU/zKhfW6gqjiAziJyQ70Tqt6tUe/ltMtMuOLlejCg+YeA2opRJBTa98CoT/VbIVTBWRyQBxD4m/fZ9y6QeFt/ubt6AGcqklt3MggaFVkaaevd3ROc6nJY/a4OshYzJzoWCsYWmje516kBSEld8u6WjdR/QZIUrRlF1pCgs11xROU0D5BuG7CQJVSLeYWWRVp6PAv4K5mEspOyOdbsEaHLrxtiqiOvVxHAzgraYH4A47ki1aybkD2RqCkEqpjK1PT+iAhYq4uiiKZHJLP/UeNno0RZa7Sgz4OqqVzJ/Pg/rQBlNGomBJ9iO8pN318Cngp3JaUIutqNR5eJNM5FVQOxUQ2sX5BNAnIcenc1+uTpV5fae1zEiVqKCZUgIvNd0gk4nWEEARThI7TZuQ2dzoseAUe+u++kMMg6dNmhdg/3vAuul3twSeVSXuYSbTMex5u4mT5lYrmvSdO4X23heXY9zKoTKA7jXaqFmm0NR+ZIDJnGJF4e9bwa35YnvdB2vvrQXDDVPli7OSu1oGdgi9cEMOrr8ECCDVkA6DntnUl8/+9hItxR7sao6T4fC4WbSAvD7X0zVTjoA0DgehNzv4Vg6vm1FcLTBu8otQ2pjLmZStnvFYvCRkssRCjVS6LbBu1ZswSO7jibH/NEP+Iq4SObiRnk4pf9Bznwfagq36WUtS4qreXmQ9dPjnoS1HXCYORMdDfDTTMM6hVaI614qIeWUgJTDSz/9i4AeYo2OBrr6YPx99yT7T6HxSFMjS9q/1nnXTGsaFp6KYrK2VI32P+5xrz74YP4TBR6BHC73mwzqbVJmPWEMY8N6CVlF6NOc7A67u0xkXGRb5Z+53u6gg6gS+nOj2feecP60L7dveORTIdXYQqiIIo54mGywZTndJfBTZII9WFGYvs1d2jlxFarY7bPuW5s2JBPnSVef16kxjY8OSHAn7mXSRIuof0BeHb4phrRnkCrA7xVZoOoQ+ee1hf0hiv2bod9LfDGSIYtVulhOkNS7AbOjmWytH88lVDqMKSDYZRlAWzDnWB+v4EkADPc/pkMcsk3UDERQdq8sFaSJFLvQR/sQNHj4zD2onxCDC9dMQQ+oHvdjawyZ4OTYvW+2yxx44AH4IWlSWFORScwP0/IjefyqUBAAD//xgkWdWWBQAA\n",
+"\n",
+"  - path: /etc/kubernetes/ssl/apiserver-key.pem.enc\n",
+"    encoding: gzip+base64\n",
+"    content: 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\n",
+"\n",
+"\n",
+"  - path: /etc/kubernetes/cni/net.d/10-flannel.conf\n",
+"    content: |\n",
+"        {\n",
+"            \"name\": \"podnet\",\n",
+"            \"type\": \"flannel\",\n",
+"            \"delegate\": {\n",
+"                \"isDefaultGateway\": true\n",
+"            }\n",
+"        }\n"
+                ]] } }
+            },
+            "Type": "AWS::EC2::Instance"
+        },
+        "LaunchConfigurationWorker": {
+            "Properties": {
+                "BlockDeviceMappings": [
+                    {
+                        "DeviceName": "/dev/xvda",
+                        "Ebs": {
+                            "VolumeSize": "30",
+                            "VolumeType": "gp2"
+                        }
+                    }
+                ],
+                "IamInstanceProfile": {
+                    "Ref": "IAMInstanceProfileWorker"
+                },
+                "ImageId": "ami-36427f55",
+                "InstanceType": "m3.medium",
+                "KeyName": "none-prod",
+                "SecurityGroups": [
+                    {
+                        "Ref": "SecurityGroupWorker"
+                    }
+                ],
+                "UserData": { "Fn::Base64": { "Fn::Join": ["", [
+                    "#cloud-config\n",
+                    "coreos:\n",
+                    "  update:\n",
+                    "    reboot-strategy: \"off\"\n",
+                    "  flannel:\n",
+                    "    interface: $private_ipv4\n",
+                    "    etcd_endpoints: http://10.0.0.50:2379\n",
+                    "  units:\n",
+                    "    - name: docker.service\n",
+                    "      drop-ins:\n",
+                    "        - name: 40-flannel.conf\n",
+                    "          content: |\n",
+                    "            [Unit]\n",
+                    "            Requires=flanneld.service\n",
+                    "            After=flanneld.service\n",
+                    "            [Service]\n",
+                    "            EnvironmentFile=/etc/kubernetes/cni/docker_opts_cni.env\n",
+                    "\n",
+                    "    - name: kubelet.service\n",
+                    "      command: start\n",
+                    "      runtime: true\n",
+                    "      content: |\n",
+                    "        [Service]\n",
+                    "        Environment=KUBELET_VERSION=v1.4.3_coreos.0\n",
+                    "        Environment=KUBELET_ACI=quay.io/coreos/hyperkube\n",
+                    "        Environment=\"RKT_OPTS=--volume dns,kind=host,source=/etc/resolv.conf \\\n",
+                    "        --mount volume=dns,target=/etc/resolv.conf \\\n",
+                    "        --volume rkt,kind=host,source=/opt/bin/host-rkt \\\n",
+                    "        --mount volume=rkt,target=/usr/bin/rkt \\\n",
+                    "        --volume var-lib-rkt,kind=host,source=/var/lib/rkt \\\n",
+                    "        --mount volume=var-lib-rkt,target=/var/lib/rkt \\\n",
+                    "        --volume stage,kind=host,source=/tmp \\\n",
+                    "        --mount volume=stage,target=/tmp \\\n",
+                    "        --volume var-log,kind=host,source=/var/log \\\n",
+                    "        --mount volume=var-log,target=/var/log\"\n",
+                    "        ExecStartPre=/usr/bin/mkdir -p /var/log/containers\n",
+                    "        ExecStart=/usr/lib/coreos/kubelet-wrapper \\\n",
+                    "        --api-servers=https://10.0.0.50:443 \\\n",
+                    "        --cni-conf-dir=/etc/kubernetes/cni/net.d \\\n",
+                    "        --network-plugin=cni \\\n",
+                    "        --container-runtime=docker \\\n",
+                    "        --rkt-path=/usr/bin/rkt \\\n",
+                    "        --rkt-stage1-image=coreos.com/rkt/stage1-coreos \\\n",
+                    "        --register-node=true \\\n",
+                    "        --allow-privileged=true \\\n",
+                    "        --config=/etc/kubernetes/manifests \\\n",
+                    "        --cluster_dns=10.3.0.10 \\\n",
+                    "        --cluster_domain=cluster.local \\\n",
+                    "        --cloud-provider=aws \\\n",
+                    "        --kubeconfig=/etc/kubernetes/worker-kubeconfig.yaml \\\n",
+                    "        --tls-cert-file=/etc/kubernetes/ssl/worker.pem \\\n",
+                    "        --tls-private-key-file=/etc/kubernetes/ssl/worker-key.pem\n",
+                    "        Restart=always\n",
+                    "        RestartSec=10\n",
+                    "        [Install]\n",
+                    "        WantedBy=multi-user.target\n",
+                    "\n",
+                    "\n",
+                    "\n",
+                    "\n",
+                    "\n",
+                    "    - name: decrypt-tls-assets.service\n",
+                    "      enable: true\n",
+                    "      content: |\n",
+                    "        [Unit]\n",
+                    "        Description=decrypt kubelet tls assets using amazon kms\n",
+                    "        Before=kubelet.service\n",
+                    "\n",
+                    "        [Service]\n",
+                    "        Type=oneshot\n",
+                    "        RemainAfterExit=yes\n",
+                    "        ExecStart=/opt/bin/decrypt-tls-assets\n",
+                    "\n",
+                    "        [Install]\n",
+                    "        RequiredBy=kubelet.service\n",
+                    "\n",
+                    "write_files:\n",
+                    "  - path: /etc/kubernetes/cni/docker_opts_cni.env\n",
+                    "    content: |\n",
+                    "      DOCKER_OPT_BIP=\"\"\n",
+                    "      DOCKER_OPT_IPMASQ=\"\"\n",
+                    "\n",
+                    "  - path: /opt/bin/host-rkt\n",
+                    "    permissions: 0755\n",
+                    "    owner: root:root\n",
+                    "    content: |\n",
+                    "      #!/bin/sh\n",
+                    "      # This is bind mounted into the kubelet rootfs and all rkt shell-outs go\n",
+                    "      # through this rkt wrapper. It essentially enters the host mount namespace\n",
+                    "      # (which it is already in) only for the purpose of breaking out of the chroot\n",
+                    "      # before calling rkt. It makes things like rkt gc work and avoids bind mounting\n",
+                    "      # in certain rkt filesystem dependancies into the kubelet rootfs. This can\n",
+                    "      # eventually be obviated when the write-api stuff gets upstream and rkt gc is\n",
+                    "      # through the api-server. Related issue:\n",
+                    "      # https://github.com/coreos/rkt/issues/2878\n",
+                    "      exec nsenter -m -u -i -n -p -t 1 -- /usr/bin/rkt \"$@\"\n",
+                    "\n",
+                    "  - path: /etc/kubernetes/ssl/worker.pem.enc\n",
+                    "    encoding: gzip+base64\n",
+                    "    content: H4sIAAAJbogA/wAUBev6AQECAHhfKBsgImwnXUxxvgu2wDKJzqfxJolC8Lko7USTah5mEgAABOswggTnBgkqhkiG9w0BBwagggTYMIIE1AIBADCCBM0GCSqGSIb3DQEHATAeBglghkgBZQMEAS4wEQQMk9nSXcET1IBfu+i2AgEQgIIEnjrYfCK8a3kDb8W4H3Hxo8RvsWy3zIQ6k+9z86fyThycuwYoppXRYKTKiHAfpAlFgsWvxrCILA4IW1pC2ONovLuP7iHu40Pq+xg7b493Nn1nSoTY1hCLFAzqVAxMJNmePMqpKqoPWMN6tuuZMqAV1rdjKy/DIn2eOe8UNIT+lndhXUieMFKmEh+PWzXQXMFgBlsVYxorhJ2ZjmDdDTw5dgFvrFZ0WfptbPjuI4TjkDZiuZnf6G2ulITB+Kv5B6b2n85bFMMxw1kWDlLQ1vCx+bTEvUbkjtClOfaM5cZWQcomR3eeVf4IsSt0aEYmEvmO3PXrJwtrbwBGgOMDQcigqqzsP1lMk1ThBzIygV8ScuvPWAIkXe9gawspOK2YwddHhKxqKADlhzbqDlVOhZkeqfdc7nm4wQSZIjoXbmEdoTlb+1NxRbvGgAzO8C8bvDXHPN6u08K9Qm7oaP9Rsya94T48cnI6EvxgO0k4c6iywF7Oh5vqwLVOiLldKWSfcpbjd1nM/ZH5dusrq4IzHa7/VTvt7EJLKeg3E/3vMcdfl3KgZDnzVRlshn72ibQzAw8N0oReV5X591ltw8/a6LKOUG36X1Y2ev/ErTENFgXkukYN+y7K19xExxkv9byVtXtF8twjnUwoWcMAQOekrw+0i7TQrEo7RXtXelDn3COWo2lrbgnRf1ZJ+r4oqJfE9ucVtKOmCamCcrNpKaPoEywrml8A0GVUvbDBlzTMm7MwuvFG77Toq1t9fuIJVAKHuqGep6heEF5GHKywRRJ+Q5iDSkdNMUDPvcHpGhCAHLme/eYYVem2b9tO4x8aipv2PDlXJLP2+Idj1SMyQXne1fyJLp85U4VcY0nnEde/0Y/jwrUaWgysUPSOrLN+iGvkEDamtcGDcQOkQzdjrsc0glG4oOtFwo44bAoorcD9QOzHWDq0ZULUxAwMXMKF/wH/A00iQt5ZCPgSwueQBxfT6jD05AvSds2gxlJIjojantp124exRk2ZSrqBYT1l8L0/+TnJbNRl9IeIGiDodYLrHn+42m2oOaX7xqv+KKitWfexDlboMFn8eC3AjfHGJdq0KPDbOzVMp+nw6bllobaB3T7G7trHKX8Tlw63UGKW3f2qmxB34KRlafshkUnay7lEnyEaksAZIZ8ToLAZFxYZY306ffcLdl+DiTIYYZeGG3LIWmJLi418S2rvvckzOD1HiNDlJloTZiVki0va5Hl4+jcVNQiBhUKckdtz7pEBvL51/W7c53QBRyBbpmbYnodW6gXzlOQKScoLDtwJVPR3Txm/6jGZUTxfZKBifJPiQhCbyI4gPvL/7nSM1MDvgMlPzPJP3yVetbXSU20O+wibrED9DPW8l26w+HnWWdRfHNGlp+BtYXLj7eq45ZjsQsF1dQs9nNqbaYwAoNKy0Q30A74Ags5H5Q1jpARtLSLyb24eDV3UWLzKZI4uRGkwEyBt42MENPevtOHGTQ56JGc8J2ujI45UulhPwZpvviqOxdeWPiE1Vxu+51YIGape/Tjxw4E5A6E0yMjtYAK+mBKoiL2kTWknhC1u+9ZEEzgjG0h1sgEAAP//E2PmBRQFAAA=\n",
+                    "\n",
+                    "  - path: /etc/kubernetes/ssl/worker-key.pem.enc\n",
+                    "    encoding: gzip+base64\n",
+                    "    content: H4sIAAAJbogA/wAcB+P4AQECAHhfKBsgImwnXUxxvgu2wDKJzqfxJolC8Lko7USTah5mEgAABvMwggbvBgkqhkiG9w0BBwagggbgMIIG3AIBADCCBtUGCSqGSIb3DQEHATAeBglghkgBZQMEAS4wEQQM9QlQW91l0Nrs/IyAAgEQgIIGpj+CseXuYFeL91oxHwpKtDc1EbnElS/oZQdvTbokHtIwGUIvwMQfj7FWxKV5Ba98gAyg3b+Un3KsZIPvOWYgx6UugmmoSGitXl6J4CBMPF2ZrqqycyzU7w5m5GF9DgJnVK0aN3Upku7QGWW0P6GVBhZug40XE3UQFPeEz9NHvNMjvwTCgrxsC9cSCx4UY8E/BN5ix0agrCFJ30o+SO05LEissKmMNj3XLnl4iTwlMFGnxSR2IZ05lHV45O8XUMDcrhaq5ROz1UrapNuzvJBh8CBjSX4iQF1jKQuRTeEG/YQow7DcNbWjjjKVAFZZq2pq0c2XDz14IGsl3uuaF6LB2BO6MxtG/C7Wq02V+GtJuMROwK2S/pOH5cIsRceNHIXGO/xtGH+s79nz/TCCCVYijMCnXqr13M0/kOPgXDVMEj4UdWU8wXAC2xyDT1dE0a3nRGfzkXzoeDQpUgivAKL2avhu2EM79lGEXTaO8QYgZ+BjdIyEfhcBmvYqBrgXW4vGMIKWlii4IG29m1sspBLQ3HOpJ3euZudMlV1BQQgTR2F1g3sgs23qzf0Aj6VGYYOoWUdcCQ8n+CfYCWDzFT9kzytqpHS+L8d0cbN9IGi8dkPh54vXSXTIoPjkO/XZuzYU770qeRa5fiAi8w8jrqTwblVDCtfrDYL99QUhJ8iL/3l/2H3+KbAXaxI2nLp0BOFoOEgMzmguGk+5DKoEyQkIWvnZyKeR250JG15PifRLpFtJt7XGkYuQN7Yu4gIFlTkHDfzsvKxACBFmtfjPdw2pb9jPAPqhbtMUun6wAFL91cia78ffIPNk3d7CqR0oC9EDcp2ZN1st41duEsFyiRG/hTHlnE8j+StR6YEGWUI2ryk3u0MK1g7JbYR6GeDWFOD7WtveDFeAaz+rly/v59X6w8BctcVJoni6aRz4Vjs1tfQjBHktpLXut0EyqHZaiVdcZ4TVq0qJjnMdCzzFuRQU53kSFyfk/UrnUZndObH9BQQGvzKEKwIE3vB6aSqjoLfaOCW+x3mDvMa2ADErpO2cq5bwiOGNKIrej+v7qB9FQa7KdzFF7WEbIAoYeO/ZPw4COaHlKFtCFvAZRcW4lCG7Zu0QUhw8vY9MGofxSXy12SCL/2wwwYrOGjm4/aD950i3HQBtIuKmvaZF7eByfPFuDxhH8n6N1xXMUqGySzBFlJbqXNMwy8d+bma+AFJYI0vu3d2pHKDSdmrO2M9cCR+vCH9cd/v6PY3xFtkZAMb81RgDaCOKS17KNy22KWlRoqmjtm9LzOGfwhZOKLqm8jjXrqi44Ucvq1d8sxnitCV9pCLYMikOoOYcZ5ILYrUGe8xKw4FcOnEDfXcmf5vWTA2YZISI1MBSRS9Zfz/zgg53Xf1BMrrNwJ31658y+ESk95fsPtQbUzo6vs3AmKyJzorueDDp9LKBf41+ZlDa7CuyT819sNg33eKoFtwscLJqVhi+vHecjK10x4dTgHOtswY1yhiLsVvPJxuMLPVYe+f841ahGJNKWXS5rQljKz17ebAlA4PtkYgkudQ110abiZmtF5MhEVW7NP3rn4Z+nmRUsyLaDSREQg8pqOm8mMU+Qjz1Aem6UdQpD6mQasekA/ITvJu1Hws+XWjC5UgYSwnYmq7u8pvwKkCyDiW7xQNCokcFuuIk4ckKhq1Y7jcJZxjV2oefGj/4aq/zpY38sM60eHWTB1bJqEmmn+XeAh3pJMB4dDpNyQPaOxmlb+wMk5GzhPKPt7quP8AVrW9rorhWBHNMOXOFlHD//mt5UfQhkFVLnMqHVQp5NLRu2wha/X7vSJK8z5Fz6TuSs+9wm9CFRBIwO/yYrvCdwKDeavmiE4b6EzO3dVlMr3qIcF4sluRvhiTW0VI5MR89wojCSEiyZPUDklKicWdrZ3d+xJSTVrc4jr55axQE8gH3Uak64kD7/lLWg0jV2eibz/IHEjPYbWDX3vh99KzB7ct1v23Mb4F2lG9j/wzsA4jc8TAcBVI/0F8OORA2E7KmjF1cm3b8/dLBFjm/ZnYYZlj0x1kEXUHLMG3IXOXBNZkFl+SPjx0gm+KZNGEIggW5vT0rLJWsD2UpvFx9O4nqAFQY/dc4yn4Bg81RO4aRZtTcruhmFdSDfR6QPSTTeNvZOYddaf7W2wZ6zP55IJvn3g9e6qS2/ejFVPQki6R1mDndSXg5/IJryfBI2Bsws8YZDGerrKUcGKHaf8HFhebFIcCKTTFWYsnWBn89FaF01O73FawJasjvr/euvAFaxxQBAAD//83ft/gcBwAA\n",
+                    "\n",
+                    "  - path: /etc/kubernetes/ssl/ca.pem.enc\n",
+                    "    encoding: gzip+base64\n",
+                    "    content: H4sIAAAJbogA/wC/BED7AQECAHhfKBsgImwnXUxxvgu2wDKJzqfxJolC8Lko7USTah5mEgAABJYwggSSBgkqhkiG9w0BBwagggSDMIIEfwIBADCCBHgGCSqGSIb3DQEHATAeBglghkgBZQMEAS4wEQQMzTc2LDa88j7Jrek8AgEQgIIESf0kabT2aYhz48t8N1WWgZ3LD3+UeteVaxNv3vyuHR0WCOgph5l7dUM/xrfYEMjhRQKs2S8fFP6xax+yDIeRJ75N3PRcGe452loZeZCFO8CL0/llktTfA16pPGByjNXJrly5Y7/3BOT8LE0iDwFYtdD35D588ohZRmTxngHBVIT2xyseep8UO/ETn6skyL/i9Qy85X4IE987MT2KuS1wCTXSlaWGOWDtPxZhX65cU037IXfBH5Il8Mkt2AcLlibXRfTp6hPNrz+afz1eyEOAgE28CNAQz1g8Jd56fH1SNfRqBwYWDlDLEiSNSynd9uLgHdxKqcq1xYc4Vsz6arLXEIxjcC9hxvUmx0kOgcO5oCnTnXoO6bOXZ5P2FSM6f30Sp9Ge5OWpiL00OTchtm6JWWVhUu/QUMpcAHD59PTYFzdq81VlS/M1dUZyLE3QonsetQeafjZujh7qfoJbfyGcGHhqeofFtEnGj+YqaQiefTtaT84U6ppxg5BvOQ7qwyM2voSq4onaVYzvSM61yZZWmRYJROHhUuA7h4IpU0tTCl06zLbTeTOBT6Ve46PGdcBeqnVPOsC1GTT+1xD4HUTYf+FdNaj/xJSDrJftOAPUZHY8VGH/qSbyh9GPTd5sfoS84ibsRE+01bMy57Ht22GRkcFbsH+KKBs+sGCMMa0PYtKv4qQB8lL1exAebWFbN3wxZ7t727g7SiYdCj4/T5EdbeJeEWvhZgmyjB+CH+I4UIMnZ8yQQwXL796/T24+wIFwwpKHMir1MndzdsjO+nyooVkiwpJzuupB94fhplfniijPOmmrQE+VF8Q5YGq5ZuZIxGlY6jOV9YK3cT/yUny4gM8fPaD8sTYXwOn2PMgK6Ye95R0CGsnzbq1PWTDEaqJ0kparqEPpLHj6rT3XtpnlPs6EIodfk+2JSzJLELMd7+eZHzXg6gdieDFLOevqI+R1V11yqbNust/M8o3tFWKc38dGzo+QAUsC4ZElBktnaNiXEUC62pRoXuVfYw5b4QTdlhd98DCRRevN96JJDVxnMgop4oKRIlnUvKHbX/HA4P1LN8Zr08jel+B2fLYbonN75ohno++Z20w/nzQecJVBnlWYkqsnAwuGaS7FUDcoVB5qv45QxLzwolXEItypJ9e+1JELbtz3Rvpr3kQoJQN26s06diasgJRVMaDin+e8U4sdIbn/N37vH6iTnhnVL3sc2QT4CCJm6WrJoDmXkNp+/J83Jq1LSxgXdXozwHzALePCQ8h/+ltS6RegbhDUdauIKAqN0/VQ77bmKPAUn7g1HJE/vbNNfc2hlNEoPdvzVWn9EELSZrzbjgidePO8QdAdQe1FYN2SCKSbZQ/P176bgBjv+i+CtFMddybnA8qKiiConGunSdQnqWm5UZRP8yrb8JMEjyerLHKYlhpr/dGX2nVl1VoqQIMdeGGZsSxFHENMid0366+PYurPAQAA///rzmAgvwQAAA==\n",
+                    "\n",
+                    "  - path: /opt/bin/decrypt-tls-assets\n",
+                    "    owner: root:root\n",
+                    "    permissions: 0700\n",
+                    "    content: |\n",
+                    "      #!/bin/bash -e\n",
+                    "\n",
+                    "      for encKey in $(find /etc/kubernetes/ssl/*.pem.enc);do\n",
+                    "        sudo rkt run \\\n",
+                    "        --volume=ssl,kind=host,source=/etc/kubernetes/ssl,readOnly=false \\\n",
+                    "        --mount=volume=ssl,target=/etc/kubernetes/ssl \\\n",
+                    "        --uuid-file-save=/var/run/coreos/decrypt-tls-assets.uuid \\\n",
+                    "        --dns=8.8.8.8 --dns=8.8.4.4 \\\n",
+                    "        --net=host \\\n",
+                    "        --trust-keys-from-https \\\n",
+                    "        quay.io/coreos/awscli --exec=/bin/bash -- \\\n",
+                    "          -c \\\n",
+                    "          \"/usr/bin/aws \\\n",
+                    "            --region ap-southeast-2 kms decrypt \\\n",
+                    "            --ciphertext-blob fileb://$encKey \\\n",
+                    "            --output text \\\n",
+                    "            --query Plaintext \\\n",
+                    "            > $encKey.b64\"\n",
+                    "\n",
+                    "        base64 --decode < $encKey.b64 > ${encKey%.enc}\n",
+                    "        sudo rkt rm --uuid-file=/var/run/coreos/decrypt-tls-assets.uuid\n",
+                    "      done\n",
+                    "\n",
+                    "  - path: /etc/kubernetes/manifests/kube-proxy.yaml\n",
+                    "    content: |\n",
+                    "        apiVersion: v1\n",
+                    "        kind: Pod\n",
+                    "        metadata:\n",
+                    "          name: kube-proxy\n",
+                    "          namespace: kube-system\n",
+                    "          annotations:\n",
+                    "            rkt.alpha.kubernetes.io/stage1-name-override: coreos.com/rkt/stage1-fly\n",
+                    "        spec:\n",
+                    "          hostNetwork: true\n",
+                    "          containers:\n",
+                    "          - name: kube-proxy\n",
+                    "            image: quay.io/coreos/hyperkube:v1.4.3_coreos.0\n",
+                    "            command:\n",
+                    "            - /hyperkube\n",
+                    "            - proxy\n",
+                    "            - --master=https://10.0.0.50:443\n",
+                    "            - --kubeconfig=/etc/kubernetes/worker-kubeconfig.yaml\n",
+                    "            securityContext:\n",
+                    "              privileged: true\n",
+                    "            volumeMounts:\n",
+                    "              - mountPath: /etc/ssl/certs\n",
+                    "                name: \"ssl-certs\"\n",
+                    "              - mountPath: /etc/kubernetes/worker-kubeconfig.yaml\n",
+                    "                name: \"kubeconfig\"\n",
+                    "                readOnly: true\n",
+                    "              - mountPath: /etc/kubernetes/ssl\n",
+                    "                name: \"etc-kube-ssl\"\n",
+                    "                readOnly: true\n",
+                    "              - mountPath: /var/run/dbus\n",
+                    "                name: dbus\n",
+                    "                readOnly: false\n",
+                    "          volumes:\n",
+                    "            - name: \"ssl-certs\"\n",
+                    "              hostPath:\n",
+                    "                path: \"/usr/share/ca-certificates\"\n",
+                    "            - name: \"kubeconfig\"\n",
+                    "              hostPath:\n",
+                    "                path: \"/etc/kubernetes/worker-kubeconfig.yaml\"\n",
+                    "            - name: \"etc-kube-ssl\"\n",
+                    "              hostPath:\n",
+                    "                path: \"/etc/kubernetes/ssl\"\n",
+                    "            - hostPath:\n",
+                    "                path: /var/run/dbus\n",
+                    "              name: dbus\n",
+                    "\n",
+                    "  - path: /etc/kubernetes/worker-kubeconfig.yaml\n",
+                    "    content: |\n",
+                    "        apiVersion: v1\n",
+                    "        kind: Config\n",
+                    "        clusters:\n",
+                    "        - name: local\n",
+                    "          cluster:\n",
+                    "            certificate-authority: /etc/kubernetes/ssl/ca.pem\n",
+                    "        users:\n",
+                    "        - name: kubelet\n",
+                    "          user:\n",
+                    "            client-certificate: /etc/kubernetes/ssl/worker.pem\n",
+                    "            client-key: /etc/kubernetes/ssl/worker-key.pem\n",
+                    "        contexts:\n",
+                    "        - context:\n",
+                    "            cluster: local\n",
+                    "            user: kubelet\n",
+                    "          name: kubelet-context\n",
+                    "        current-context: kubelet-context\n",
+                    "\n",
+                    "\n",
+                    "  - path: /etc/kubernetes/cni/net.d/10-flannel.conf\n",
+                    "    content: |\n",
+                    "        {\n",
+                    "            \"name\": \"podnet\",\n",
+                    "            \"type\": \"flannel\",\n",
+                    "            \"delegate\": {\n",
+                    "                \"isDefaultGateway\": true\n",
+                    "            }\n",
+                    "        }\n"
+                ]] } }
+            },
+            "Type": "AWS::AutoScaling::LaunchConfiguration"
+        },
+        "SecurityGroupController": {
+            "Properties": {
+                "GroupDescription": {
+                    "Ref": "AWS::StackName"
+                },
+                "SecurityGroupEgress": [
+                    {
+                        "CidrIp": "0.0.0.0/0",
+                        "FromPort": -1,
+                        "IpProtocol": "icmp",
+                        "ToPort": -1
+                    },
+                    {
+                        "CidrIp": "0.0.0.0/0",
+                        "FromPort": 0,
+                        "IpProtocol": "tcp",
+                        "ToPort": 65535
+                    },
+                    {
+                        "CidrIp": "0.0.0.0/0",
+                        "FromPort": 0,
+                        "IpProtocol": "udp",
+                        "ToPort": 65535
+                    }
+                ],
+                "SecurityGroupIngress": [
+                    {
+                        "CidrIp": "0.0.0.0/0",
+                        "FromPort": -1,
+                        "IpProtocol": "icmp",
+                        "ToPort": -1
+                    },
+                    {
+                        "CidrIp": "0.0.0.0/0",
+                        "FromPort": 22,
+                        "IpProtocol": "tcp",
+                        "ToPort": 22
+                    },
+                    {
+                        "CidrIp": "0.0.0.0/0",
+                        "FromPort": 443,
+                        "IpProtocol": "tcp",
+                        "ToPort": 443
+                    }
+                ],
+                "Tags": [
+                    {
+                        "Key": "KubernetesCluster",
+                        "Value": "my-cluster"
+                    }
+                ],
+                "VpcId": {
+                    "Ref": "VpcId"
+                }
+            },
+            "Type": "AWS::EC2::SecurityGroup"
+        },
+        "SecurityGroupControllerIngressFromWorkerToEtcd": {
+            "Properties": {
+                "FromPort": 2379,
+                "GroupId": {
+                    "Ref": "SecurityGroupController"
+                },
+                "IpProtocol": "tcp",
+                "SourceSecurityGroupId": {
+                    "Ref": "SecurityGroupWorker"
+                },
+                "ToPort": 2379
+            },
+            "Type": "AWS::EC2::SecurityGroupIngress"
+        },
+        "SecurityGroupWorker": {
+            "Properties": {
+                "GroupDescription": {
+                    "Ref": "AWS::StackName"
+                },
+                "SecurityGroupEgress": [
+                    {
+                        "CidrIp": "0.0.0.0/0",
+                        "FromPort": -1,
+                        "IpProtocol": "icmp",
+                        "ToPort": -1
+                    },
+                    {
+                        "CidrIp": "0.0.0.0/0",
+                        "FromPort": 0,
+                        "IpProtocol": "tcp",
+                        "ToPort": 65535
+                    },
+                    {
+                        "CidrIp": "0.0.0.0/0",
+                        "FromPort": 0,
+                        "IpProtocol": "udp",
+                        "ToPort": 65535
+                    }
+                ],
+                "SecurityGroupIngress": [
+                    {
+                        "CidrIp": "0.0.0.0/0",
+                        "FromPort": -1,
+                        "IpProtocol": "icmp",
+                        "ToPort": -1
+                    },
+                    {
+                        "CidrIp": "0.0.0.0/0",
+                        "FromPort": 22,
+                        "IpProtocol": "tcp",
+                        "ToPort": 22
+                    }
+                ],
+                "Tags": [
+                    {
+                        "Key": "KubernetesCluster",
+                        "Value": "my-cluster"
+                    }
+                ],
+                "VpcId": {
+                    "Ref": "VpcId"
+                }
+            },
+            "Type": "AWS::EC2::SecurityGroup"
+        },
+        "SecurityGroupWorkerIngressFromControllerToFlannel": {
+            "Properties": {
+                "FromPort": 8472,
+                "GroupId": {
+                    "Ref": "SecurityGroupWorker"
+                },
+                "IpProtocol": "udp",
+                "SourceSecurityGroupId": {
+                    "Ref": "SecurityGroupController"
+                },
+                "ToPort": 8472
+            },
+            "Type": "AWS::EC2::SecurityGroupIngress"
+        },
+        "SecurityGroupWorkerIngressFromFlannelToController": {
+            "Properties": {
+                "FromPort": 8472,
+                "GroupId": {
+                    "Ref": "SecurityGroupController"
+                },
+                "IpProtocol": "udp",
+                "SourceSecurityGroupId": {
+                    "Ref": "SecurityGroupWorker"
+                },
+                "ToPort": 8472
+            },
+            "Type": "AWS::EC2::SecurityGroupIngress"
+        },
+        "SecurityGroupWorkerIngressFromControllerToKubelet": {
+            "Properties": {
+                "FromPort": 10250,
+                "GroupId": {
+                    "Ref": "SecurityGroupWorker"
+                },
+                "IpProtocol": "tcp",
+                "SourceSecurityGroupId": {
+                    "Ref": "SecurityGroupController"
+                },
+                "ToPort": 10250
+            },
+            "Type": "AWS::EC2::SecurityGroupIngress"
+        },
+        "SecurityGroupWorkerIngressFromControllerTocAdvisor": {
+            "Properties": {
+                "FromPort": 4194,
+                "GroupId": {
+                    "Ref": "SecurityGroupWorker"
+                },
+                "IpProtocol": "tcp",
+                "SourceSecurityGroupId": {
+                    "Ref": "SecurityGroupController"
+                },
+                "ToPort": 4194
+            },
+            "Type": "AWS::EC2::SecurityGroupIngress"
+        },
+        "SecurityGroupWorkerIngressFromWorkerToFlannel": {
+            "Properties": {
+                "FromPort": 8472,
+                "GroupId": {
+                    "Ref": "SecurityGroupWorker"
+                },
+                "IpProtocol": "udp",
+                "SourceSecurityGroupId": {
+                    "Ref": "SecurityGroupWorker"
+                },
+                "ToPort": 8472
+            },
+            "Type": "AWS::EC2::SecurityGroupIngress"
+        },
+        "SecurityGroupWorkerIngressFromWorkerToWorkerKubeletReadOnly": {
+            "Properties": {
+                "FromPort": 10255,
+                "GroupId": {
+                    "Ref": "SecurityGroupWorker"
+                },
+                "IpProtocol": "tcp",
+                "SourceSecurityGroupId": {
+                    "Ref": "SecurityGroupWorker"
+                },
+                "ToPort": 10255
+            },
+            "Type": "AWS::EC2::SecurityGroupIngress"
+        },
+        "SecurityGroupWorkerIngressFromWorkerToControllerKubeletReadOnly": {
+            "Type": "AWS::EC2::SecurityGroupIngress",
+            "Properties": {
+                "FromPort": 10255,
+                "GroupId": {
+                    "Ref": "SecurityGroupController"
+                },
+                "IpProtocol": "tcp",
+                "SourceSecurityGroupId": {
+                    "Ref": "SecurityGroupWorker"
+                },
+                "ToPort": 10255
+            }
+        }
+    }
+}
