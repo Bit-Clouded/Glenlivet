@@ -1,0 +1,398 @@
+{
+	"AWSTemplateFormatVersion": "2010-09-09",
+
+	"Description": "A template to launch phabricator with or withour snapshot.",
+
+	"Parameters": {
+		"KeyPairName": {
+			"Description": "Name of an existing EC2 KeyPair to enable SSH access to the instances",
+			"Type": "AWS::EC2::KeyPair::KeyName"
+		},
+
+		"IsPublic": {
+			"Type" : "String",
+			"Default" : "false",
+			"AllowedValues" : ["true", "false"],
+			"Description" : "Whether the site has a public ip address and is publicly available."
+		},
+		"RepoStorageQuota" : {
+			"Description": "Disk size of MariaDB server.",
+			"Default": "20",
+			"Type": "Number"
+		},
+		"DbStorageQuota" : {
+			"Description": "Disk size of MariaDB server.",
+			"Default": "20",
+			"Type": "Number"
+		},
+		"DbInstanceTyp" : {
+			"Description" : "MariaDB server instance type",
+			"Type" : "String",
+			"Default" : "db.t2.micro",
+			"AllowedValues": [
+				"db.t2.micro",
+				"db.t2.small",
+				"db.t2.medium",
+				"db.t2.large",
+				"db.m3.medium",
+				"db.m4.large",
+				"db.m4.xlarge",
+				"db.m4.2xlarge",
+				"db.r3.large",
+				"db.r3.xlarge",
+				"db.r3.2xlarge",
+				"db.r3.4xlarge",
+				"db.r3.8xlarge"
+			],
+			"ConstraintDescription" : "must be a valid RDS instance type."
+		},
+		"DbUsername" : {
+			"Description" : "MariaDB server username",
+			"Type" : "String",
+			"Default" : "sqladmin"
+		},
+		"DbPassword" : {
+			"Description" : "MariaDB server password",
+			"Type" : "String",
+			"NoEcho" : "True"
+		},
+		"DbSnapshot" : {
+			"Description" : "MariaDB server snapshot",
+			"Type" : "String",
+			"Default" : ""
+		},
+		"DbSubnetGroup" : {
+			"Description" : "Subnet Group for hosting the MariaDB server. [private-subnets.resources.RdsSubnetGroup]",
+			"Type" : "String"
+		},
+		"Hostname" : {
+			"Description" : "Hostname to access phabricator. e.g. phabricator.your-domain.com",
+			"Type" : "String"
+		},
+
+		"RepoDiskSnapshot" : {
+			"Description" : "Snapshot of repository disk",
+			"Type" : "String",
+			"Default" : ""
+		},
+
+		"WebInstanceTyp" : {
+			"Description" : "Phabricator server instance type",
+			"Type" : "String",
+			"Default" : "t2.micro",
+			"AllowedValues": [
+				"t2.micro",
+				"t2.small",
+				"t2.medium",
+				"t2.large",
+				"m3.medium",
+				"m4.large",
+				"m4.xlarge",
+				"m4.2xlarge"
+			],
+			"ConstraintDescription" : "must be a valid EC2 instance type."
+		},
+		"PhabTimezone" : {
+			"Description": "Timezone of the web server.",
+			"Default": "Australia/Sydney",
+			"Type": "String"
+		},
+		"PhabMailAddress" : {
+			"Description": "Phabricator mail address.",
+			"Type": "String"
+		},
+		"UbuntuAmi": {
+			"Description": "AMI to use. Note Ubuntu is prefered.",
+			"Type": "AWS::EC2::Image::Id"
+		},
+		"PvtSubnet1Id": {
+			"Description" : "Subnet to run HA web cluster on. [nat-subnets.resources.Subnet1]",
+			"Type": "String",
+			"Default" : ""
+		},
+		"PublicSubnet1Id": {
+			"Description" : "Subnet to run HA web cluster on. [public-in-out-subnets.resources.Subnet1]",
+			"Type": "AWS::EC2::Subnet::Id"
+		},
+		"VpcId": {
+			"Description" : "VPCid associated with the subnets. [public-in-out-subnets.parameters.VpcId]",
+			"Type": "AWS::EC2::VPC::Id"
+		},
+
+		
+		"PhabricatorContainer": {
+			"Description": "Phabricator container name with tag.",
+			"Default": "sleepersmith/aws-lego-phabricator:v0.2.1",
+			"Type": "String"
+		},
+
+		"SesRegion": {
+			"Description": "Region from which SES is sent.",
+			"Default": "us-east-1",
+			"Type": "String"
+		},
+
+		"CwlUbuntuAgentDocker": {
+			"Description": "Name of cluster. This is used for discovery.",
+			"Type": "String",
+			"Default": "sleepersmith/aws-lego-awscwlagent-ubuntu:v0.2.0"
+		},
+		"CwlLinuxParams" : {
+			"Description": "Environment variables for syslog and authlog cwl group names [logs-store.outputs.LxDockerLogParams]",
+			"Type": "String"
+		},
+		"CwlDockerParams" : {
+			"Description": "Docker log driver params [logs-store.outputs.DockerCwlParams]",
+			"Type": "String"
+		},
+		"CwlPolicy" : {
+			"Description": "Managed policy for linux logging. [logs-store.resources.LinuxLogPolicy]",
+			"Type": "String"
+		}
+	},
+
+	"Conditions" : {
+		"HasDbSnapshot" : {"Fn::Not": [{"Fn::Equals": [
+			{"Ref": "DbSnapshot"}, ""
+		]}]},
+		"HasRepoSnapshot" : {"Fn::Not": [{"Fn::Equals": [
+			{"Ref": "RepoDiskSnapshot"}, ""
+		]}]},
+		"IsPublicCond" : {"Fn::Equals": [
+			{"Ref": "IsPublic"}, "true"
+		]}
+	},
+
+	"Resources" : {
+
+		"Database" : {
+			"Type" : "AWS::RDS::DBInstance",
+			"Properties" : {
+				"VPCSecurityGroups" : [
+					{"Ref": "DatabaseSg"}
+				],
+				"AllocatedStorage" : {"Ref": "DbStorageQuota"},
+				"DBInstanceClass" : {"Ref": "DbInstanceTyp"},
+				"DBParameterGroupName" : {"Ref": "DbParamGroup"},
+				"Engine" : "mariadb",
+				"EngineVersion" : "10.1.14",
+				"MasterUsername" : {"Ref": "DbUsername"},
+				"MasterUserPassword" : {"Ref": "DbPassword"},
+				"DBSnapshotIdentifier" : {"Fn::If": [
+					"HasDbSnapshot", {"Ref": "DbSnapshot"}, {"Ref" : "AWS::NoValue"}
+				]},
+				"DBSubnetGroupName" : {"Ref":"DbSubnetGroup"},
+				"Tags" : [{"Key": "Name", "Value" : "Phabricator Database"}],
+				"StorageType" : "gp2"
+			},
+			"DeletionPolicy" : "Snapshot"
+		}, 
+		"DbParamGroup": {
+			"Type": "AWS::RDS::DBParameterGroup",
+			"Properties": {
+				"Description": "CloudFormation Sample Database Parameter Group", 
+				"Family": "mariadb10.1",
+				"Parameters": {
+					"autocommit": "1", 
+					"general_log": "1", 
+					"old_passwords": "0",
+					"sql_mode": "STRICT_ALL_TABLES",
+					"ft_min_word_len": "3",
+					"max_allowed_packet": "100000000"
+				}
+			} 
+		},
+
+		"RepoDisk" : {
+			"Type":"AWS::EC2::Volume",
+			"Properties" : {
+				"AvailabilityZone" : {"Fn::Select":["0", { "Fn::GetAZs": "" }]},
+				"Size" : "5",
+				"SnapshotId" : {"Fn::If":["HasRepoSnapshot",
+					{"Ref":"RepoDiskSnapshot"},
+					{"Ref":"AWS::NoValue"}
+				]},
+				"Tags" : [],
+				"VolumeType" : "gp2"
+			},
+			"DeletionPolicy" : "Snapshot"
+		},
+
+		"PhabricatorServiceAccount" : {
+			"Type" : "AWS::IAM::User",
+			"Properties" : {
+				"Path" : "/devservices/phabricator/",
+				"Policies" : [
+				{
+					"PolicyName" : "ses",
+					"PolicyDocument" : {
+						"Version": "2012-10-17",
+						"Statement" : [
+						{
+							"Effect":"Allow",
+							"Action":["ses:SendEmail", "ses:SendRawEmail"],
+							"Resource":"*"
+						}]
+					}
+				}]
+			}
+		},
+		"PhabricatorServiceAccountKeySecret" : {
+			"Type": "AWS::IAM::AccessKey",
+			"Properties": {
+				"Status": "Active",
+				"UserName": {"Ref":"PhabricatorServiceAccount"}
+			}
+		},
+
+		"PhabricatorWeb" : {
+			"Type" : "AWS::EC2::Instance",
+			"DependsOn" : "Database",
+			"Properties": {
+				"IamInstanceProfile" : {"Ref":"WebServersInstanceProfile"},
+				"InstanceType" : { "Ref" : "WebInstanceTyp" },
+				"KeyName" : { "Ref" : "KeyPairName" },
+				"ImageId" : { "Ref" : "UbuntuAmi" },
+				"NetworkInterfaces" : [
+				{
+					"AssociatePublicIpAddress" : { "Ref" : "IsPublic" },
+					"SubnetId" : {"Fn::If":["IsPublicCond",
+						{ "Ref": "PublicSubnet1Id" },
+						{ "Ref": "PvtSubnet1Id" }
+					]},
+					"DeviceIndex" : "0",
+					"GroupSet" : [
+						{"Ref":"WebServerSg"}
+					]
+				}],
+				"UserData" : { "Fn::Base64" : { "Fn::Join" : ["", [
+					"#!/bin/bash\n",
+                    "ifconfig eth0 mtu 1500\n",
+                    "wget -qO- https://get.docker.com/ | sh\n",
+
+					{"Fn::If":["HasRepoSnapshot","", "mkfs -t ext4 /dev/xvdb\n"]},
+					"umount /mnt/\n",
+					"mkdir /mnt/xvdb\n",
+					"cp /etc/fstab /etc/fstab.bak && rm /etc/fstab\n",
+					"cat /etc/fstab.bak | grep -v ^/dev/xvdb | tee /etc/fstab\n",
+					"echo -e \"/dev/xvdb\\t/mnt/xvdb\\tauto\\tdefaults\\t0\\t2\" >> /etc/fstab\n",
+					"mount -a\n",
+					{"Fn::If":["HasRepoSnapshot","", {"Fn::Join":["",[
+						"mkdir /mnt/xvdb/ssl/ && cd /mnt/xvdb/ssl\n",
+						"openssl req -nodes -x509 -newkey rsa:4096 -days 35600 -sha256 ",
+							"-keyout private.key -out certificate.crt -subj ",
+							"\"/C=AU/ST=NSW/L=Sydney/O=BitClouded/CN=", {"Ref":"Hostname"}, "\"\n"
+					]]}]},
+					"chown -R 1000 /mnt/xvdb\n",
+
+					"ECID=$(curl http://instance-data/latest/meta-data/instance-id)\n",
+					"CWLA=cwlagent_$ECID\n",
+					"docker run -d --restart=always ",
+						"--name $CWLA --log-opt awslogs-stream=$CWLA ",
+						"-v /var/log:/var/log-host:ro ",
+						{"Ref":"CwlLinuxParams"}," ",
+						{"Ref":"CwlDockerParams"}," ",
+						{"Ref":"CwlUbuntuAgentDocker"},"\n",
+					"docker run -d --restart=always --name cwlcron ",
+						{"Ref":"CwlUbuntuAgentDocker"}," cron\n",
+
+					"PHABRICATOR=phabricator_$ECID\n",
+                    "docker run -d --restart=always -p 80:80 -p 443:443 -v /mnt/xvdb:/home/local/storage ",
+						"--name $PHABRICATOR --log-opt awslogs-stream=$PHABRICATOR ",
+						{"Ref":"CwlLinuxParams"},
+						" -e PHAB_HOSTNAME=", {"Ref":"Hostname"},
+						" -e DB_ENDPOINT=", {"Fn::GetAtt" : [ "Database", "Endpoint.Address"]},
+						" -e DB_USERNAME=", {"Ref":"DbUsername"},
+						" -e DB_PASSWORD=", {"Ref":"DbPassword"},
+						" -e MAIL_ADDRESS=", {"Ref":"PhabMailAddress"},
+						" -e IAM_KEY=", {"Ref":"PhabricatorServiceAccountKeySecret"},
+						" -e IAM_SECRET=", { "Fn::GetAtt": ["PhabricatorServiceAccountKeySecret", "SecretAccessKey"] },
+						" -e SES_REGION=", {"Ref":"SesRegion"},
+						" -e PHAB_TIMEZONE=", {"Ref":"PhabTimezone"}, " ",
+                        {"Ref":"PhabricatorContainer"}, "\n"
+				]]}},
+				"BlockDeviceMappings" : [
+					{
+						"DeviceName" : "/dev/sda1",
+						"Ebs" : { "VolumeSize" : "30", "VolumeType" : "gp2" }
+					}
+				],
+				"Volumes" : [
+					{"Device": "xvdb", "VolumeId" : {"Ref": "RepoDisk"}}
+				],
+				"Tags" : [{"Key": "Name", "Value" : "Phabricator"}]
+			}
+		},
+
+		"DatabaseSg" : {
+			"Type" : "AWS::EC2::SecurityGroup",
+			"Properties" : {
+				"GroupDescription" : "Phabricator rds mariadb server security group.",
+				"VpcId" : { "Ref" : "VpcId"},
+				"Tags": [{"Key": "Name", "Value" : "Phabricator Database"}]
+			}
+		},
+		"WebServerSg" : {
+			"Type" : "AWS::EC2::SecurityGroup",
+			"Properties" : {
+				"GroupDescription" : "Phabricator web server security group.",
+				"SecurityGroupEgress" : [
+					{ "IpProtocol" : "6" ,  "CidrIp": "0.0.0.0/0", "FromPort" : "80", "ToPort" : "80"  },
+					{ "IpProtocol" : "6" ,  "CidrIp": "0.0.0.0/0", "FromPort" : "443", "ToPort" : "443"  }
+				],
+				"VpcId" : { "Ref" : "VpcId"},
+				"Tags": [{"Key": "Name", "Value" : "Phabricator Web Server"}]
+			}
+		},
+		"WebToDatabaseEgress" : {
+			"Type": "AWS::EC2::SecurityGroupEgress",
+			"Properties":{
+				"IpProtocol": "tcp",
+				"FromPort": "3306",
+				"ToPort": "3306",
+				"GroupId": { "Ref" : "WebServerSg" },
+				"DestinationSecurityGroupId": { "Ref" : "DatabaseSg" }
+			}
+		},
+		"WebToDatabaseIngress" : {
+			"Type" : "AWS::EC2::SecurityGroupIngress",
+			"Properties" : {
+				"IpProtocol" : "tcp",
+				"ToPort" : "3306",
+				"FromPort" : "3306",
+				"GroupId" : { "Ref" : "DatabaseSg" },
+				"SourceSecurityGroupId" : { "Ref" : "WebServerSg" }
+			}
+		},
+
+		"WebServersRole" : {
+			"Type": "AWS::IAM::Role",
+			"Properties": {
+				"AssumeRolePolicyDocument": {
+					"Version": "2012-10-17",
+					"Statement": [{
+						"Effect": "Allow",
+						"Principal": {
+							"Service": [ "ec2.amazonaws.com" ]
+						},
+						"Action": [ "sts:AssumeRole" ]
+					}]
+				},
+				"Path": "/devservices/phabricator/",
+				"ManagedPolicyArns" : [
+					{"Ref":"CwlPolicy"}
+				]
+			}
+		},
+		"WebServersInstanceProfile" : {
+			"Type": "AWS::IAM::InstanceProfile",
+			"Properties": {
+				"Path": "/devservices/phabricator/",
+				"Roles": [{"Ref" : "WebServersRole"}]
+			}
+		}
+	},
+
+	"Outputs" : {
+	}
+}
