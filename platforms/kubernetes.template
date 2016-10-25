@@ -224,6 +224,22 @@
             },
             "Type": "AWS::IAM::Role"
         },
+        "InstanceControllerNic": {
+            "Type" : "AWS::EC2::NetworkInterface",
+            "Properties" : {
+                "Description" : "",
+                        "PrivateIpAddress": "10.0.0.50",
+                "GroupSet" : [
+                    {
+                        "Ref": "SecurityGroupController"
+                    }
+                ],
+                "SubnetId" : {
+                    "Ref": "ServerSubnet1Id"
+                },
+                "Tags" : []
+            }
+        },
         "InstanceController": {
             "Properties": {
                 "AvailabilityZone": "ap-southeast-2a",
@@ -244,19 +260,7 @@
                 "KeyName": "none-prod",
                 "NetworkInterfaces": [
                     {
-                        "AssociatePublicIpAddress": false,
-                        "DeleteOnTermination": true,
-                        "DeviceIndex": "0",
-                        "GroupSet": [
-                            {
-                                "Ref": "SecurityGroupController"
-                            }
-                        ],
-                        "PrivateIpAddress": "10.0.0.50",
-                        "SubnetId": {
-                            "Ref": "ServerSubnet1Id"
-                        }
-                    }
+         "NetworkInterfaceId" : {"Ref" : "InstanceControllerNic"}, "DeviceIndex" : "0" }
                 ],
                 "Tags": [
                     {
@@ -275,7 +279,7 @@
 "    reboot-strategy: \"off\"\n",
 "  flannel:\n",
 "    interface: $private_ipv4\n",
-"    etcd_endpoints: http://10.0.0.50:2379\n",
+"    etcd_endpoints: http://", {"Fn::GetAtt":["InstanceControllerNic","PrimaryPrivateIpAddress"]}, ":2379\n",
 "  etcd2:\n",
 "    name: controller\n",
 "    advertise-client-urls: http://$private_ipv4:2379\n",
@@ -453,7 +457,7 @@
                     "    reboot-strategy: \"off\"\n",
                     "  flannel:\n",
                     "    interface: $private_ipv4\n",
-                    "    etcd_endpoints: http://10.0.0.50:2379\n",
+                    "    etcd_endpoints: http://", {"Fn::GetAtt":["InstanceControllerNic","PrimaryPrivateIpAddress"]}, ":2379\n",
                     "  units:\n",
                     "    - name: docker.service\n",
                     "      drop-ins:\n",
@@ -484,7 +488,7 @@
                     "        --mount volume=var-log,target=/var/log\"\n",
                     "        ExecStartPre=/usr/bin/mkdir -p /var/log/containers\n",
                     "        ExecStart=/usr/lib/coreos/kubelet-wrapper \\\n",
-                    "        --api-servers=https://10.0.0.50:443 \\\n",
+                    "        --api-servers=https://", {"Fn::GetAtt":["InstanceControllerNic","PrimaryPrivateIpAddress"]}, ":443 \\\n",
                     "        --cni-conf-dir=/etc/kubernetes/cni/net.d \\\n",
                     "        --network-plugin=cni \\\n",
                     "        --container-runtime=docker \\\n",
@@ -600,7 +604,7 @@
                     "            command:\n",
                     "            - /hyperkube\n",
                     "            - proxy\n",
-                    "            - --master=https://10.0.0.50:443\n",
+                    "            - --master=https://", {"Fn::GetAtt":["InstanceControllerNic","PrimaryPrivateIpAddress"]}, ":443\n",
                     "            - --kubeconfig=/etc/kubernetes/worker-kubeconfig.yaml\n",
                     "            securityContext:\n",
                     "              privileged: true\n",
