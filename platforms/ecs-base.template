@@ -1,0 +1,206 @@
+{
+    "AWSTemplateFormatVersion" : "2010-09-09",
+    "Parameters" : {
+        "KeyPairName": {
+            "Type": "AWS::EC2::KeyPair::KeyName",
+            "Description": "Name of an existing EC2 KeyPair to enable SSH access to the ECS instances."
+        },
+        "VpcId": {
+            "Description" : "VPCid associated with the subnets. [elb-subnets.parameters.VpcId]",
+            "Type": "AWS::EC2::VPC::Id"
+        },
+        "ElbSubnets" : {
+            "Description" : "VPCid associated with the subnets. [elb-subnets.outputs.ElbSubnets]",
+            "Type": "List<AWS::EC2::Subnet::Id>"
+        },
+        "ServerSubnets" : {
+            "Description" : "VPCid associated with the subnets. [elb-subnets.outputs.WebServerSubnets]",
+            "Type": "List<AWS::EC2::Subnet::Id>"
+        },
+		"ElbTargetSg" : {
+			"Description": "Elb Target Security Group. [vpc.resources.ElbTargetSecGroup]",
+            "Type": "String"
+		},
+
+        "DesiredCapacity": {
+            "Type": "Number",
+            "Default" : "1",
+            "Description": "Number of instances to launch in your ECS cluster."
+        },    
+        "InstanceType" : {
+			"Description" : "Phabricator server instance type",
+			"Type" : "String",
+			"Default" : "t2.micro",
+			"AllowedValues": [
+				"t2.micro",
+				"t2.small",
+				"t2.medium",
+				"t2.large",
+				"m3.medium",
+				"m4.large",
+				"m4.xlarge",
+				"m4.2xlarge"
+			],
+			"ConstraintDescription" : "Must be a valid EC2 instance type."
+		},
+        "EcsAmiId" : {
+            "Description" : "ECS Optimised AMI.",
+            "Type" : "AWS::EC2::Image::Id"
+        }
+    },
+
+    "Resources" : {
+        "EcsCluster": {
+            "Type": "AWS::ECS::Cluster"
+        },    
+        "EcsAutoScalingGroup" : {
+            "Type" : "AWS::AutoScaling::AutoScalingGroup",
+            "Properties" : {
+                "VPCZoneIdentifier" : { "Ref" : "ServerSubnets" },
+                "LaunchConfigurationName" : { "Ref" : "ContainerInstances" },
+                "MinSize" : "1",
+                "MaxSize" : "100",
+                "DesiredCapacity" : { "Ref" : "DesiredCapacity" }
+            },
+            "CreationPolicy" : {
+                "ResourceSignal" : { "Timeout" : "PT15M" }
+            },
+            "UpdatePolicy": {
+                "AutoScalingRollingUpdate": {
+                    "MinInstancesInService": "1",
+                    "MaxBatchSize": "1",
+                    "PauseTime" : "PT15M",
+                    "WaitOnResourceSignals": "true"
+                }
+            }
+        },    
+        "ContainerInstances": {
+            "Type": "AWS::AutoScaling::LaunchConfiguration",
+            "Metadata" : {
+                "AWS::CloudFormation::Init" : {
+                    "config" : {
+
+                        "commands" : {
+                            "01_add_instance_to_cluster" : {
+                                "command" : { "Fn::Join": [ "", [
+                                    "#!/bin/bash\n", "echo ECS_CLUSTER=", { "Ref": "EcsCluster" }, " >> /etc/ecs/ecs.config"
+                                ]]}
+                            }
+                        },
+
+                        "files" : {
+                            "/etc/cfn/cfn-hup.conf" : {
+                                "content" : { "Fn::Join" : ["", [
+                                    "[main]\n",
+                                    "stack=", { "Ref" : "AWS::StackId" }, "\n",
+                                    "region=", { "Ref" : "AWS::Region" }, "\n"
+                                ]]},
+                                "mode"    : "000400",
+                                "owner"   : "root",
+                                "group"   : "root"
+                            },
+                            "/etc/cfn/hooks.d/cfn-auto-reloader.conf" : {
+                                "content": { "Fn::Join" : ["", [
+                                    "[cfn-auto-reloader-hook]\n",
+                                    "triggers=post.update\n",
+                                    "path=Resources.ContainerInstances.Metadata.AWS::CloudFormation::Init\n",
+                                    "action=/opt/aws/bin/cfn-init -v ",
+                                    "         --stack ", { "Ref" : "AWS::StackName" },
+                                    "         --resource ContainerInstances ",
+                                    "         --region ", { "Ref" : "AWS::Region" }, "\n",
+                                    "runas=root\n"
+                                ]]}
+                            }
+                        },
+
+                        "services" : {
+                            "sysvinit" : {
+                                "cfn-hup" : {
+                                    "enabled" : "true",
+                                    "ensureRunning" : "true",
+                                    "files" : [
+                                        "/etc/cfn/cfn-hup.conf",
+                                        "/etc/cfn/hooks.d/cfn-auto-reloader.conf"
+                                    ]
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "Properties": {
+                "ImageId" : { "Ref" : "EcsAmiId" },
+                "InstanceType" : { "Ref" : "InstanceType" },
+                "IamInstanceProfile": { "Ref": "Ec2InstanceProfile" },
+                "KeyName" : { "Ref" : "KeyPairName" },
+                "SecurityGroups" : [
+                    { "Ref": "ElbTargetSg" }
+                ],
+                "UserData" : { "Fn::Base64" : { "Fn::Join" : ["", [
+                    "#!/bin/bash -xe\n",
+                    "yum install -y aws-cfn-bootstrap\n",
+
+                    "/opt/aws/bin/cfn-init -v ",
+                    "         --stack ", { "Ref" : "AWS::StackName" },
+                    "         --resource ContainerInstances ",
+                    "         --region ", { "Ref" : "AWS::Region" }, "\n",
+
+                    "/opt/aws/bin/cfn-signal -e $? ",
+                    "         --stack ", { "Ref" : "AWS::StackName" },
+                    "         --resource EcsAutoScalingGroup ",
+                    "         --region ", { "Ref" : "AWS::Region" }, "\n"
+                ]]}}
+            }
+        },    
+        "Ec2Role": {
+            "Type": "AWS::IAM::Role",
+            "Properties": {
+                "AssumeRolePolicyDocument": {
+                    "Statement": [{
+                        "Effect": "Allow",
+                        "Principal": { "Service": ["ec2.amazonaws.com"] },
+                        "Action": ["sts:AssumeRole"]
+                    }]
+                },
+                "Path": "/",
+                "Policies": [{
+                    "PolicyName": "ecs-service",
+                    "PolicyDocument": {
+                        "Statement": [{
+                            "Effect": "Allow",
+                            "Action": [
+                                "ecs:CreateCluster",
+                                "ecs:DeregisterContainerInstance",
+                                "ecs:DiscoverPollEndpoint",
+                                "ecs:Poll",
+                                "ecs:RegisterContainerInstance",
+                                "ecs:StartTelemetrySession",
+                                "ecs:Submit*",
+                                "logs:CreateLogStream",
+                                "logs:PutLogEvents"
+                            ],
+                            "Resource": "*"
+                        }]
+                    }
+                }]
+            }
+        },    
+        "Ec2InstanceProfile": {
+            "Type": "AWS::IAM::InstanceProfile",
+            "Properties": {
+                "Path": "/",
+                "Roles": [{ "Ref": "Ec2Role" }]
+            }
+        }
+    },
+
+    "Outputs" : {
+        "EcsAdminUrl" : {
+            "Description" : "Ec2 Container Service Cluster",
+            "Value" : { "Fn::Join": ["", [
+                "https://", { "Ref": "AWS::Region"}, ".console.aws.amazon.com/ecs/home?region=",
+                    { "Ref": "AWS::Region"}, "#/clusters/", { "Ref": "EcsCluster"}, "/containerInstances"
+            ]] }
+        }
+    }
+}
