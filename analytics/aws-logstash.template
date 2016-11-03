@@ -26,8 +26,8 @@
 			],
 			"ConstraintDescription" : "must be a valid EC2 instance type."
 		},
-		"UbuntuAmi": {
-			"Description": "AMI to use. Note Ubuntu is prefered.",
+		"UbuntuTtAmiId": {
+			"Description": "AMI to use",
 			"Default": "ami-fddabdc7",
 			"Type": "AWS::EC2::Image::Id"
 		},
@@ -239,7 +239,7 @@
 			"Type" : "AWS::AutoScaling::LaunchConfiguration",
 			"Properties": {
 				"InstanceType" : { "Ref" : "LogstashNodeType" },
-				"ImageId" : { "Ref" : "UbuntuAmi" },
+				"ImageId" : { "Ref" : "UbuntuTtAmiId" },
 				"KeyName" : { "Ref" : "KeyPairName" },
 				"AssociatePublicIpAddress": "false",
 				"SecurityGroups": [
@@ -358,7 +358,7 @@
 			"Type" : "AWS::AutoScaling::LaunchConfiguration",
 			"Properties": {
 				"InstanceType" : { "Ref" : "LogstashNodeType" },
-				"ImageId" : { "Ref" : "UbuntuAmi" },
+				"ImageId" : { "Ref" : "UbuntuTtAmiId" },
 				"KeyName" : { "Ref" : "KeyPairName" },
 				"AssociatePublicIpAddress": "false",
 				"SecurityGroups": [
