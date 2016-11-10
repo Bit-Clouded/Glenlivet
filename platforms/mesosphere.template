@@ -42,7 +42,7 @@
       "Description": "Required: Specify your AWS EC2 Key Pair.",
       "Type": "AWS::EC2::KeyPair::KeyName"
     },
-    "CoreOsAmi" : {
+    "CoreOsAmiId" : {
       "Description": "AMI Id for CoreOS",
       "Type": "AWS::EC2::Image::Id"
     },
@@ -274,7 +274,7 @@
             "VirtualName": "ephemeral0"
           }
         ],
-        "ImageId" : { "Ref" : "CoreOsAmi" },
+        "ImageId" : { "Ref" : "CoreOsAmiId" },
         "InstanceType": {
           "Fn::FindInMap": [
             "Parameters",
@@ -956,7 +956,7 @@
             "VirtualName": "ephemeral0"
           }
         ],
-        "ImageId": { "Ref" : "CoreOsAmi" },
+        "ImageId": { "Ref" : "CoreOsAmiId" },
         "InstanceType": {
           "Fn::FindInMap": [
             "Parameters",
@@ -1456,7 +1456,7 @@
             "VirtualName": "ephemeral0"
           }
         ],
-        "ImageId":  { "Ref" : "CoreOsAmi" },
+        "ImageId":  { "Ref" : "CoreOsAmiId" },
         "InstanceType": {
           "Fn::FindInMap": [
             "Parameters",

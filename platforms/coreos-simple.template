@@ -39,7 +39,7 @@
             "Description" : "The name of an EC2 Key Pair to allow SSH access to the instance.",
             "Type" : "String"
         },
-        "CoreOsAmi" : {
+        "CoreOsAmiId" : {
             "Description": "AMI Id for CoreOs",
             "Type": "AWS::EC2::Image::Id"
         },
@@ -163,7 +163,7 @@
         "CoreOSServerLaunchConfig": {
             "Type": "AWS::AutoScaling::LaunchConfiguration",
             "Properties": {
-                "ImageId" : { "Ref": "CoreOsAmi" },
+                "ImageId" : { "Ref": "CoreOsAmiId" },
                 "InstanceType": {"Ref": "InstanceType"},
                 "KeyName": {"Ref": "KeyPairName"},
                 "SecurityGroups": [{"Ref": "CoreOsSecurityGroup"}],
