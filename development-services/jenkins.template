@@ -303,13 +303,11 @@
 					"#!/bin/bash\n",
                     "ifconfig eth0 mtu 1500\n",
                     "wget -qO- https://get.docker.com/ | sh\n",
-					{"Fn::If":["HasStateSnapshot","", "mkfs -t ext4 /dev/xvdb\n"]},
+
+					{"Fn::If":["HasStateSnapshot","","mkfs -t ext4 /dev/xvdb\n"]},
 					"umount /mnt/\n",
 					"mkdir /mnt/xvdb\n",
-					"cp /etc/fstab /etc/fstab.bak && rm /etc/fstab\n",
-					"cat /etc/fstab.bak | grep -v ^/dev/xvdb | tee /etc/fstab\n",
-					"echo -e \"/dev/xvdb\\t/mnt/xvdb\\tauto\\tdefaults\\t0\\t2\" >> /etc/fstab\n",
-					"mount -a\n",
+					"mount -t ext4 /dev/xvdb /mnt/xvdb\n",
 					"chown -R 1000 /mnt/xvdb\n",
 
 					"ECID=$(curl http://instance-data/latest/meta-data/instance-id)\n",
@@ -391,7 +389,7 @@
                             "init"
                         ]
                     },
-                    "init" : {
+                    "init"    : {
                         "files": {
                             "C:\\cfn\\bin\\swarm-client-with-dependencies.jar": {
                                 "source": { "Ref": "JenkinsSwarmJar" }
