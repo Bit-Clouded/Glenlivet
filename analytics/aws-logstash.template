@@ -281,7 +281,7 @@
 		"LogstashInstanceProfile": {
 			"Type": "AWS::IAM::InstanceProfile",
 			"Properties": {
-				"Path": "/logstash/",
+				"Path": "/analytics/logstash/",
 				"Roles": [{ "Ref": "LogstashRole" }]
 			}
 		},
@@ -300,7 +300,7 @@
 						}
 					]
 				},
-				"Path": "/logstash/",
+				"Path": "/analytics/logstash/",
 				"ManagedPolicyArns" : [
 					{"Ref":"CwlPolicy"}
 				]
@@ -398,7 +398,7 @@
 		"LogstashSqsInstanceProfile": {
 			"Type": "AWS::IAM::InstanceProfile",
 			"Properties": {
-				"Path": "/logstash/",
+				"Path": "/analytics/logstash/",
 				"Roles": [{ "Ref": "LogstashSqsRole" }]
 			}
 		},
@@ -417,7 +417,7 @@
 						}
 					]
 				},
-				"Path": "/logstash/",
+				"Path": "/analytics/logstash/",
 				"ManagedPolicyArns" : [
 					{"Ref":"CwlPolicy"}
 				]

@@ -300,7 +300,7 @@
                         "Action": "sts:AssumeRole"
                     }]
                 },
-                "Path": "/cloudtrail/",
+                "Path": "/analytics/log-store/",
                 "Policies": [{
                     "PolicyName": "root",
                     "PolicyDocument": {
@@ -354,7 +354,7 @@
 						"Action": "sts:AssumeRole"
 					}]
                 },
-                "Path": "/aws-logs/vpc/",
+                "Path": "/analytics/log-store/",
                 "Policies": [{
                     "PolicyName": "root",
                     "PolicyDocument": {
@@ -428,7 +428,7 @@
 		"LinuxLogPolicy" : {
 			"Type": "AWS::IAM::ManagedPolicy",
 			"Properties": {
-				"Path" : "/log/linux/",
+				"Path" : "/analytics/log-store/",
 				"PolicyDocument" : {
 					"Version": "2012-10-17",
 					"Statement": [{

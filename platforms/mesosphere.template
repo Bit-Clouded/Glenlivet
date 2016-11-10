@@ -254,7 +254,7 @@
             "Ref": "MasterRole"
           }
         ],
-        "Path": "/"
+        "Path": "/platforms/mesosphere/"
       }
     },
     "MasterLaunchConfig": {
@@ -622,7 +622,7 @@
     "MasterRole": {
       "Type": "AWS::IAM::Role",
       "Properties": {
-        "Path": "/",
+        "Path": "/platforms/mesosphere/",
         "Policies": [
           {
             "PolicyDocument": {
@@ -1439,7 +1439,7 @@
             "Ref": "SlaveRole"
           }
         ],
-        "Path": "/"
+        "Path": "/platforms/mesosphere/"
       }
     },
     "SlaveLaunchConfig": {

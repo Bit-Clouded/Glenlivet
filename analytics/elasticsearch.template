@@ -420,7 +420,7 @@
         "EsDataNodeInstanceProfile": {
             "Type": "AWS::IAM::InstanceProfile",
             "Properties": {
-                "Path": "/elasticsearch/data/",
+                "Path": "/analytics/elasticsearch/",
                 "Roles": [{ "Ref": "EsDataNodeRole" }]
             }
         },
@@ -439,7 +439,7 @@
                         }
                     ]
                 },
-                "Path": "/elasticsearch/data/",
+                "Path": "/analytics/elasticsearch/",
                 "Policies": [{
                     "PolicyName": "root",
                     "PolicyDocument": {
