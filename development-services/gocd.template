@@ -1,0 +1,444 @@
+{
+	"AWSTemplateFormatVersion": "2010-09-09",
+
+	"Description": "A template to launch GoCD build servers.",
+
+	"Parameters": {
+		"KeyPairName": {
+			"Description": "Name of an existing EC2 KeyPair",
+			"Type": "String"
+		},
+		"ServerInstanceType" : {
+			"Description" : "GoCDmaster server EC2 instance type",
+			"Type" : "String",
+			"Default" : "t2.micro",
+			"AllowedValues": [
+				"t2.micro",
+				"t2.small",
+				"t2.medium",
+				"t2.large",
+				"m3.medium",
+				"m4.large",
+				"m4.xlarge",
+				"m4.2xlarge"
+			],
+			"ConstraintDescription" : "must be a valid EC2 instance type."
+		},
+		"DebianJsAmiId": {
+			"Description": "Debian Jessie AMI Id",
+			"Type": "String"
+		},
+		"GocdStateDiskSnapshot" : {
+			"Description" : "Snapshot of GoCD state disk",
+			"Type" : "String",
+			"Default" : ""
+		},
+		"GocdStateDiskSize" : {
+			"Description" : "Size of the disk for storing GoCD state.",
+			"Type" : "Number",
+			"Default" : "100"
+		},
+
+		"AgentInstanceType" : {
+			"Description" : "Agent EC2 instance type",
+			"Type" : "String",
+			"Default" : "t2.medium",
+			"AllowedValues": [
+				"t2.nano",
+				"t2.micro",
+				"t2.small",
+				"t2.medium",
+				"t2.large",
+				"m3.medium",
+				"m4.large",
+				"m4.xlarge",
+				"m4.2xlarge",
+				"r3.large",
+				"r3.xlarge",
+				"r3.2xlarge",
+				"r3.4xlarge",
+				"r3.8xlarge"
+			],
+			"ConstraintDescription" : "must be a valid EC2 instance type."
+		},
+
+		"WindowsAgentAmi": {
+			"Description": "AMI to use for windows build agent.",
+			"Type": "String"
+		},
+		
+		"GocdServerContainer": {
+			"Description": "Gocd container name with tag.",
+			"Default": "gocd/gocd-server:16.11.0",
+			"Type": "String"
+		},
+		"GocdLxAgentContainer": {
+			"Description": "Gocd swarm agent container name with tag.",
+			"Default": "bitclouded/gocd-agent",
+			"Type": "String"
+		},
+
+		"SslCertId" : {
+			"Description": "Id of the SSL certificate to use.",
+			"Default" : "",
+            "Type": "String"
+		},
+
+		"ElbSg" : {
+			"Description": "Elb Security Group. [vpc.resources.ElbSecGroup]",
+            "Type": "String"
+		},
+		"ElbTargetSg" : {
+			"Description": "Elb Target Security Group. [vpc.resources.ElbTargetSecGroup]",
+            "Type": "String"
+		},
+		"HttpSg" : {
+			"Description": "Elb Target Security Group. [vpc.resources.HttpNsSecGroup]",
+            "Type": "String"
+		},
+		"IsPublicFacing": {
+			"Description" : "Is publicly accessable deployment.",
+			"Type" : "String",
+			"AllowedValues": [
+				"internet-facing",
+				"internal"
+			],
+			"Default": "internal",
+			"ConstraintDescription": "Valid schemes: 'internet-facing' or 'internal'."
+		},
+		"RawLogBucket" : {
+			"Description": "Elb Target Security Group. [logs-store.resources.Raw]",
+            "Type": "String"
+		},
+		"VpcId": {
+            "Description" : "VPCid associated with the subnets. [elb-subnets.parameters.VpcId]",
+            "Type": "AWS::EC2::VPC::Id"
+        },
+        "ElbSubnets" : {
+            "Description" : "VPCid associated with the subnets. [elb-subnets.outputs.ElbSubnets]",
+            "Type": "List<AWS::EC2::Subnet::Id>"
+        },
+        "ServerSubnets" : {
+            "Description" : "VPCid associated with the subnets. [elb-subnets.outputs.WebServerSubnets]",
+            "Type": "List<AWS::EC2::Subnet::Id>"
+        },
+
+		"CwlUbuntuAgentDocker": {
+			"Description": "Name of cluster. This is used for discovery.",
+			"Type": "String",
+			"Default": "sleepersmith/aws-lego-awscwlagent-ubuntu:v0.2.0"
+		},
+		"CwlLinuxParams" : {
+			"Description": "Environment variables for syslog and authlog cwl group names [logs-store.outputs.LxDockerLogParams]",
+			"Type": "String"
+		},
+		"CwlDockerParams" : {
+			"Description": "Docker log driver params [logs-store.outputs.DockerCwlParams]",
+			"Type": "String"
+		},
+		"CwlPolicy" : {
+			"Description": "Managed policy for linux logging. [logs-store.resources.LinuxLogPolicy]",
+			"Type": "String"
+		}
+	},
+
+	"Conditions" : {
+		"HasStateSnapshot" : {"Fn::Not": [{"Fn::Equals": [
+			{"Ref": "GocdStateDiskSnapshot"}, ""
+		]}]},
+		"HasSsl" : {"Fn::Not": [{"Fn::Equals": [
+			{"Ref": "SslCertId"}, ""
+		]}]}
+	},
+
+	"Resources" : {
+
+		"HttpGateway" : {
+			"Type" : "AWS::ElasticLoadBalancing::LoadBalancer",
+			"Properties" : {
+				"Subnets": {"Ref": "ElbSubnets"},
+				"Listeners" : [
+					{
+						"LoadBalancerPort" : "80",
+						"InstancePort" : "8153",
+						"Protocol" : "HTTP"
+					},
+					{"Fn::If" : [ "HasSsl",
+					{
+						"LoadBalancerPort" : "443",
+						"InstancePort" : "8153",
+						"Protocol" : "HTTPS",
+						"InstanceProtocol": "HTTP",
+						"SSLCertificateId": { "Ref": "SslCertId" }
+					},{"Ref":"AWS::NoValue"}]}
+				],
+				"HealthCheck" : {
+					"Target" : { "Fn::Join" : [ "", ["TCP:8153"]]},
+					"HealthyThreshold" : "3",
+					"UnhealthyThreshold" : "5",
+					"Interval" : "30",
+					"Timeout" : "5"
+				},
+				"AccessLoggingPolicy" : {
+					"EmitInterval": "5",
+					"Enabled": "true",
+					"S3BucketName": {"Ref": "RawLogBucket"}
+				},
+				"SecurityGroups": [
+					{ "Ref": "ElbSg" },
+					{ "Ref": "HttpSg" }
+				],
+				"Scheme": { "Ref" : "IsPublicFacing" },
+				"Instances" : [
+					{"Ref":"GocdMaster"}
+				]
+			}
+		},
+		
+		"RepoDisk" : {
+			"Type":"AWS::EC2::Volume",
+			"Properties" : {
+				"AvailabilityZone" : { "Fn::Select": ["0",  { "Fn::GetAZs": "" }]},
+				"Size" : {"Ref": "GocdStateDiskSize"},
+				"SnapshotId" : {"Fn::If":["HasStateSnapshot",
+					{"Ref":"GocdStateDiskSnapshot"},
+					{"Ref":"AWS::NoValue"}
+				]},
+				"Tags" : [],
+				"VolumeType" : "gp2"
+			},
+			"DeletionPolicy" : "Snapshot"
+		},
+
+		"GocdMaster" : {
+			"Type" : "AWS::EC2::Instance",
+			"Properties" : {
+				"IamInstanceProfile" : {"Ref":"WebServersInstanceProfile"},
+				"InstanceType" : { "Ref" : "ServerInstanceType" },
+				"ImageId" : { "Ref" : "DebianJsAmiId" },
+				"KeyName" : { "Ref" : "KeyPairName" },
+				"SecurityGroupIds": [
+					{ "Ref" : "ServerSg" },
+					{ "Ref" : "ElbTargetSg" }
+				],
+				"SubnetId": { "Fn::Select" : ["0", {"Ref": "ServerSubnets"}]},
+				"UserData" : { "Fn::Base64" : { "Fn::Join" : ["", [
+					"#!/bin/bash\n",
+                    "#ifconfig eth0 mtu 1500\n",
+                    "#wget -qO- https://get.docker.com/ | sh\n",
+					{"Fn::If":["HasStateSnapshot","", "mkfs -F -t ext4 /dev/xvdb\n"]},
+					"umount /mnt/\n",
+					"mkdir /mnt/xvdb\n",
+					"cp /etc/fstab /etc/fstab.bak && rm /etc/fstab\n",
+					"cat /etc/fstab.bak | grep -v ^/dev/xvdb | tee /etc/fstab\n",
+					"echo -e \"/dev/xvdb\\t/mnt/xvdb\\tauto\\tdefaults\\t0\\t2\" >> /etc/fstab\n",
+					"mount -a\n",
+                    "chmod 777 -R /mnt/xvdb\n",
+
+					"ECID=$(curl http://instance-data/latest/meta-data/instance-id)\n",
+					"CWLA=cwlagent_$ECID\n",
+					"docker run -d --restart=always ",
+						"--name $CWLA --log-opt awslogs-stream=$CWLA ",
+						"-v /var/log:/var/log-host:ro ",
+						{"Ref":"CwlLinuxParams"}," ",
+						{"Ref":"CwlDockerParams"}," ",
+						{"Ref":"CwlUbuntuAgentDocker"},"\n",
+					"docker run -d --restart=always --name cwlcron ",
+						{"Ref":"CwlUbuntuAgentDocker"}," cron\n",
+
+					"GOCD_MASTER=gocd-master_$ECID\n",
+                    "docker run -d --restart=always ",
+                        "--name $GOCD_MASTER --log-opt awslogs-stream=$GOCD_MASTER ",
+                        "-p 8153:8153 -p 8154:8154 ",
+						{"Ref":"CwlLinuxParams"}," ",
+                        "-v /mnt/xvdb:/var/lib/go-server ",
+                        {"Ref":"GocdServerContainer"},"\n"
+				]]}},
+				"Volumes" : [
+					{"Device": "xvdb", "VolumeId" : {"Ref": "RepoDisk"}}
+				],
+				"Tags": [
+					{"Key": "Name", "Value" : "Gocd Master"}
+				]
+			}
+		},
+
+		"WebServersRole" : {
+			"Type": "AWS::IAM::Role",
+			"Properties": {
+				"AssumeRolePolicyDocument": {
+					"Version": "2012-10-17",
+					"Statement": [{
+						"Effect": "Allow",
+						"Principal": {
+							"Service": [ "ec2.amazonaws.com" ]
+						},
+						"Action": [ "sts:AssumeRole" ]
+					}]
+				},
+				"Path": "/devservices/gocd/",
+				"ManagedPolicyArns" : [
+					{"Ref":"CwlPolicy"}
+				]
+			}
+		},
+		"WebServersInstanceProfile" : {
+			"Type": "AWS::IAM::InstanceProfile",
+			"Properties": {
+				"Path": "/devservices/gocd/",
+				"Roles": [{"Ref" : "WebServersRole"}]
+			}
+		},
+
+		"GocdWindowsAgentLc" : {
+			"Type" : "AWS::AutoScaling::LaunchConfiguration",
+			"Properties": {
+				"InstanceType" : { "Ref" : "AgentInstanceType" },
+				"ImageId" : { "Ref" : "WindowsAgentAmi" },
+				"IamInstanceProfile" : {"Ref":"WebServersInstanceProfile"},
+				"KeyName" : { "Ref" : "KeyPairName" },
+				"SecurityGroups": [
+					{ "Ref" : "AgentSg" }
+				],
+				"BlockDeviceMappings": [
+					{ "DeviceName" : "/dev/sda1", "Ebs" : { "VolumeSize" : "80", "VolumeType" : "gp2" } }
+				],
+				"UserData" : { "Fn::Base64" : { "Fn::Join" : ["", [
+					"<powershell>\n",
+"    $gocd_bin = \"c:\\gocd\\bin\",\n",
+"    $gocd_workspace = \"c:\\gocd\\workspace\",\n",
+"    $gocd_installer_url = \"https://download.go.cd/binaries/16.11.0-4185/win/go-agent-16.11.0-4185-setup.exe\",\n",
+"    $java_installer_url = \"http://javadl.oracle.com/webapps/download/AutoDL?BundleId=216434\"\n",
+
+"mkdir $gocd_bin -Force\n",
+"mkdir $gocd_workspace -Force\n",
+"cd $gocd_bin\n",
+"\n",
+"function GetAndInstall {\n",
+"    param(\n",
+"        [string]$url,\n",
+"        [string]$argstring = \"/qn\",\n",
+"        [string]$filename\n",
+"    )\n",
+"\n",
+"    if ([string]::IsNullOrWhiteSpace($filename)) {\n",
+"        $urlSegments = $url.Split('/')\n",
+"        $filename = $urlSegments[$urlSegments.Count - 1]\n",
+"    }\n",
+"    Invoke-WebRequest $url -OutFile $filename\n",
+"    Start-Process -FilePath \".\\$filename\" -ArgumentList $argstring -PassThru -Wait\n",
+"    Remove-Item \".\\$filename\" -Force\n",
+"}\n",
+"\n",
+"GetAndInstall -url https://github.com/git-for-windows/git/releases/download/v2.10.1.windows.1/Git-2.10.1-64-bit.exe `\n",
+"    -argstring '/silent /log=\"git-installer.log\"'\n",
+"GetAndInstall -url $java_installer_url -filename java-installer.exe `\n",
+"    -argstring \"STATIC=0 WEB_JAVA=0 /s /L $gocd_bin\\java-installer.log\"\n",
+"sleep 60\n",
+"GetAndInstall -url $gocd_installer_url `\n",
+"    -argstring \"/S /SERVERURL=https://", { "Fn::GetAtt" : ["GocdMaster", "PrivateIp"] }, ":8154/go /D=$gocd_bin\"\n",
+                    "</powershell>"
+				]]}}
+			}
+		},
+		"GocdWindowsAgentAsg" : {
+			"Type" : "AWS::AutoScaling::AutoScalingGroup",
+			"Properties" : {
+				"VPCZoneIdentifier": { "Ref" : "ServerSubnets" },
+				"AvailabilityZones": [{ "Fn::Select": ["0",  { "Fn::GetAZs": "" }]}],
+				"LaunchConfigurationName" : { "Ref" : "GocdWindowsAgentLc" },
+				"MinSize" : "0",
+				"MaxSize" : "20",
+				"Tags" : [{"Key": "Name", "Value" : "Gocd Agent", "PropagateAtLaunch" : "True"}]
+			}
+		},
+		"GocdLinuxAgentLc" : {
+			"Type" : "AWS::AutoScaling::LaunchConfiguration",
+			"Properties": {
+				"InstanceType" : { "Ref" : "AgentInstanceType" },
+				"ImageId" : { "Ref" : "DebianJsAmiId" },
+				"IamInstanceProfile" : {"Ref":"WebServersInstanceProfile"},
+				"KeyName" : { "Ref" : "KeyPairName" },
+				"SecurityGroups": [
+					{ "Ref" : "AgentSg" }
+				],
+				"UserData" : { "Fn::Base64" : { "Fn::Join" : ["", [
+					"#!/bin/bash\n",
+                    "#ifconfig eth0 mtu 1500\n",
+                    "#wget -qO- https://get.docker.com/ | sh\n",
+
+					"ECID=$(curl http://instance-data/latest/meta-data/instance-id)\n",
+					"#CWLA=cwlagent_$ECID\n",
+					"#docker run -d --restart=always ",
+						"--name $CWLA --log-opt awslogs-stream=$CWLA ",
+						"-v /var/log:/var/log-host:ro ",
+						{"Ref":"CwlLinuxParams"}," ",
+						{"Ref":"CwlDockerParams"}," ",
+						{"Ref":"CwlUbuntuAgentDocker"},"\n",
+					"docker run -d --restart=always --name cwlcron ",
+						{"Ref":"CwlUbuntuAgentDocker"}," cron\n",
+
+                    "GO_AGENT=go-agent_$ECID\n",
+                    "docker run -d --restart=always --name $GO_AGENT --log-opt awslogs-stream=$GO_AGENT ",
+						"-v /var/run/docker.sock:/var/run/docker.sock --privileged ",
+						{"Ref":"CwlLinuxParams"}," ",
+                        "-e GO_SERVER=", { "Fn::GetAtt" : ["GocdMaster", "PrivateIp"] }, " ",
+                        {"Ref":"GocdLxAgentContainer"}, "\n"
+				]]}},
+				"BlockDeviceMappings" : [
+					{ "DeviceName" : "/dev/xvda", "Ebs" : { "VolumeSize" : "30", "VolumeType" : "gp2" } }
+				]
+			}
+		},
+		"GocdLinuxAgentAsg" : {
+			"Type" : "AWS::AutoScaling::AutoScalingGroup",
+			"Properties" : {
+				"VPCZoneIdentifier": { "Ref" : "ServerSubnets" },
+				"AvailabilityZones" : [{ "Fn::Select": ["0",  { "Fn::GetAZs": "" }]}],
+				"LaunchConfigurationName" : { "Ref" : "GocdLinuxAgentLc" },
+				"MinSize" : "0",
+				"MaxSize" : "20",
+				"Tags" : [{"Key": "Name", "Value" : "Gocd Agent", "PropagateAtLaunch" : "True"}]
+			}
+		},
+
+		"ServerSg" : {
+			"Type" : "AWS::EC2::SecurityGroup",
+			"Properties" : {
+				"GroupDescription" : "Gocd Master Server Security Group",
+				"VpcId" : { "Ref" : "VpcId"},
+				"SecurityGroupIngress" : [
+					{ "IpProtocol": "-1", "SourceSecurityGroupId" : {"Ref" : "AgentSg"}}
+				],
+				"Tags": [{"Key": "Name", "Value" : "Gocd Master Server Security Group"}]
+			}
+		},
+		"AgentSg" : {
+			"Type" : "AWS::EC2::SecurityGroup",
+			"Properties" : {
+				"GroupDescription" : "Gocd Agent Security Group. No in bound traffic other than GoCD Server.",
+				"VpcId" : { "Ref" : "VpcId"},
+				"Tags": [{"Key": "Name", "Value" : "Gocd Agent Security Group"}]
+			}
+		},
+		"DeploymentTargetSg" : {
+			"Type" : "AWS::EC2::SecurityGroup",
+			"Properties" : {
+				"GroupDescription" : "Gocd Agent Security Group. No in bound traffic other than GoCD Server.",
+				"SecurityGroupIngress" : [
+					{ "IpProtocol": "-1", "SourceSecurityGroupId" : {"Ref" : "AgentSg"} }
+				],
+				"VpcId" : { "Ref" : "VpcId"},
+				"Tags": [{"Key": "Name", "Value" : "Gocd Agent Security Group"}]
+			}
+		}
+
+	},
+
+	"Outputs" : {
+		"Gateway" : {
+			"Value" : { "Fn::GetAtt" : ["GocdMaster", "PrivateIp"] },
+			"Description" : "IP of the GoCD server."
+		}
+	}
+}
