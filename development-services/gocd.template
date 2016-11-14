@@ -74,7 +74,7 @@
 		},
 		"GocdLxAgentContainer": {
 			"Description": "Gocd swarm agent container name with tag.",
-			"Default": "bitclouded/gocd-agent",
+			"Default": "bitclouded/gocd-agent:5.1",
 			"Type": "String"
 		},
 
@@ -345,7 +345,6 @@
 			"Type" : "AWS::AutoScaling::AutoScalingGroup",
 			"Properties" : {
 				"VPCZoneIdentifier": { "Ref" : "ServerSubnets" },
-				"AvailabilityZones": [{ "Fn::Select": ["0",  { "Fn::GetAZs": "" }]}],
 				"LaunchConfigurationName" : { "Ref" : "GocdWindowsAgentLc" },
 				"MinSize" : "0",
 				"MaxSize" : "20",
@@ -394,7 +393,6 @@
 			"Type" : "AWS::AutoScaling::AutoScalingGroup",
 			"Properties" : {
 				"VPCZoneIdentifier": { "Ref" : "ServerSubnets" },
-				"AvailabilityZones" : [{ "Fn::Select": ["0",  { "Fn::GetAZs": "" }]}],
 				"LaunchConfigurationName" : { "Ref" : "GocdLinuxAgentLc" },
 				"MinSize" : "0",
 				"MaxSize" : "20",
