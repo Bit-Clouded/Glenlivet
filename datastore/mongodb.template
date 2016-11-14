@@ -93,7 +93,7 @@
 		"CwlUbuntuAgentDocker": {
 			"Description": "Name of cluster. This is used for discovery.",
 			"Type": "String",
-			"Default": "sleepersmith/aws-lego-awscwlagent-ubuntu:v0.2.0"
+			"Default": "bitclouded/aws-cwl-agent:4.1"
 		},
 		"CwlLinuxParams" : {
 			"Description": "Environment variables for syslog and authlog cwl group names [logs-store.outputs.LxDockerLogParams]",
