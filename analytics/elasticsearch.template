@@ -86,17 +86,32 @@
             "Type": "List<AWS::EC2::Subnet::Id>"
         },
 
-        "EsContainerName": {
+        "EsFiveContainerName": {
             "Description": "Name of container to run elasticsearch.",
             "Type": "String",
-            "Default": "sleepersmith/aws-lego-elasticsearch:v0.1.0"
+            "Default": "bitclouded/elasticsearch-5.x:2.1"
         },
-        "KibanaContainerName": {
+        "EsTwoContainerName": {
             "Description": "Name of container to run elasticsearch.",
             "Type": "String",
-            "Default": "kibana:4.4"
+            "Default": "bitclouded/elasticsearch-2.x:1.1"
         },
-
+        "EsVersion": {
+            "Description": "Name of container to run elasticsearch.",
+            "Type": "String",
+            "Default": "2",
+            "AllowedValues": ["2", "5"]
+        },
+        "KFiveContainerName": {
+            "Description": "Name of container to run elasticsearch.",
+            "Type": "String",
+            "Default": "kibana:5.0.0"
+        },
+        "KFourContainerName": {
+            "Description": "Name of container to run elasticsearch.",
+            "Type": "String",
+            "Default": "kibana:4.6.3"
+        },
         "CwlUbuntuAgentDocker": {
             "Description": "Name of cluster. This is used for discovery.",
             "Type": "String",
@@ -114,6 +129,12 @@
             "Description": "Managed policy for linux logging. [logs-store.resources.LinuxLogPolicy]",
             "Type": "String"
         }
+    },
+
+    "Conditions" : {
+        "IsVersionFive" : { "Fn::Equals": [
+            {"Ref":"EsVersion"}, "5"
+        ]}
     },
 
     "Mappings" : {
@@ -148,6 +169,7 @@
                 "IamInstanceProfile": { "Ref" : "EsDataNodeInstanceProfile" },
                 "UserData" : { "Fn::Base64" : { "Fn::Join" : ["", [
                     "#!/bin/bash\n",
+                    "sysctl -w vm.max_map_count=262144\n",
 
                     "mkdir /mnt/xvdk\n",
                     "mkfs -t ext4 /dev/xvdk\n",
@@ -166,13 +188,36 @@
 
                     "ESDN=es-data_$ECID\n",
                     "docker run --restart=always -p 9200:9200 -p 9300:9300 -d ",
-                        "--cap-add=IPC_LOCK --ulimit memlock=-1:-1 -v /mnt/xvdk:/mnt/xvdk ",
+                        "-e ES_JAVA_OPTS=\"-Xms",{ "Fn::FindInMap": [ "InstanceVariables", { "Ref": "DataNodeInstanceType" }, "ram" ] },"m -Xmx",{ "Fn::FindInMap": [ "InstanceVariables", { "Ref": "DataNodeInstanceType" }, "ram" ] },"m\" ",
+                        "--cap-add=IPC_LOCK --ulimit memlock=-1:-1 ",
                         "--name $ESDN --log-opt awslogs-stream=$ESDN ",
                         {"Ref":"CwlLinuxParams"}," ",
-                        {"Ref":"EsContainerName"}, " ", {"Ref":"EsConfClusterName"}, " ",
-                        {"Ref":"EsClusterNodeSg"}, " false true grp_one ",
-                        {"Ref":"EsConfReplica"}, " ", {"Ref":"EsConfShard"}, " ",
-                        { "Fn::FindInMap": [ "InstanceVariables", { "Ref": "DataNodeInstanceType" }, "ram" ] }
+                        {"Fn::If": ["IsVersionFive",
+                            {"Fn::Join":["", [
+                                {"Ref":"EsFiveContainerName"},
+                                    " -E bootstrap.memory_lock=true",
+                                    " -E network.publish_host=$(curl http://instance-data/latest/meta-data/local-ipv4)",
+                                    " -E cluster.name=",{"Ref":"EsConfClusterName"},
+                                    " -E cloud.aws.region=",{"Ref":"AWS::Region"},
+                                    " -E discovery.ec2.groups=",{"Ref":"EsClusterNodeSg"},
+                                    " -E node.attr.rack_id=grp_one",
+                                    " -E node.master=false",
+                                    " -E node.data=true"
+                            ]]},
+                            {"Fn::Join":["", [
+                                {"Ref":"EsTwoContainerName"},
+                                    " --bootstrap.mlockall=true",
+                                    " --index.number_of_replicas=1",
+                                    " --index.number_of_shards=5",
+                                    " --network.publish_host=$(curl http://instance-data/latest/meta-data/local-ipv4)",
+                                    " --cluster.name=",{"Ref":"EsConfClusterName"},
+                                    " --cloud.aws.region=",{"Ref":"AWS::Region"},
+                                    " --discovery.ec2.groups=",{"Ref":"EsClusterNodeSg"},
+                                    " --node.rack_id=grp_one",
+                                    " --node.master=false",
+                                    " --node.data=true"
+                            ]]}
+                        ]}
                 ]]}},
                 "BlockDeviceMappings" : [
                     {
@@ -212,6 +257,7 @@
                 "IamInstanceProfile": { "Ref" : "EsDataNodeInstanceProfile" },
                 "UserData" : { "Fn::Base64" : { "Fn::Join" : ["", [
                     "#!/bin/bash\n",
+                    "sysctl -w vm.max_map_count=262144\n",
 
                     "mkdir /mnt/xvdk\n",
                     "mkfs -t ext4 /dev/xvdk\n",
@@ -225,18 +271,41 @@
                         {"Ref":"CwlLinuxParams"}," ",
                         {"Ref":"CwlDockerParams"}," ",
                         {"Ref":"CwlUbuntuAgentDocker"},"\n",
-                    "#docker run -d --restart=always --name cwlcron ",
+                    "docker run -d --restart=always --name cwlcron ",
                         {"Ref":"CwlUbuntuAgentDocker"}," cron\n",
 
                     "ESDN=es-data_$ECID\n",
                     "docker run --restart=always -p 9200:9200 -p 9300:9300 -d ",
-                        "--cap-add=IPC_LOCK --ulimit memlock=-1:-1 -v /mnt/xvdk:/mnt/xvdk ",
+                        "-e ES_JAVA_OPTS=\"-Xms",{ "Fn::FindInMap": [ "InstanceVariables", { "Ref": "DataNodeInstanceType" }, "ram" ] },"m -Xmx",{ "Fn::FindInMap": [ "InstanceVariables", { "Ref": "DataNodeInstanceType" }, "ram" ] },"m\" ",
+                        "--cap-add=IPC_LOCK --ulimit memlock=-1:-1 ",
                         "--name $ESDN --log-opt awslogs-stream=$ESDN ",
                         {"Ref":"CwlLinuxParams"}," ",
-                        {"Ref":"EsContainerName"}, " ", {"Ref":"EsConfClusterName"}, " ",
-                        {"Ref":"EsClusterNodeSg"}, " false true grp_two ",
-                        {"Ref":"EsConfReplica"}, " ", {"Ref":"EsConfShard"}, " ",
-                        { "Fn::FindInMap": [ "InstanceVariables", { "Ref": "DataNodeInstanceType" }, "ram" ] }
+                        {"Fn::If": ["IsVersionFive",
+                            {"Fn::Join":["", [
+                                {"Ref":"EsFiveContainerName"},
+                                    " -E bootstrap.memory_lock=true",
+                                    " -E network.publish_host=$(curl http://instance-data/latest/meta-data/local-ipv4)",
+                                    " -E cluster.name=",{"Ref":"EsConfClusterName"},
+                                    " -E cloud.aws.region=",{"Ref":"AWS::Region"},
+                                    " -E discovery.ec2.groups=",{"Ref":"EsClusterNodeSg"},
+                                    " -E node.attr.rack_id=grp_two",
+                                    " -E node.master=false",
+                                    " -E node.data=true"
+                            ]]},
+                            {"Fn::Join":["", [
+                                {"Ref":"EsTwoContainerName"},
+                                    " --bootstrap.mlockall=true",
+                                    " --index.number_of_replicas=1",
+                                    " --index.number_of_shards=5",
+                                    " --network.publish_host=$(curl http://instance-data/latest/meta-data/local-ipv4)",
+                                    " --cluster.name=",{"Ref":"EsConfClusterName"},
+                                    " --cloud.aws.region=",{"Ref":"AWS::Region"},
+                                    " --discovery.ec2.groups=",{"Ref":"EsClusterNodeSg"},
+                                    " --node.rack_id=grp_two",
+                                    " --node.master=false",
+                                    " --node.data=true"
+                            ]]}
+                        ]}
                 ]]}},
                 "BlockDeviceMappings" : [
                     {
@@ -281,6 +350,7 @@
                 "UserData" : { "Fn::Base64" : { "Fn::Join" : ["", [
                     "#!/bin/bash\n",
                     "mkdir /home/xvdk\n",
+                    "sysctl -w vm.max_map_count=262144\n",
 
                     "ECID=$(curl http://instance-data/latest/meta-data/instance-id)\n",
                     "CWLA=cwlagent_$ECID\n",
@@ -293,19 +363,48 @@
                     "docker run -d --restart=always --name cwlcron ",
                         {"Ref":"CwlUbuntuAgentDocker"}," cron\n",
 
-                    "ESMN=es-master_$ECID\n",
-                    "docker run --restart=always -p 9200:9200 -p 9300:9300 -d --cap-add=IPC_LOCK --ulimit memlock=-1:-1 -v /home/xvdk:/mnt/xvdk ",
-                        "--name $ESMN --log-opt awslogs-stream=$ESMN ",
+                    "ESDN=es-master_$ECID\n",
+                    "docker run --restart=always -p 9200:9200 -p 9300:9300 -d ",
+                        "--cap-add=IPC_LOCK --ulimit memlock=-1:-1 ",
+                        "-e ES_JAVA_OPTS=\"-Xms",{ "Fn::FindInMap": [ "InstanceVariables", { "Ref": "MasterNodeInstanceType" }, "ram" ] },"m -Xmx",{ "Fn::FindInMap": [ "InstanceVariables", { "Ref": "MasterNodeInstanceType" }, "ram" ] },"m\" ",
+                        "--name $ESDN --log-opt awslogs-stream=$ESDN ",
                         {"Ref":"CwlLinuxParams"}," ",
-                        {"Ref":"EsContainerName"}, " ", {"Ref":"EsConfClusterName"}, " ",
-                        {"Ref":"EsClusterNodeSg"}, " true false master ",
-                        {"Ref":"EsConfReplica"}, " ", {"Ref":"EsConfShard"}, " ",
-                        { "Fn::FindInMap": [ "InstanceVariables", { "Ref": "MasterNodeInstanceType" }, "ram" ] }, "\n",
-                    "KDN=kibana_$ECID\n",
-                    "docker run --name kibana -p 80:5601 -d --restart=always ",
-                        "--name $KDN --log-opt awslogs-stream=$KDN ",
-                        {"Ref":"CwlLinuxParams"}," ",
-                        " -e ELASTICSEARCH_URL=http://", {"Fn::GetAtt":["EsMasterLoadBalancer","DNSName"]}, ":9200 ", {"Ref":"KibanaContainerName"}
+                        {"Fn::If": ["IsVersionFive",
+                            {"Fn::Join":["", [
+                                {"Ref":"EsFiveContainerName"},
+                                    " -E bootstrap.memory_lock=true",
+                                    " -E network.publish_host=$(curl http://instance-data/latest/meta-data/local-ipv4)",
+                                    " -E cluster.name=",{"Ref":"EsConfClusterName"},
+                                    " -E cloud.aws.region=",{"Ref":"AWS::Region"},
+                                    " -E discovery.ec2.groups=",{"Ref":"EsClusterNodeSg"},
+                                    " -E node.attr.rack_id=master",
+                                    " -E node.master=true",
+                                    " -E node.data=false\n"
+                            ]]},
+                            {"Fn::Join":["", [
+                                {"Ref":"EsTwoContainerName"},
+                                    " --bootstrap.mlockall=true",
+                                    " --index.number_of_replicas=1",
+                                    " --index.number_of_shards=5",
+                                    " --network.publish_host=$(curl http://instance-data/latest/meta-data/local-ipv4)",
+                                    " --cluster.name=",{"Ref":"EsConfClusterName"},
+                                    " --cloud.aws.region=",{"Ref":"AWS::Region"},
+                                    " --discovery.ec2.groups=",{"Ref":"EsClusterNodeSg"},
+                                    " --node.rack_id=master",
+                                    " --node.master=true",
+                                    " --node.data=false\n"
+                            ]]}
+                        ]},
+                        "KDN=kibana_$ECID\n",
+                        "docker run -p 80:5601 -d --restart=always ",
+                            "--name $KDN --log-opt awslogs-stream=$KDN ",
+                            {"Ref":"CwlLinuxParams"}," ",
+                            " -e ELASTICSEARCH_URL=http://", {"Fn::GetAtt":["EsMasterLoadBalancer","DNSName"]}, ":9200 ",
+                            {"Fn::If": ["IsVersionFive",
+                                {"Ref":"KFiveContainerName"},
+                                {"Ref":"KFourContainerName"}
+                            ]}
+                            
                 ]]}},
                 "BlockDeviceMappings" : [
                     {
