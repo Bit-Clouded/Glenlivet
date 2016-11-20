@@ -26,7 +26,7 @@
             "Description" : "Name of an existing EC2 KeyPair to enable SSH access",
             "Type" : "String"
         },
-		"ImageId": {
+		"DebianJsAmiId": {
 			"Description": "AMI to use. Note Ubuntu is prefered.",
 			"Type": "AWS::EC2::Image::Id"
 		},
@@ -93,7 +93,7 @@
 		"CwlUbuntuAgentDocker": {
 			"Description": "Name of cluster. This is used for discovery.",
 			"Type": "String",
-			"Default": "sleepersmith/aws-lego-awscwlagent-ubuntu:v0.2.0"
+			"Default": "bitclouded/aws-cwl-agent:4.1"
 		},
 		"CwlLinuxParams" : {
 			"Description": "Environment variables for syslog and authlog cwl group names [logs-store.outputs.LxDockerLogParams]",
@@ -173,7 +173,7 @@
             "Type" : "AWS::EC2::Instance",
             "Properties" : {
                 "InstanceType" : { "Ref" : "DataNodeInstanceType" },
-                "ImageId" : { "Ref":"ImageId" },
+                "ImageId" : { "Ref":"DebianJsAmiId" },
                 "IamInstanceProfile" : {"Ref":"WebServersInstanceProfile"},
                 "Tags" : [{ "Key" : "Name", "Value" : "MongoDB Replica Set - First" }],
                 "KeyName" : { "Ref" : "KeyName" },
@@ -182,9 +182,6 @@
                 ],
                 "UserData" : { "Fn::Base64" : { "Fn::Join" : ["", [
                     "#!/bin/bash\n",
-                    "ifconfig eth0 mtu 1500\n",
-                    "wget -qO- https://get.docker.com/ | sh\n",
-
 					"ECID=$(curl http://instance-data/latest/meta-data/instance-id)\n",
 					"CWLA=cwlagent_$ECID\n",
 					"docker run -d --restart=always ",
@@ -202,15 +199,13 @@
                         {"Ref":"MongoDbContainer"},
                         " --replSet \"", {"Ref":"ReplicaSetName"}, "\" --bind_ip \"0.0.0.0\"\n",
                     "sleep 20s\n",
-                    "docker exec -i $MONGONAME mongo --eval \"rs.initiate()\"\n",
                     "docker exec -i $MONGONAME mongo --eval \"",
+                        "rs.initiate();sleep(1000);",
                         "cfg = rs.conf();",
                         "cfg.members[0].host = '", {"Fn::GetAtt" : ["FirstDataMemberEni","PrimaryPrivateIpAddress"]} ,"';",
-                        "rs.reconfig(cfg)\"\n",
-                    "docker exec -i $MONGONAME mongo --eval \"",
+                        "rs.reconfig(cfg);",
                         "rs.add('", {"Fn::GetAtt" : ["SecondDataMemberEni","PrimaryPrivateIpAddress"]} ,"');",
-                        "rs.addArb('", {"Fn::GetAtt" : ["ArbiterEni","PrimaryPrivateIpAddress"]} ,"')\"\n"
-
+                        "rs.addArb('", {"Fn::GetAtt" : ["ArbiterEni","PrimaryPrivateIpAddress"]} ,"');\""
                 ] ] } }
             }
         },
@@ -247,7 +242,7 @@
 
             "Properties" : {
                 "InstanceType" : { "Ref" : "DataNodeInstanceType" },
-                "ImageId" : { "Ref":"ImageId" },
+                "ImageId" : { "Ref":"DebianJsAmiId" },
                 "IamInstanceProfile" : {"Ref":"WebServersInstanceProfile"},
                 "Tags" : [{ "Key" : "Name", "Value" : "MongoDB Replica Set - Second" }],
                 "KeyName" : { "Ref" : "KeyName" },
@@ -256,9 +251,6 @@
                 ],
                 "UserData" : { "Fn::Base64" : { "Fn::Join" : ["", [
                     "#!/bin/bash\n",
-                    "ifconfig eth0 mtu 1500\n",
-                    "wget -qO- https://get.docker.com/ | sh\n",
-
 					"ECID=$(curl http://instance-data/latest/meta-data/instance-id)\n",
 					"CWLA=cwlagent_$ECID\n",
 					"docker run -d --restart=always ",
@@ -313,7 +305,7 @@
             "Type" : "AWS::EC2::Instance",
             "Properties" : {
                 "InstanceType" : { "Ref" : "ArbiterNodeInstanceType" },
-                "ImageId" : { "Ref":"ImageId" },
+                "ImageId" : { "Ref":"DebianJsAmiId" },
                 "IamInstanceProfile" : {"Ref":"WebServersInstanceProfile"},
                 "Tags" : [{ "Key" : "Name", "Value" : "MongoDB Replica Set - Arbiter" }],
                 "NetworkInterfaces" : [{
@@ -322,9 +314,6 @@
                 "KeyName" : { "Ref" : "KeyName" },
                 "UserData" : { "Fn::Base64" : { "Fn::Join" : ["", [
                     "#!/bin/bash\n",
-                    "ifconfig eth0 mtu 1500\n",
-                    "wget -qO- https://get.docker.com/ | sh\n",
-
 					"ECID=$(curl http://instance-data/latest/meta-data/instance-id)\n",
 					"CWLA=cwlagent_$ECID\n",
 					"docker run -d --restart=always ",

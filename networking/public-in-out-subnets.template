@@ -260,5 +260,18 @@
                 "PortRange" : { "From" : "1024", "To" : "32768" }
             }
         }
+    },
+
+    "Outputs" : {
+        "Subnets" : {
+            "Description" : "The list of subnets for the ELBs",
+            "Value" : { "Fn::Join" : ["", [
+                {"Ref":"Subnet1"}, ",", {"Ref":"Subnet2"},
+                { "Fn::If" : ["IsThreeAz",
+                    { "Fn::Join" : ["", [",", {"Ref":"Subnet3"}]] },
+                    { "Ref" : "AWS::NoValue" }
+                ]}
+            ]]}
+        }
     }
 }

@@ -162,7 +162,7 @@
                         "Action": ["sts:AssumeRole"]
                     }]
                 },
-                "Path": "/",
+                "Path": "/platforms/ecs/",
                 "Policies": [{
                     "PolicyName": "ecs-service",
                     "PolicyDocument": {
@@ -188,7 +188,7 @@
         "Ec2InstanceProfile": {
             "Type": "AWS::IAM::InstanceProfile",
             "Properties": {
-                "Path": "/",
+                "Path": "/platforms/ecs/",
                 "Roles": [{ "Ref": "Ec2Role" }]
             }
         }

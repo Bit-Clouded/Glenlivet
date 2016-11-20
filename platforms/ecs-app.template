@@ -102,7 +102,7 @@
                         "Action": ["sts:AssumeRole"]
                     }]
                 },
-                "Path": "/",
+                "Path": "/platforms/ecs/",
                 "Policies": [{
                     "PolicyName": "ecs-service",
                     "PolicyDocument": {

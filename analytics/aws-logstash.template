@@ -10,10 +10,13 @@
 		},
 
 		"LogstashNodeType" : {
-			"Description" : "Logstash EC2 instance type",
+			"Description" : "Logstash EC2 instance type. t2.nano should only be used for development purpose.",
 			"Type" : "String",
 			"Default" : "m3.medium",
 			"AllowedValues": [
+				"t2.nano",
+				"t2.micro",
+				"t2.small",
 				"m3.medium",
 				"m4.large",
 				"m4.xlarge",
@@ -26,8 +29,8 @@
 			],
 			"ConstraintDescription" : "must be a valid EC2 instance type."
 		},
-		"UbuntuAmi": {
-			"Description": "AMI to use. Note Ubuntu is prefered.",
+		"DebianJsAmiId": {
+			"Description": "AMI to use",
 			"Default": "ami-fddabdc7",
 			"Type": "AWS::EC2::Image::Id"
 		},
@@ -36,18 +39,9 @@
 			"Description" : "VPCid associated with the subnets. [nat-subnets.parameters.VpcId]",
 			"Type": "AWS::EC2::VPC::Id"
 		},
-		"Subnet1Id": {
-			"Description" : "Subnet to run HA web cluster on. [nat-subnets.resources.Subnet1]",
-			"Type": "AWS::EC2::Subnet::Id"
-		},
-		"Subnet2Id": {
-			"Description" : "Subnet to run HA web cluster on. [nat-subnets.resources.Subnet2]",
-			"Type": "AWS::EC2::Subnet::Id"
-		},
-		"Subnet3Id": {
-			"Description" : "Subnet to run HA web cluster on. [nat-subnets.resources.Subnet3]",
-			"Type": "String",
-			"Default": ""
+		"Subnets": {
+			"Description" : "Subnet to run HA web cluster on. [nat-subnets.outputs.Subnets]",
+			"Type": "List<AWS::EC2::Subnet::Id>"
 		},
 
 		"LogStream" : {
@@ -81,7 +75,8 @@
 
 		"EsHost" : {
 			"Description": "Hostname of Elasticsearch [elasticsearch.outputs.EsElb]",
-			"Type": "String"
+			"Type": "String",
+			"Default": ""
 		},
 
         "RawLogBucketName" : {
@@ -93,29 +88,37 @@
 			"Type": "String"
 		},
 
-        "AccessLogBucketName" : {
-			"Description": "Hostname of Elasticsearch [logs-store.resources.AccessLog]",
+        "AccessS3LogBucketName" : {
+			"Description": "Hostname of Elasticsearch [logs-store.resources.AccessS3Log]",
 			"Type": "String"
 		},
-        "AccessLogSns" : {
-			"Description": "Hostname of Elasticsearch [logs-store.resources.AccessLogBucketNotification]",
+        "AccessS3LogSns" : {
+			"Description": "Hostname of Elasticsearch [logs-store.resources.AccessS3LogBucketNotification]",
+			"Type": "String"
+		},
+        "AccessCfLogBucketName" : {
+			"Description": "Hostname of Elasticsearch [logs-store.resources.AccessCfLog]",
+			"Type": "String"
+		},
+        "AccessCfLogSns" : {
+			"Description": "Hostname of Elasticsearch [logs-store.resources.AccessCfLogBucketNotification]",
 			"Type": "String"
 		},
 
 		"LogstashDocker": {
 			"Description": "Name of cluster. This is used for discovery.",
 			"Type": "String",
-			"Default": "sleepersmith/aws-lego-cwlstashing:v0.2.0"
+			"Default": "bitclouded/ls-aws-kinesis:2.2"
 		},
 		"LogstashSqsDocker": {
 			"Description": "Name of cluster. This is used for discovery.",
 			"Type": "String",
-			"Default": "sleepersmith/aws-lego-sqs3logstashing:v0.1.0"
+			"Default": "bitclouded/ls-aws-sqs3:1.3"
 		},
 		"CwlUbuntuAgentDocker": {
 			"Description": "Name of cluster. This is used for discovery.",
 			"Type": "String",
-			"Default": "sleepersmith/aws-lego-awscwlagent-ubuntu:v0.2.0"
+			"Default": "bitclouded/aws-cwl-agent:4.1"
 		},
 		"CwlLinuxParams" : {
 			"Description": "Environment variables for syslog and authlog cwl group names [logs-store.outputs.DockerCwlParams]",
@@ -221,14 +224,7 @@
 		"LogstashAsg" : {
 			"Type" : "AWS::AutoScaling::AutoScalingGroup",
 			"Properties" : {
-				"VPCZoneIdentifier": [
-					{ "Ref" : "Subnet1Id" },
-					{ "Ref" : "Subnet2Id" }
-				],
-				"AvailabilityZones" : [
-					{ "Fn::Select": ["0",  { "Fn::GetAZs": "" }]},
-					{ "Fn::Select": ["1",  { "Fn::GetAZs": "" }]}
-				],
+				"VPCZoneIdentifier": { "Ref" : "Subnets" },
 				"LaunchConfigurationName" : { "Ref" : "LogstashLc" },
 				"MinSize" : "1",
 				"MaxSize" : "5",
@@ -239,17 +235,14 @@
 			"Type" : "AWS::AutoScaling::LaunchConfiguration",
 			"Properties": {
 				"InstanceType" : { "Ref" : "LogstashNodeType" },
-				"ImageId" : { "Ref" : "UbuntuAmi" },
+				"ImageId" : { "Ref" : "DebianJsAmiId" },
 				"KeyName" : { "Ref" : "KeyPairName" },
-				"AssociatePublicIpAddress": "false",
 				"SecurityGroups": [
 					{ "Ref" : "LogstashSg" }
 				],
 				"IamInstanceProfile": { "Ref" : "LogstashInstanceProfile" },
 				"UserData" : { "Fn::Base64" : { "Fn::Join" : ["", [
                     "#!/bin/bash\n",
-                    "ifconfig eth0 mtu 1500\n",
-                    "wget -qO- https://get.docker.com/ | sh\n",
 					"CWLA=cwlagent-$(curl http://instance-data/latest/meta-data/instance-id)\n",
 					"docker run -d --restart=always ",
 						"--name $CWLA --log-opt awslogs-stream=$CWLA ",
@@ -269,19 +262,17 @@
 						" -e AUTHLOG=", {"Ref":"LinuxAuthLogGroupName"},
 						" ", {"Ref":"LogstashDocker"}
 				]]}},
-				"BlockDeviceMappings" : [
-					{
-						"DeviceName" : "/dev/sda1",
-						"Ebs" : { "VolumeSize" : "50", "VolumeType" : "gp2" }
-					}
-				]
+				"BlockDeviceMappings" : [{
+					"DeviceName" : "/dev/xvda",
+					"Ebs" : { "VolumeSize" : "50", "VolumeType" : "gp2" }
+				}]
 			}
 		},
 
 		"LogstashInstanceProfile": {
 			"Type": "AWS::IAM::InstanceProfile",
 			"Properties": {
-				"Path": "/logstash/",
+				"Path": "/analytics/logstash/",
 				"Roles": [{ "Ref": "LogstashRole" }]
 			}
 		},
@@ -300,7 +291,7 @@
 						}
 					]
 				},
-				"Path": "/logstash/",
+				"Path": "/analytics/logstash/",
 				"ManagedPolicyArns" : [
 					{"Ref":"CwlPolicy"}
 				]
@@ -340,14 +331,7 @@
 		"LogstashSqsAsg" : {
 			"Type" : "AWS::AutoScaling::AutoScalingGroup",
 			"Properties" : {
-				"VPCZoneIdentifier": [
-					{ "Ref" : "Subnet1Id" },
-					{ "Ref" : "Subnet2Id" }
-				],
-				"AvailabilityZones" : [
-					{ "Fn::Select": ["0",  { "Fn::GetAZs": "" }]},
-					{ "Fn::Select": ["1",  { "Fn::GetAZs": "" }]}
-				],
+				"VPCZoneIdentifier": { "Ref" : "Subnets" },
 				"LaunchConfigurationName" : { "Ref" : "LogstashSqsLc" },
 				"MinSize" : "1",
 				"MaxSize" : "20",
@@ -358,17 +342,14 @@
 			"Type" : "AWS::AutoScaling::LaunchConfiguration",
 			"Properties": {
 				"InstanceType" : { "Ref" : "LogstashNodeType" },
-				"ImageId" : { "Ref" : "UbuntuAmi" },
+				"ImageId" : { "Ref" : "DebianJsAmiId" },
 				"KeyName" : { "Ref" : "KeyPairName" },
-				"AssociatePublicIpAddress": "false",
 				"SecurityGroups": [
 					{ "Ref" : "LogstashSg" }
 				],
 				"IamInstanceProfile": { "Ref" : "LogstashSqsInstanceProfile" },
 				"UserData" : { "Fn::Base64" : { "Fn::Join" : ["", [
                     "#!/bin/bash\n",
-                    "ifconfig eth0 mtu 1500\n",
-                    "wget -qO- https://get.docker.com/ | sh\n",
 					"CWLA=cwlagent-$(curl http://instance-data/latest/meta-data/instance-id)\n",
 					"docker run -d --restart=always ",
 						"--name $CWLA --log-opt awslogs-stream=$CWLA ",
@@ -379,26 +360,25 @@
 					"docker run -d --restart=always --name cwcron",
 						{"Ref":"CwlUbuntuAgentDocker"}," cron\n",
 
-                    "docker run --name logstash-sqs3 -d --restart=always ", {"Ref":"LogstashSqsDocker"}, " ",
-                        {"Fn::GetAtt":["LogQueue","QueueName"]}, " ",
-						{"Ref":"EsHost"}, " ",
-                        {"Ref":"RawLogBucketName"}, " ",
-						{"Ref":"AccessLogBucketName"}, " ",
-						"s3-access", " ", "cf-access"
+                    "docker run --name logstash-sqs3 -d --restart=always ",
+						"-e SQS=", {"Fn::GetAtt":["LogQueue","QueueName"]}, " ",
+						"-e ES_HOST=", {"Ref":"EsHost"}, " ",
+                        "-e RAW_BUCKET=", {"Ref":"RawLogBucketName"}, " ",
+						"-e S3_BUCKET=", {"Ref":"AccessS3LogBucketName"}, " ",
+						"-e CF_BUCKET=", {"Ref":"AccessCfLogBucketName"}, " ",
+						{"Ref":"LogstashSqsDocker"}
 				]]}},
-				"BlockDeviceMappings" : [
-					{
-						"DeviceName" : "/dev/sda1",
-						"Ebs" : { "VolumeSize" : "50", "VolumeType" : "gp2" }
-					}
-				]
+				"BlockDeviceMappings" : [{
+					"DeviceName" : "/dev/xvda",
+					"Ebs" : { "VolumeSize" : "50", "VolumeType" : "gp2" }
+				}]
 			}
 		},
 
 		"LogstashSqsInstanceProfile": {
 			"Type": "AWS::IAM::InstanceProfile",
 			"Properties": {
-				"Path": "/logstash/",
+				"Path": "/analytics/logstash/",
 				"Roles": [{ "Ref": "LogstashSqsRole" }]
 			}
 		},
@@ -417,7 +397,7 @@
 						}
 					]
 				},
-				"Path": "/logstash/",
+				"Path": "/analytics/logstash/",
 				"ManagedPolicyArns" : [
 					{"Ref":"CwlPolicy"}
 				]
