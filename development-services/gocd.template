@@ -224,8 +224,6 @@
 				"SubnetId": { "Fn::Select" : ["0", {"Ref": "ServerSubnets"}]},
 				"UserData" : { "Fn::Base64" : { "Fn::Join" : ["", [
 					"#!/bin/bash\n",
-                    "#ifconfig eth0 mtu 1500\n",
-                    "#wget -qO- https://get.docker.com/ | sh\n",
 					{"Fn::If":["HasStateSnapshot","", "mkfs -F -t ext4 /dev/xvdb\n"]},
 					"umount /mnt/\n",
 					"mkdir /mnt/xvdb\n",
