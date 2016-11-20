@@ -10,7 +10,8 @@
 		},
 		"DeploymentBucketMp": {
 			"Description" : "Role that allow access to the required resource for purpose of deployment. [misc.resources.DeploymentBucketMp]",
-			"Type": "String"
+			"Type": "String",
+			"Default" : ""
 		},
 		"ServerInstanceType" : {
 			"Description" : "Go master server EC2 instance type",
@@ -27,8 +28,8 @@
 			],
 			"ConstraintDescription" : "must be a valid EC2 instance type."
 		},
-		"ServerAmi": {
-			"Description": "AMI to use. Note Ubuntu is prefered.",
+		"DebianJsAmiId": {
+			"Description": "Debian Jessie AMI Id.",
 			"Type": "String"
 		},
 		"JenkinsStateDiskSnapshot" : {
@@ -40,6 +41,11 @@
 			"Description" : "Size of the disk for storing Jenkins state.",
 			"Type" : "Number",
 			"Default" : "100"
+		},
+		"JenkinsAgentDiskSize" : {
+			"Description" : "Size of the disk for storing Jenkins state.",
+			"Type" : "Number",
+			"Default" : "200"
 		},
 
 		"AgentInstanceType" : {
@@ -63,41 +69,15 @@
 			],
 			"ConstraintDescription" : "must be a valid EC2 instance type."
 		},
-		"AgentSpotInstanceType" : {
-			"Description" : "WebServer EC2 instance type",
-			"Type" : "String",
-			"Default" : "m3.xlarge",
-			"AllowedValues": [
-				"t2.micro",
-				"t2.small",
-				"t2.medium",
-				"t2.large",
-				"m3.medium",
-				"m3.large",
-				"m3.xlarge",
-				"m3.2xlarge",
-				"r3.large",
-				"r3.xlarge",
-				"r3.2xlarge",
-				"r3.4xlarge",
-				"r3.8xlarge"
-			],
-			"ConstraintDescription" : "must be a valid EC2 instance type."
-		},
 		"WindowsAgentAmi": {
 			"Description": "AMI to use for windows build agent.",
 			"Type": "String"
 		},
 		"LinuxAgentAmi": {
-			"Description": "AMI to use. Note Ubuntu is prefered.",
+			"Description": "AMI to use for linux build agent.",
 			"Type": "String"
 		},
 		
-		"JenkinsSwarmJar": {
-			"Description": "Url to download Go windows agent binary from.",
-			"Default": "http://maven.jenkins-ci.org/content/repositories/releases/org/jenkins-ci/plugins/swarm-client/1.24/swarm-client-1.24-jar-with-dependencies.jar",
-			"Type": "String"
-		},
 		"JenkinsContainer": {
 			"Description": "Jenkins container name with tag.",
 			"Default": "jenkins:1.642.2",
@@ -105,12 +85,7 @@
 		},
 		"JenkinsLxAgentContainer": {
 			"Description": "Jenkins swarm agent container name with tag.",
-			"Default": "sleepersmith/aws-lego-jenkinslxagent:v0.1.0",
-			"Type": "String"
-		},
-		"JavaWindowsInstaller": {
-			"Description": "Url to download Go windows agent binary from.",
-			"Default": "http://javadl.sun.com/webapps/download/AutoDL?BundleId=104768",
+			"Default": "bitcloudedci/jenkins-linux-agent:1.1",
 			"Type": "String"
 		},
 		"JenkinsAgentUsername": {
@@ -131,15 +106,15 @@
             "Type": "String"
 		},
 		"VpcId": {
-			"Description" : "VPCid associated with the subnets. [subnets.parameters.VpcId]",
+			"Description" : "VPCid associated with the subnets. [elb-subnets.parameters.VpcId]",
 			"Type": "String"
 		},
 		"ElbSubnet1Id": {
-			"Description" : "Subnet to run HA web cluster on. [elb.resources.ElbSubnet1]",
+			"Description" : "Subnet to run HA web cluster on. [elb-subnets.resources.ElbSubnet1]",
 			"Type": "String"
 		},
 		"PvtSubnet1Id": {
-			"Description" : "Subnet to run HA web cluster on. [elb.resources.PvtWebSubnet1]",
+			"Description" : "Subnet to run HA web cluster on. [elb-subnets.resources.PvtWebSubnet1]",
 			"Type": "String"
 		},
 		"TemplateBaseUrl": {
@@ -170,27 +145,27 @@
 			"ConstraintDescription": "Valid schemes: 'internet-facing' or 'internal'."
 		},
 		"RawLogBucket" : {
-			"Description": "Elb Target Security Group. [s3-aws-logs.resources.Raw]",
+			"Description": "Elb Target Security Group. [logs-store.resources.Raw]",
             "Type": "String"
 		},
 
 		"CwlUbuntuAgentDocker": {
 			"Description": "Name of cluster. This is used for discovery.",
 			"Type": "String",
-			"Default": "sleepersmith/aws-lego-awscwlagent-ubuntu:v0.2.0"
+			"Default": "bitclouded/aws-cwl-agent:4.1"
 		},
 		"CwlLinuxParams" : {
-			"Description": "Environment variables for syslog and authlog cwl group names [s3-aws-logs.outputs.LxDockerLogParams]",
+			"Description": "Environment variables for syslog and authlog cwl group names [logs-store.outputs.LxDockerLogParams]",
 			"Type": "String"
 		},
 		"CwlDockerParams" : {
-			"Description": "Docker log driver params [s3-aws-logs.outputs.DockerCwlParams]",
+			"Description": "Docker log driver params [logs-store.outputs.DockerCwlParams]",
 			"Type": "String"
 		},
 		"CwlPolicy" : {
-			"Description": "Managed policy for linux logging. [s3-aws-logs.resources.LinuxLogPolicy]",
+			"Description": "Managed policy for linux logging. [logs-store.resources.LinuxLogPolicy]",
 			"Type": "String"
-		}
+		} 
 	},
 
 	"Mappings" : {
@@ -292,7 +267,7 @@
 			"Properties" : {
 				"IamInstanceProfile" : {"Ref":"WebServersInstanceProfile"},
 				"InstanceType" : { "Ref" : "ServerInstanceType" },
-				"ImageId" : { "Ref" : "ServerAmi" },
+				"ImageId" : { "Ref" : "DebianJsAmiId" },
 				"KeyName" : { "Ref" : "KeyPairName" },
 				"SecurityGroupIds": [
 					{ "Ref" : "ServerSg" },
@@ -301,13 +276,13 @@
 				"SubnetId": { "Ref" : "PvtSubnet1Id"},
 				"UserData" : { "Fn::Base64" : { "Fn::Join" : ["", [
 					"#!/bin/bash\n",
-                    "ifconfig eth0 mtu 1500\n",
-                    "wget -qO- https://get.docker.com/ | sh\n",
-
-					{"Fn::If":["HasStateSnapshot","","mkfs -t ext4 /dev/xvdb\n"]},
+					{"Fn::If":["HasStateSnapshot","", "mkfs -F -t ext4 /dev/xvdb\n"]},
 					"umount /mnt/\n",
 					"mkdir /mnt/xvdb\n",
-					"mount -t ext4 /dev/xvdb /mnt/xvdb\n",
+					"cp /etc/fstab /etc/fstab.bak && rm /etc/fstab\n",
+					"cat /etc/fstab.bak | grep -v ^/dev/xvdb | tee /etc/fstab\n",
+					"echo -e \"/dev/xvdb\\t/mnt/xvdb\\tauto\\tdefaults\\t0\\t2\" >> /etc/fstab\n",
+					"mount -a\n",
 					"chown -R 1000 /mnt/xvdb\n",
 
 					"ECID=$(curl http://instance-data/latest/meta-data/instance-id)\n",
@@ -329,7 +304,7 @@
 				]]}},
 				"BlockDeviceMappings": [
 					{
-						"DeviceName" : "/dev/sda1",
+						"DeviceName" : "/dev/xvda",
 						"Ebs": { "VolumeSize": "30", "VolumeType": "gp2" }
 					}
 				],
@@ -374,89 +349,20 @@
 
 		"JenkinsWindowsAgentLc" : {
 			"Type" : "AWS::AutoScaling::LaunchConfiguration",
-			"Metadata"  : {
-				"AWS::CloudFormation::Authentication" : { "Fn::If":["HasDeploymentBucketMp", {
-					"DeploymentAccess": {
-						"type":"S3",
-						"roleName":{
-							"Ref":"WebServersRole"
-						}
-					}
-				}, {"Ref":"AWS::NoValue"}]},
-                "AWS::CloudFormation::Init": {
-                    "configSets": {
-                        "config": [
-                            "init"
-                        ]
-                    },
-                    "init"    : {
-                        "files": {
-                            "C:\\cfn\\bin\\swarm-client-with-dependencies.jar": {
-                                "source": { "Ref": "JenkinsSwarmJar" }
-                            },
-							"C:\\cfn\\bin\\java-installer.exe": {
-                                "source": { "Ref": "JavaWindowsInstaller" }
-                            },
-							"C:\\cfn\\scripts\\Install-JenkinsTask.ps1": {
-                                "content": {"Fn::Join": ["",[
-                                    
-                                ]]}
-                            },
-							"C:\\cfn\\scripts\\Install-VisualStudio.ps1": {
-                                "content": {"Fn::Join": ["\n",[
-                                    "Install-WindowsFeature AS-NET-Framework,WAS-NET-Environment -IncludeManagementTools -IncludeAllSubFeature",
-                                    "Invoke-WebRequest \"http://download.microsoft.com/download/1/E/0/1E0AA8D0-F5D4-45A8-9CA6-D9DC8A54DE3E/vs_ultimate.exe\" -OutFile .\\web-vs-install.exe",
-									".\".\\web-vs-install.exe\" /adminfile C:\\cfn\\scripts\\jenkins-vs-install.xml /log vs-install.log /quiet /norestart",
-									"",
-									"while((Get-Process | ? { $_.ProcessName -eq 'web-vs-install' }).Count -gt 0) {",
-									"    Write-Host 'Waiting...'",
-									"    Sleep 180",
-									"}"
-                                ]]}
-                            },
-							"C:\\cfn\\scripts\\RunAgent.ps1": {
-                                "content": {"Fn::Join": ["",[
-                                    "$instanceId = Invoke-RestMethod http://169.254.169.254/latest/meta-data/instance-id\n",
-                                    "$ipv4address = Invoke-RestMethod http://169.254.169.254/latest/meta-data/local-ipv4\n",
-									"$java = (Get-ChildItem \"C:\\Program Files\\Java\\\" -Filter java.exe -Recurse)\n",
-                                    ".\"$($java.FullName)\" -jar C:\\cfn\\bin\\swarm-client-with-dependencies.jar `\n",
-                                    "    -master http://", { "Fn::GetAtt" : ["JenkinsMaster", "PrivateIp"] }, ":8080 `\n",
-									"    -username ", {"Ref": "JenkinsAgentUsername"}, " -password ", {"Ref": "JenkinsAgentPassword"}, " `\n",
-                                    "    -name \"win-$instanceId\" -description $ipv4address -fsroot C:\\jenkins\\ -executors 2 -labels windows\n"
-                                ]]}
-                            }
-                        },
-                        "commands": {
-							"1-install-java": {
-                                "command": "C:\\cfn\\bin\\java-installer.exe STATIC=0 WEB_JAVA=0 /s /L C:\\cfn\\log\\java-installer.log",
-                                "waitAfterCompletion": "0"
-                            },
-							"3-install-jenkins": {
-                                "command": { "Fn::Join": [" ", [
-									"powershell.exe -ExecutionPolicy Unrestricted",
-									"C:\\cfn\\scripts\\Install-JenkinsTask.ps1"
-								]]},
-                                "waitAfterCompletion": "0"
-                            }
-						}
-                    }
-                }
-            },
 			"Properties": {
 				"InstanceType" : { "Ref" : "AgentInstanceType" },
 				"ImageId" : { "Ref" : "WindowsAgentAmi" },
 				"IamInstanceProfile" : {"Ref":"WebServersInstanceProfile"},
 				"KeyName" : { "Ref" : "KeyPairName" },
-				"AssociatePublicIpAddress": "false",
 				"SecurityGroups": [
 					{ "Ref" : "AgentSg" }
 				],
-				"BlockDeviceMappings": [
-					{ "DeviceName" : "/dev/sda1", "Ebs" : { "VolumeSize" : "80", "VolumeType" : "gp2" } }
-				],
+				"BlockDeviceMappings": [{
+					"DeviceName" : "/dev/sda1",
+					"Ebs" : { "VolumeSize" : {"Ref":"JenkinsAgentDiskSize"}, "VolumeType" : "gp2" }
+				}],
 				"UserData" : { "Fn::Base64" : { "Fn::Join" : ["", [
 					"<script>\n",
-                    "cfn-init.exe -v -c config -s ", { "Ref": "AWS::StackId" }, " -r JenkinsWindowsAgentLc ", " --region ", { "Ref": "AWS::Region" }, "\n",
                     "</script>"
 				]]}}
 			}
@@ -471,7 +377,6 @@
 				"LaunchConfigurationName" : { "Ref" : "JenkinsWindowsAgentLc" },
 				"MinSize" : "0",
 				"MaxSize" : "20",
-				"DesiredCapacity" : "0",
 				"Tags" : [{"Key": "Name", "Value" : "Jenkins Agent", "PropagateAtLaunch" : "True"}]
 			}
 		},
@@ -482,15 +387,11 @@
 				"ImageId" : { "Ref" : "LinuxAgentAmi" },
 				"IamInstanceProfile" : {"Ref":"WebServersInstanceProfile"},
 				"KeyName" : { "Ref" : "KeyPairName" },
-				"AssociatePublicIpAddress": "false",
 				"SecurityGroups": [
 					{ "Ref" : "AgentSg" }
 				],
 				"UserData" : { "Fn::Base64" : { "Fn::Join" : ["", [
 					"#!/bin/bash\n",
-                    "ifconfig eth0 mtu 1500\n",
-                    "wget -qO- https://get.docker.com/ | sh\n",
-
 					"ECID=$(curl http://instance-data/latest/meta-data/instance-id)\n",
 					"CWLA=cwlagent_$ECID\n",
 					"docker run -d --restart=always ",
@@ -502,19 +403,19 @@
 					"docker run -d --restart=always --name cwlcron ",
 						{"Ref":"CwlUbuntuAgentDocker"}," cron\n",
 
-					"JENKINS_AGENT=jenkins-linux-agent_$ECID\n",
-                    "docker run -d --restart=always ",
-						"--name $JENKINS_AGENT --log-opt awslogs-stream=$JENKINS_AGENT ",
+                    "JENKINS_AGENT=jenkins-agent_$ECID\n",
+                    "docker run -d --restart=always --name $JENKINS_AGENT --log-opt awslogs-stream=$JENKINS_AGENT ",
+						"-v /var/run/docker.sock:/var/run/docker.sock --privileged ",
 						{"Ref":"CwlLinuxParams"}," ",
 						"-e JENKINS_HOST=",{ "Fn::GetAtt" : ["JenkinsMaster", "PrivateIp"] }," ",
 						"-e JENKINS_USERNAME=",{"Ref":"JenkinsAgentUsername"}," ",
 						"-e JENKINS_PASSWORD=",{"Ref":"JenkinsAgentPassword"}," ",
-						"-e EXECUTOR_COUNT=2 ",
                         {"Ref":"JenkinsLxAgentContainer"}
 				]]}},
-				"BlockDeviceMappings" : [
-					{ "DeviceName" : "/dev/sda1", "Ebs" : { "VolumeSize" : "30", "VolumeType" : "gp2" } }
-				]
+				"BlockDeviceMappings" : [{
+					"DeviceName" : "/dev/xvda",
+					"Ebs" : { "VolumeSize" : {"Ref":"JenkinsAgentDiskSize"}, "VolumeType" : "gp2" }
+				}]
 			}
 		},
 		"JenkinsLinuxAgentAsg" : {
@@ -527,7 +428,6 @@
 				"LaunchConfigurationName" : { "Ref" : "JenkinsLinuxAgentLc" },
 				"MinSize" : "0",
 				"MaxSize" : "20",
-				"DesiredCapacity" : "0",
 				"Tags" : [{"Key": "Name", "Value" : "Jenkins Agent", "PropagateAtLaunch" : "True"}]
 			}
 		},
