@@ -1,0 +1,322 @@
+{
+    "AWSTemplateFormatVersion": "2010-09-09",
+    "Parameters": {
+        "KeyPairName": {
+            "Description": "Name of an existing EC2 KeyPair to enable SSH access to the instances",
+            "Type": "AWS::EC2::KeyPair::KeyName"
+        },
+
+        "AdminElbScheme": {
+            "Type" : "String",
+            "Default" : "internal",
+            "AllowedValues" : ["internet-facing", "internal"],
+            "Description" : "Whether the site has a public ip address and is publicly available."
+        },
+        "DbStorageQuota" : {
+            "Description": "Disk size of MariaDB server.",
+            "Default": "20",
+            "Type": "Number"
+        },
+        "DbInstanceTyp" : {
+            "Description" : "MariaDB server instance type",
+            "Type" : "String",
+            "Default" : "db.t2.medium",
+            "AllowedValues": [
+                "db.t2.micro",
+                "db.t2.small",
+                "db.t2.medium",
+                "db.t2.large",
+                "db.m3.medium",
+                "db.m4.large",
+                "db.m4.xlarge",
+                "db.m4.2xlarge",
+                "db.r3.large",
+                "db.r3.xlarge",
+                "db.r3.2xlarge",
+                "db.r3.4xlarge",
+                "db.r3.8xlarge"
+            ],
+            "ConstraintDescription" : "must be a valid RDS instance type."
+        },
+        "DbUsername" : {
+            "Description" : "MariaDB server username",
+            "Type" : "String",
+            "Default" : "sqladmin"
+        },
+        "DbPassword" : {
+            "Description" : "MariaDB server password",
+            "Type" : "String",
+            "NoEcho" : "True"
+        },
+        "DbSnapshot" : {
+            "Description" : "MariaDB server snapshot",
+            "Type" : "String",
+            "Default" : ""
+        },
+        "DbSubnetGroup" : {
+            "Description" : "Subnet Group for hosting the MariaDB server. [private-subnets.resources.RdsSubnetGroup]",
+            "Type" : "String"
+        },
+        "WebInstanceTyp" : {
+            "Description" : "Phabricator server instance type",
+            "Type" : "String",
+            "Default" : "t2.medium",
+            "AllowedValues": [
+                "t2.micro",
+                "t2.small",
+                "t2.medium",
+                "t2.large",
+                "m3.medium",
+                "m4.large",
+                "m4.xlarge",
+                "m4.2xlarge"
+            ],
+            "ConstraintDescription" : "must be a valid EC2 instance type."
+        },
+        "RancherAmiId": {
+            "Type": "String",
+            "Default": "ami-67172604"
+        },
+        "VpcId": {
+            "Description" : "VPCid associated with the subnets. [elb-subnets.parameters.VpcId]",
+            "Type": "AWS::EC2::VPC::Id"
+        },
+        "ElbSubnets" : {
+            "Description" : "VPCid associated with the subnets. [elb-subnets.outputs.ElbSubnets]",
+            "Type": "List<AWS::EC2::Subnet::Id>"
+        },
+        "ServerSubnets" : {
+            "Description" : "VPCid associated with the subnets. [elb-subnets.outputs.WebServerSubnets]",
+            "Type": "List<AWS::EC2::Subnet::Id>"
+        }
+    },
+
+    "Conditions" : {
+        "HasDbSnapshot" : {"Fn::Not": [{"Fn::Equals": [
+            {"Ref": "DbSnapshot"}, ""
+        ]}]}
+    },
+
+    "Resources": {
+        "AdminAsg": {
+            "Type": "AWS::AutoScaling::AutoScalingGroup",
+            "Properties": {
+                "VPCZoneIdentifier" : {"Ref":"ServerSubnets"},
+                "Tags": [{
+                    "Value": "Rancher Server",
+                    "PropagateAtLaunch": true,
+                    "Key": "Name"
+                }],
+                "LoadBalancerNames": [
+                    { "Ref": "AdminGateway" }
+                ],
+                "MinSize": 1,
+                "MaxSize": 5,
+                "LaunchConfigurationName": { "Ref": "AdminServerLc" }
+            },
+            "DependsOn": "Database"
+        },
+        "AdminServerLc": {
+            "Type": "AWS::AutoScaling::LaunchConfiguration",
+            "Properties": {
+                "KeyName": { "Ref": "KeyPairName" },
+                "SecurityGroups": [
+                    { "Ref": "WebServerSg" }
+                ],
+                "InstanceType": { "Ref": "WebInstanceTyp" },
+                "ImageId": { "Ref": "RancherAmiId" },
+                "UserData": { "Fn::Base64": { "Fn::Join": ["", [
+                    "#cloud-config\n",
+                    "rancher:\n",
+                    "  services:\n",
+                    "    rancher-server:\n",
+                    "      image: rancher/server\n",
+                    "      ports:\n",
+                    "      - 8080:8080\n",
+                    "      restart: always\n",
+                    "      environment:\n",
+                    "        - CATTLE_DB_CATTLE_MYSQL_HOST=", { "Fn::GetAtt": ["Database", "Endpoint.Address"] }, "\n",
+                    "        - CATTLE_DB_CATTLE_MYSQL_PORT=", { "Fn::GetAtt": ["Database", "Endpoint.Port"] }, "\n",
+                    "        - CATTLE_DB_CATTLE_MYSQL_NAME=rancher\n",
+                    "        - CATTLE_DB_CATTLE_USERNAME=", { "Ref": "DbUsername" }, "\n",
+                    "        - CATTLE_DB_CATTLE_PASSWORD=", { "Ref": "DbPassword" }, "\n"
+                ]]}}
+            }
+        },
+        "WorkerAsg": {
+            "Type": "AWS::AutoScaling::AutoScalingGroup",
+            "Properties": {
+                "VPCZoneIdentifier" : {"Ref":"ServerSubnets"},
+                "Tags": [{
+                    "Value": "Rancher Node",
+                    "PropagateAtLaunch": true,
+                    "Key": "Name"
+                }],
+                "MinSize": "1",
+                "MaxSize": "20",
+                "LaunchConfigurationName": { "Ref": "WorkerLc" }
+            }
+        },
+        "WorkerLc": {
+            "Type": "AWS::AutoScaling::LaunchConfiguration",
+            "Properties": {
+                "KeyName": { "Ref": "KeyPairName" },
+                "SecurityGroups": [
+                    { "Ref": "WebServerSg" }
+                ],
+                "InstanceType": { "Ref": "WebInstanceTyp" },
+                "ImageId": { "Ref": "RancherAmiId" },
+                "UserData": { "Fn::Base64": { "Fn::Join": ["", [
+                    "#cloud-config\n",
+                    "rancher:\n",
+                    "  services:\n",
+                    "    register:\n",
+                    "      priviledged: true\n",
+                    "      volumes:\n",
+                    "      - /var/run/docker.sock:/var/run/docker.sock\n",
+                    "      image: rancher/agent\n",
+                    "      command:\n",
+                    "      - http://", { "Fn::GetAtt": ["AdminGateway", "DNSName"] }
+                ]]}}
+            },
+            "DependsOn": "AdminAsg"
+        },
+        "AdminGatewaySg": {
+            "Type": "AWS::EC2::SecurityGroup",
+            "Properties": {
+                "SecurityGroupIngress": [{
+                    "ToPort": 80,
+                    "IpProtocol": "tcp",
+                    "FromPort": 80,
+                    "CidrIp": "0.0.0.0/0"
+                }],
+                "VpcId": { "Ref": "VpcId" },
+                "GroupDescription": "Security group for the Admin Gateway"
+            }
+        },
+        "WebServerSg": {
+            "Type": "AWS::EC2::SecurityGroup",
+            "Properties": {
+                "SecurityGroupIngress": [
+                    {
+                        "FromPort": 8080,
+                        "ToPort": 8080,
+                        "IpProtocol": "tcp",
+                        "SourceSecurityGroupId": { "Ref": "AdminGatewaySg" }
+                    },
+                    {
+                        "FromPort": 4500,
+                        "ToPort": 4500,
+                        "IpProtocol": "udp",
+                        "CidrIp": "0.0.0.0/0"
+                    },
+                    {
+                        "FromPort": 22,
+                        "ToPort": 22,
+                        "IpProtocol": "tcp",
+                        "CidrIp": "0.0.0.0/0"
+                    },
+                    {
+                        "FromPort": 500,
+                        "ToPort": 500,
+                        "IpProtocol": "udp",
+                        "CidrIp": "0.0.0.0/0"
+                    }
+                ],
+                "VpcId": { "Ref": "VpcId" },
+                "GroupDescription": "Security group for the RancherOS admin web servers"
+            }
+        },
+        "AdminGateway": {
+            "Type": "AWS::ElasticLoadBalancing::LoadBalancer",
+            "Properties": {
+                "Subnets": {"Ref":"ElbSubnets"},
+                "Scheme" : {"Ref":"AdminElbScheme"},
+                "Listeners": [{
+                    "InstancePort": 8080,
+                    "LoadBalancerPort": 80,
+                    "Protocol": "tcp",
+                    "InstanceProtocol": "tcp"
+                }],
+                "SecurityGroups": [
+                    { "Ref": "AdminGatewaySg" }
+                ],
+                "Policies": [{
+                    "PolicyName": "EnableProxyProtocol",
+                    "InstancePorts": ["8080"],
+                    "PolicyType": "ProxyProtocolPolicyType",
+                    "Attributes": [{
+                        "Name": "ProxyProtocol",
+                        "Value": "true"
+                    }]
+                }],
+                "HealthCheck": {
+                    "HealthyThreshold": 2,
+                    "Interval": 30,
+                    "Target": "HTTP:8080/ping",
+                    "Timeout": 10,
+                    "UnhealthyThreshold": 5
+                },
+                "ConnectionDrainingPolicy": {
+                    "Enabled": "true",
+                    "Timeout": "60"
+                }
+            }
+        },
+        "Database" : {
+            "Type" : "AWS::RDS::DBInstance",
+            "Properties" : {
+                "VPCSecurityGroups" : [
+                    { "Ref": "RancherDbSg" }
+                ],
+                "AllocatedStorage" : {"Ref": "DbStorageQuota"},
+                "DBInstanceClass" : {"Ref": "DbInstanceTyp"},
+                "DBParameterGroupName" : {"Ref": "DbParamGroup"},
+                "DBName": "rancher",
+                "Engine" : "mariadb",
+                "EngineVersion" : "10.1.14",
+                "MasterUsername" : {"Ref": "DbUsername"},
+                "MasterUserPassword" : {"Ref": "DbPassword"},
+                "DBSnapshotIdentifier" : {"Fn::If": [
+                    "HasDbSnapshot", {"Ref": "DbSnapshot"}, {"Ref" : "AWS::NoValue"}
+                ]},
+                "DBSubnetGroupName" : {"Ref":"DbSubnetGroup"},
+                "Tags" : [{"Key": "Name", "Value" : "RancherOS Database"}],
+                "StorageType" : "gp2",
+                "MultiAZ": "true"
+            },
+            "DeletionPolicy" : "Snapshot"
+        }, 
+        "DbParamGroup": {
+            "Type": "AWS::RDS::DBParameterGroup",
+            "Properties": {
+                "Description": "CloudFormation Sample Database Parameter Group", 
+                "Family": "mariadb10.1",
+                "Parameters": {
+                }
+            } 
+        },
+        "RancherDbSg": {
+            "Type": "AWS::EC2::SecurityGroup",
+            "Properties": {
+                "SecurityGroupIngress": [{
+                    "ToPort": "3306",
+                    "IpProtocol": "tcp",
+                    "FromPort": "3306",
+                    "SourceSecurityGroupId": { "Ref": "WebServerSg" }
+                }],
+                "VpcId": { "Ref": "VpcId" },
+                "GroupDescription": "RancherOS Database Security Group"
+            }
+        }
+    },
+    "Outputs": {
+        "AdminPanel": {
+            "Value": {
+            "Fn::Join": ["", [
+                "http://", { "Fn::GetAtt": ["AdminGateway", "DNSName"] }
+            ]]},
+            "Description": "Admin panel url."
+        }
+    }
+}

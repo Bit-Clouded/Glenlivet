@@ -1,0 +1,480 @@
+{
+	"AWSTemplateFormatVersion": "2010-09-09",
+
+	"Description": "A template to launch Jenkins build servers.",
+
+	"Parameters": {
+		"KeyPairName": {
+			"Description": "Name of an existing EC2 KeyPair",
+			"Type": "String"
+		},
+		"DeploymentBucketMp": {
+			"Description" : "Role that allow access to the required resource for purpose of deployment. [misc.resources.DeploymentBucketMp]",
+			"Type": "String",
+			"Default" : ""
+		},
+		"ServerInstanceType" : {
+			"Description" : "Go master server EC2 instance type",
+			"Type" : "String",
+			"Default" : "t2.micro",
+			"AllowedValues": [
+				"t2.micro",
+				"t2.small",
+				"t2.medium",
+				"m3.medium",
+				"m3.large",
+				"m3.xlarge",
+				"m3.2xlarge"
+			],
+			"ConstraintDescription" : "must be a valid EC2 instance type."
+		},
+		"DebianJsAmiId": {
+			"Description": "Debian Jessie AMI Id.",
+			"Type": "String"
+		},
+		"JenkinsStateDiskSnapshot" : {
+			"Description" : "Snapshot of jenkins state disk",
+			"Type" : "String",
+			"Default" : ""
+		},
+		"JenkinsStateDiskSize" : {
+			"Description" : "Size of the disk for storing Jenkins state.",
+			"Type" : "Number",
+			"Default" : "100"
+		},
+		"JenkinsAgentDiskSize" : {
+			"Description" : "Size of the disk for storing Jenkins state.",
+			"Type" : "Number",
+			"Default" : "200"
+		},
+
+		"AgentInstanceType" : {
+			"Description" : "WebServer EC2 instance type",
+			"Type" : "String",
+			"Default" : "t2.medium",
+			"AllowedValues": [
+				"t2.micro",
+				"t2.small",
+				"t2.medium",
+				"t2.large",
+				"m3.medium",
+				"m3.large",
+				"m3.xlarge",
+				"m3.2xlarge",
+				"r3.large",
+				"r3.xlarge",
+				"r3.2xlarge",
+				"r3.4xlarge",
+				"r3.8xlarge"
+			],
+			"ConstraintDescription" : "must be a valid EC2 instance type."
+		},
+		"WindowsAgentAmi": {
+			"Description": "AMI to use for windows build agent.",
+			"Type": "String"
+		},
+		"LinuxAgentAmi": {
+			"Description": "AMI to use for linux build agent.",
+			"Type": "String"
+		},
+		
+		"JenkinsContainer": {
+			"Description": "Jenkins container name with tag.",
+			"Default": "jenkins:1.642.2",
+			"Type": "String"
+		},
+		"JenkinsLxAgentContainer": {
+			"Description": "Jenkins swarm agent container name with tag.",
+			"Default": "bitcloudedci/jenkins-linux-agent:1.1",
+			"Type": "String"
+		},
+		"JenkinsAgentUsername": {
+			"Description": "Username to allow auto registering of go agents.",
+			"Default": "autojoin",
+			"Type": "String"
+		},
+		"JenkinsAgentPassword": {
+			"Description": "Shared secret to allow auto registering of go agents.",
+			"Default": "Password1234",
+			"Type": "String",
+			"NoEcho": "True"
+		},
+
+		"SslCertId" : {
+			"Description": "Id of the SSL certificate to use.",
+			"Default" : "",
+            "Type": "String"
+		},
+		"VpcId": {
+			"Description" : "VPCid associated with the subnets. [elb-subnets.parameters.VpcId]",
+			"Type": "String"
+		},
+		"ElbSubnet1Id": {
+			"Description" : "Subnet to run HA web cluster on. [elb-subnets.resources.ElbSubnet1]",
+			"Type": "String"
+		},
+		"PvtSubnet1Id": {
+			"Description" : "Subnet to run HA web cluster on. [elb-subnets.resources.PvtWebSubnet1]",
+			"Type": "String"
+		},
+		"TemplateBaseUrl": {
+			"Description" : "Additional resources are expected from this url; pom.xml",
+			"Type": "String"
+		},
+
+		"ElbSg" : {
+			"Description": "Elb Security Group. [vpc.resources.ElbSecGroup]",
+            "Type": "String"
+		},
+		"ElbTargetSg" : {
+			"Description": "Elb Target Security Group. [vpc.resources.ElbTargetSecGroup]",
+            "Type": "String"
+		},
+		"HttpSg" : {
+			"Description": "Elb Target Security Group. [vpc.resources.HttpNsSecGroup]",
+            "Type": "String"
+		},
+		"IsPublicFacing": {
+			"Description" : "Is publicly accessable deployment.",
+			"Type" : "String",
+			"AllowedValues": [
+				"true",
+				"false"
+			],
+			"Default": "false",
+			"ConstraintDescription": "Valid schemes: 'internet-facing' or 'internal'."
+		},
+		"RawLogBucket" : {
+			"Description": "Elb Target Security Group. [logs-store.resources.Raw]",
+            "Type": "String"
+		},
+
+		"CwlUbuntuAgentDocker": {
+			"Description": "Name of cluster. This is used for discovery.",
+			"Type": "String",
+			"Default": "bitclouded/aws-cwl-agent:4.1"
+		},
+		"CwlLinuxParams" : {
+			"Description": "Environment variables for syslog and authlog cwl group names [logs-store.outputs.LxDockerLogParams]",
+			"Type": "String"
+		},
+		"CwlDockerParams" : {
+			"Description": "Docker log driver params [logs-store.outputs.DockerCwlParams]",
+			"Type": "String"
+		},
+		"CwlPolicy" : {
+			"Description": "Managed policy for linux logging. [logs-store.resources.LinuxLogPolicy]",
+			"Type": "String"
+		} 
+	},
+
+	"Mappings" : {
+		"InstanceVariables" : {
+			"t2.micro": { "ram" : "450" },
+			"t2.small": { "ram" : "950" },
+			"t2.medium": { "ram" : "1950" },
+			"m3.medium": { "ram" : "1800", "lspotprice": "0.028", "wspotprice": "0.08" },
+			"m3.large": { "ram" : "3600", "lspotprice": "0.056", "wspotprice": "0.15" },
+			"m3.xlarge": { "ram" : "7000", "lspotprice": "0.111", "wspotprice": "0.271" },
+			"m3.2xlarge": { "ram" : "14500", "lspotprice": "0.222", "wspotprice": "0.543" },
+			"r3.large": { "ram" : "7500", "lspotprice": "0.065", "wspotprice": "0.155" },
+			"r3.xlarge": { "ram" : "15000", "lspotprice": "0.130", "wspotprice": "0.280" },
+			"r3.2xlarge": { "ram" : "30000", "lspotprice": "0.261", "wspotprice": "0.539" },
+			"r3.4xlarge": { "ram" : "60000", "lspotprice": "0.522", "wspotprice": "0.948" },
+			"r3.8xlarge": { "ram" : "12000", "lspotprice": "1.043", "wspotprice": "1.228" }
+		}
+	},
+	"Conditions" : {
+		"IsPublicFacingCondition" : {
+			"Fn::Equals": [{"Ref":"IsPublicFacing"},"true"]
+		},
+		"HasStateSnapshot" : {"Fn::Not": [{"Fn::Equals": [
+			{"Ref": "JenkinsStateDiskSnapshot"}, ""
+		]}]},
+		"HasDeploymentBucketMp" : {"Fn::Not": [{"Fn::Equals": [
+			{"Ref": "DeploymentBucketMp"}, ""
+		]}]},
+		"HasSsl" : {"Fn::Not": [{"Fn::Equals": [
+			{"Ref": "SslCertId"}, ""
+		]}]}
+	},
+
+	"Resources" : {
+
+		"HttpGateway" : {
+			"Type" : "AWS::ElasticLoadBalancing::LoadBalancer",
+			"Properties" : {
+				"Subnets": [{ "Ref" : "ElbSubnet1Id"}],
+				"Listeners" : [
+					{
+						"LoadBalancerPort" : "80",
+						"InstancePort" : "8080",
+						"Protocol" : "HTTP"
+					},
+					{"Fn::If" : [ "HasSsl",
+					{
+						"LoadBalancerPort" : "443",
+						"InstancePort" : "8080",
+						"Protocol" : "HTTPS",
+						"InstanceProtocol": "HTTP",
+						"SSLCertificateId": { "Ref": "SslCertId" }
+					},{"Ref":"AWS::NoValue"}]}
+				],
+				"HealthCheck" : {
+					"Target" : { "Fn::Join" : [ "", ["TCP:8080"]]},
+					"HealthyThreshold" : "3",
+					"UnhealthyThreshold" : "5",
+					"Interval" : "30",
+					"Timeout" : "5"
+				},
+				"AccessLoggingPolicy" : {
+					"EmitInterval": "5",
+					"Enabled": "true",
+					"S3BucketName": {"Ref": "RawLogBucket"}
+				},
+				"SecurityGroups": [
+					{ "Ref": "ElbSg" },
+					{ "Ref": "HttpSg" }
+				],
+				"Scheme": { "Fn::If" : [
+					"IsPublicFacingCondition",
+					"internet-facing",
+					"internal"
+				]},
+				"Instances" : [
+					{"Ref":"JenkinsMaster"}
+				]
+			}
+		},
+		
+		"RepoDisk" : {
+			"Type":"AWS::EC2::Volume",
+			"Properties" : {
+				"AvailabilityZone" : {"Fn::Select":["0", { "Fn::GetAZs": "" }]},
+				"Size" : {"Ref": "JenkinsStateDiskSize"},
+				"SnapshotId" : {"Fn::If":["HasStateSnapshot",
+					{"Ref":"JenkinsStateDiskSnapshot"},
+					{"Ref":"AWS::NoValue"}
+				]},
+				"Tags" : [],
+				"VolumeType" : "gp2"
+			},
+			"DeletionPolicy" : "Snapshot"
+		},
+
+		"JenkinsMaster" : {
+			"Type" : "AWS::EC2::Instance",
+			"Properties" : {
+				"IamInstanceProfile" : {"Ref":"WebServersInstanceProfile"},
+				"InstanceType" : { "Ref" : "ServerInstanceType" },
+				"ImageId" : { "Ref" : "DebianJsAmiId" },
+				"KeyName" : { "Ref" : "KeyPairName" },
+				"SecurityGroupIds": [
+					{ "Ref" : "ServerSg" },
+					{ "Ref" : "ElbTargetSg" }
+				],
+				"SubnetId": { "Ref" : "PvtSubnet1Id"},
+				"UserData" : { "Fn::Base64" : { "Fn::Join" : ["", [
+					"#!/bin/bash\n",
+					{"Fn::If":["HasStateSnapshot","", "mkfs -F -t ext4 /dev/xvdb\n"]},
+					"umount /mnt/\n",
+					"mkdir /mnt/xvdb\n",
+					"cp /etc/fstab /etc/fstab.bak && rm /etc/fstab\n",
+					"cat /etc/fstab.bak | grep -v ^/dev/xvdb | tee /etc/fstab\n",
+					"echo -e \"/dev/xvdb\\t/mnt/xvdb\\tauto\\tdefaults\\t0\\t2\" >> /etc/fstab\n",
+					"mount -a\n",
+					"chown -R 1000 /mnt/xvdb\n",
+
+					"ECID=$(curl http://instance-data/latest/meta-data/instance-id)\n",
+					"CWLA=cwlagent_$ECID\n",
+					"docker run -d --restart=always ",
+						"--name $CWLA --log-opt awslogs-stream=$CWLA ",
+						"-v /var/log:/var/log-host:ro ",
+						{"Ref":"CwlLinuxParams"}," ",
+						{"Ref":"CwlDockerParams"}," ",
+						{"Ref":"CwlUbuntuAgentDocker"},"\n",
+					"docker run -d --restart=always --name cwlcron ",
+						{"Ref":"CwlUbuntuAgentDocker"}," cron\n",
+
+					"JENKINS_MASTER=jenkins-master_$ECID\n",
+                    "docker run -d --restart=always -p 8080:8080 -p 50000:50000 -v /mnt/xvdb:/var/jenkins_home ",
+						"--name $JENKINS_MASTER --log-opt awslogs-stream=$JENKINS_MASTER ",
+						{"Ref":"CwlLinuxParams"}," ",
+                        {"Ref":"JenkinsContainer"}
+				]]}},
+				"BlockDeviceMappings": [
+					{
+						"DeviceName" : "/dev/xvda",
+						"Ebs": { "VolumeSize": "30", "VolumeType": "gp2" }
+					}
+				],
+				"Volumes" : [
+					{"Device": "xvdb", "VolumeId" : {"Ref": "RepoDisk"}}
+				],
+				"Tags": [
+					{"Key": "Name", "Value" : "Jenkins Master"}
+				]
+			}
+		},
+
+		"WebServersRole" : {
+			"Type": "AWS::IAM::Role",
+			"Properties": {
+				"AssumeRolePolicyDocument": {
+					"Version": "2012-10-17",
+					"Statement": [{
+						"Effect": "Allow",
+						"Principal": {
+							"Service": [ "ec2.amazonaws.com" ]
+						},
+						"Action": [ "sts:AssumeRole" ]
+					}]
+				},
+				"Path": "/devops/jenkins/",
+				"ManagedPolicyArns" : [
+					{"Fn::If":["HasDeploymentBucketMp",
+						{"Ref":"DeploymentBucketMp"}, {"Ref":"AWS::NoValue"}
+					]},
+					{"Ref":"CwlPolicy"}
+				]
+			}
+		},
+		"WebServersInstanceProfile" : {
+			"Type": "AWS::IAM::InstanceProfile",
+			"Properties": {
+				"Path": "/devops/jenkins/",
+				"Roles": [{"Ref" : "WebServersRole"}]
+			}
+		},
+
+		"JenkinsWindowsAgentLc" : {
+			"Type" : "AWS::AutoScaling::LaunchConfiguration",
+			"Properties": {
+				"InstanceType" : { "Ref" : "AgentInstanceType" },
+				"ImageId" : { "Ref" : "WindowsAgentAmi" },
+				"IamInstanceProfile" : {"Ref":"WebServersInstanceProfile"},
+				"KeyName" : { "Ref" : "KeyPairName" },
+				"SecurityGroups": [
+					{ "Ref" : "AgentSg" }
+				],
+				"BlockDeviceMappings": [{
+					"DeviceName" : "/dev/sda1",
+					"Ebs" : { "VolumeSize" : {"Ref":"JenkinsAgentDiskSize"}, "VolumeType" : "gp2" }
+				}],
+				"UserData" : { "Fn::Base64" : { "Fn::Join" : ["", [
+					"<script>\n",
+                    "</script>"
+				]]}}
+			}
+		},
+		"JenkinsWindowsAgentAsg" : {
+			"Type" : "AWS::AutoScaling::AutoScalingGroup",
+			"Properties" : {
+				"VPCZoneIdentifier": [
+					{ "Ref" : "PvtSubnet1Id" }
+				],
+				"AvailabilityZones": [{ "Fn::Select": ["0",  { "Fn::GetAZs": "" }]}],
+				"LaunchConfigurationName" : { "Ref" : "JenkinsWindowsAgentLc" },
+				"MinSize" : "0",
+				"MaxSize" : "20",
+				"Tags" : [{"Key": "Name", "Value" : "Jenkins Agent", "PropagateAtLaunch" : "True"}]
+			}
+		},
+		"JenkinsLinuxAgentLc" : {
+			"Type" : "AWS::AutoScaling::LaunchConfiguration",
+			"Properties": {
+				"InstanceType" : { "Ref" : "AgentInstanceType" },
+				"ImageId" : { "Ref" : "LinuxAgentAmi" },
+				"IamInstanceProfile" : {"Ref":"WebServersInstanceProfile"},
+				"KeyName" : { "Ref" : "KeyPairName" },
+				"SecurityGroups": [
+					{ "Ref" : "AgentSg" }
+				],
+				"UserData" : { "Fn::Base64" : { "Fn::Join" : ["", [
+					"#!/bin/bash\n",
+					"ECID=$(curl http://instance-data/latest/meta-data/instance-id)\n",
+					"CWLA=cwlagent_$ECID\n",
+					"docker run -d --restart=always ",
+						"--name $CWLA --log-opt awslogs-stream=$CWLA ",
+						"-v /var/log:/var/log-host:ro ",
+						{"Ref":"CwlLinuxParams"}," ",
+						{"Ref":"CwlDockerParams"}," ",
+						{"Ref":"CwlUbuntuAgentDocker"},"\n",
+					"docker run -d --restart=always --name cwlcron ",
+						{"Ref":"CwlUbuntuAgentDocker"}," cron\n",
+
+                    "JENKINS_AGENT=jenkins-agent_$ECID\n",
+                    "docker run -d --restart=always --name $JENKINS_AGENT --log-opt awslogs-stream=$JENKINS_AGENT ",
+						"-v /var/run/docker.sock:/var/run/docker.sock --privileged ",
+						{"Ref":"CwlLinuxParams"}," ",
+						"-e JENKINS_HOST=",{ "Fn::GetAtt" : ["JenkinsMaster", "PrivateIp"] }," ",
+						"-e JENKINS_USERNAME=",{"Ref":"JenkinsAgentUsername"}," ",
+						"-e JENKINS_PASSWORD=",{"Ref":"JenkinsAgentPassword"}," ",
+                        {"Ref":"JenkinsLxAgentContainer"}
+				]]}},
+				"BlockDeviceMappings" : [{
+					"DeviceName" : "/dev/xvda",
+					"Ebs" : { "VolumeSize" : {"Ref":"JenkinsAgentDiskSize"}, "VolumeType" : "gp2" }
+				}]
+			}
+		},
+		"JenkinsLinuxAgentAsg" : {
+			"Type" : "AWS::AutoScaling::AutoScalingGroup",
+			"Properties" : {
+				"VPCZoneIdentifier": [
+					{ "Ref" : "PvtSubnet1Id" }
+				],
+				"AvailabilityZones" : [{ "Fn::Select": ["0",  { "Fn::GetAZs": "" }]}],
+				"LaunchConfigurationName" : { "Ref" : "JenkinsLinuxAgentLc" },
+				"MinSize" : "0",
+				"MaxSize" : "20",
+				"Tags" : [{"Key": "Name", "Value" : "Jenkins Agent", "PropagateAtLaunch" : "True"}]
+			}
+		},
+
+		"ServerSg" : {
+			"Type" : "AWS::EC2::SecurityGroup",
+			"Properties" : {
+				"GroupDescription" : "Jenkins Master Server Security Group",
+				"VpcId" : { "Ref" : "VpcId"},
+				"SecurityGroupIngress" : [
+					{ "IpProtocol": "-1", "SourceSecurityGroupId" : {"Ref" : "AgentSg"}}
+				],
+				"SecurityGroupEgress" : [
+					{ "IpProtocol": "-1", "CidrIp": "0.0.0.0/0" }
+				],
+				"Tags": [{"Key": "Name", "Value" : "Jenkins Master Server Security Group"}]
+			}
+		},
+		"AgentSg" : {
+			"Type" : "AWS::EC2::SecurityGroup",
+			"Properties" : {
+				"GroupDescription" : "Jenkins Agent Security Group. No in bound traffic other than Go Server.",
+				"SecurityGroupEgress" : [
+					{ "IpProtocol": "-1", "CidrIp": "0.0.0.0/0" }
+				],
+				"VpcId" : { "Ref" : "VpcId"},
+				"Tags": [{"Key": "Name", "Value" : "Jenkins Agent Security Group"}]
+			}
+		},
+		"DeploymentTargetSg" : {
+			"Type" : "AWS::EC2::SecurityGroup",
+			"Properties" : {
+				"GroupDescription" : "Jenkins Agent Security Group. No in bound traffic other than Go Server.",
+				"SecurityGroupIngress" : [
+					{ "IpProtocol": "-1", "SourceSecurityGroupId" : {"Ref" : "AgentSg"} }
+				],
+				"VpcId" : { "Ref" : "VpcId"},
+				"Tags": [{"Key": "Name", "Value" : "Jenkins Agent Security Group"}]
+			}
+		}
+
+	},
+
+	"Outputs" : {
+		"EsClusterMasters" : {
+			"Value" : { "Fn::GetAtt" : ["JenkinsMaster", "PrivateIp"] },
+			"Description" : "IP of the Go server."
+		}
+	}
+}
