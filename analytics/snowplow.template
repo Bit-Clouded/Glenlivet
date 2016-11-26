@@ -1,0 +1,667 @@
+{
+    "AWSTemplateFormatVersion": "2010-09-09",
+    "Parameters": {
+        "KeyPairName": {
+            "Description": "Name of an existing EC2 KeyPair to enable SSH access to the instances",
+            "Default": "none-prod",
+            "Type": "AWS::EC2::KeyPair::KeyName"
+        },
+        "DeploymentBucketMp": {
+            "Description": "Role that allow access to the required resource for purpose of deployment. [misc.resources.DeploymentBucketMp]",
+            "Type": "String"
+        },
+        "SslCertId": {
+            "Description": "Id of the SSL certificate to use.",
+            "Default": "arn:aws:iam::308403417902:server-certificate/scalabs.io",
+            "Type": "String"
+        },
+        "InstanceType": {
+            "Description": "Type of EC2 instance to launch for frontend",
+            "Type": "String",
+            "Default": "t2.micro",
+            "AllowedValues": [
+                "t2.micro",
+                "t2.small",
+                "t2.medium",
+                "t2.large",
+                "m3.medium",
+                "m4.large",
+                "m4.xlarge",
+                "m4.2xlarge"
+            ],
+            "ConstraintDescription": "Must be a valid EC2 instance type."
+        },
+        "UbuntuAmi": {
+            "Description": "Image id of the frontend",
+            "Type": "AWS::EC2::Image::Id"
+        },
+        "VpcId": {
+            "Description": "VPCid associated with the subnets. [elb.parameters.VpcId]",
+            "Type": "AWS::EC2::VPC::Id"
+        },
+        "ElbSubnet1Id": {
+            "Description": "Subnet to run HA web cluster on. [elb.resources.ElbSubnet1]",
+            "Type": "AWS::EC2::Subnet::Id"
+        },
+        "ElbSubnet2Id": {
+            "Description": "Subnet to run HA web cluster on. [elb.resources.ElbSubnet2]",
+            "Type": "AWS::EC2::Subnet::Id"
+        },
+        "WebServerSubnet1Id": {
+            "Description": "Subnet to run HA web cluster on. [elb.resources.PvtWebSubnet1]",
+            "Type": "AWS::EC2::Subnet::Id"
+        },
+        "WebServerSubnet2Id": {
+            "Description": "Subnet to run HA web cluster on. [elb.resources.PvtWebSubnet2]",
+            "Type": "AWS::EC2::Subnet::Id"
+        },
+        "ElbSg": {
+            "Description": "Elb security group. [vpc.resources.HttpSecGroup]",
+            "Type": "String"
+        },
+        "WebServerSg": {
+            "Description": "Web Server security group. [vpc.resources.ElbWebServerSecGroup]",
+            "Type": "String"
+        },
+        "AccessLogBucket": {
+            "Description": "Image id of the frontend [s3-aws-logs.resources.Raw]",
+            "Type": "String"
+        },
+        "TemplateBaseUrl": {
+            "Description": "Base url where this template was launched from",
+            "Type": "String"
+        },
+        "IsPublicFacing": {
+            "Description": "Is publicly accessable deployment.",
+            "Type": "String",
+            "AllowedValues": [
+                "true",
+                "false"
+            ],
+            "Default": "false",
+            "ConstraintDescription": "Valid schemes: 'internet-facing' or 'internal'."
+        },
+        "StorageBucketName": {
+            "Description": "Name of the storage bucket.",
+            "Type": "String",
+            "Default": ""
+        },
+        "EnrichedReadCheckpointDdbName": {
+            "Description": "Name of the dynamodb used for EC2 cluster to checkpoint when reading from the enriched stream.",
+            "Type": "String"
+        },
+        "RawReadCheckpointDdbName": {
+            "Description": "Name of the dynamodb used for EC2 cluster to checkpoint when reading from the raw stream.",
+            "Type": "String"
+        }
+    },
+    "Conditions": {
+        "IsPublicFacingCondition": {
+            "Fn::Equals": [
+                {
+                    "Ref": "IsPublicFacing"
+                },
+                "true"
+            ]
+        }
+    },
+    "Resources": {
+        "RawStream": {
+            "Type": "AWS::Kinesis::Stream",
+            "Properties": {
+                "ShardCount": "1"
+            }
+        },
+        "EnrichedStream": {
+            "Type": "AWS::Kinesis::Stream",
+            "Properties": {
+                "ShardCount": "1"
+            }
+        },
+        "EnrichStreamPermission": {
+            "Type": "AWS::IAM::ManagedPolicy",
+            "Properties": {
+                "Roles": [
+                    {
+                        "Ref": "EnrichStreamRole"
+                    }
+                ],
+                "PolicyDocument": {
+                    "Version": "2012-10-17",
+                    "Statement": [
+                        {
+                            "Action": [
+                                "kinesis:DescribeStream",
+                                "kinesis:MergeShards",
+                                "kinesis:PutRecord",
+                                "kinesis:PutRecords",
+                                "kinesis:SplitShard"
+                            ],
+                            "Effect": "Allow",
+                            "Resource": [
+                                {
+                                    "Fn::GetAtt": [
+                                        "EnrichedStream",
+                                        "Arn"
+                                    ]
+                                }
+                            ]
+                        },
+                        {
+                            "Action": [
+                                "kinesis:DescribeStream",
+                                "kinesis:GetShardIterator",
+                                "kinesis:GetRecords",
+                                "kinesis:MergeShards",
+                                "kinesis:SplitShard"
+                            ],
+                            "Effect": "Allow",
+                            "Resource": {
+                                "Fn::GetAtt": [
+                                    "RawStream",
+                                    "Arn"
+                                ]
+                            }
+                        },
+                        {
+                            "Action": [
+                                "dynamodb:BatchGetItem",
+                                "dynamodb:BatchWriteItem",
+                                "dynamodb:DeleteItem",
+                                "dynamodb:DescribeStream",
+                                "dynamodb:DescribeTable",
+                                "dynamodb:GetItem",
+                                "dynamodb:GetRecords",
+                                "dynamodb:GetShardIterator",
+                                "dynamodb:ListStreams",
+                                "dynamodb:ListTables",
+                                "dynamodb:PutItem",
+                                "dynamodb:Query",
+                                "dynamodb:Scan",
+                                "dynamodb:UpdateItem",
+                                "dynamodb:UpdateTable"
+                            ],
+                            "Effect": "Allow",
+                            "Resource": {
+                                "Fn::Join": [
+                                    "",
+                                    [
+                                        "arn:aws:dynamodb:",
+                                        {
+                                            "Ref": "AWS::Region"
+                                        },
+                                        ":",
+                                        {
+                                            "Ref": "AWS::AccountId"
+                                        },
+                                        ":table/",
+                                        {
+                                            "Ref": "RawReadCheckpoint"
+                                        }
+                                    ]
+                                ]
+                            }
+                        }
+                    ]
+                }
+            }
+        },
+        "EnrichedStreamPermission": {
+            "Type": "AWS::IAM::ManagedPolicy",
+            "Properties": {
+                "Roles": [
+                    {
+                        "Ref": "EnrichedStreamRole"
+                    }
+                ],
+                "PolicyDocument": {
+                    "Version": "2012-10-17",
+                    "Statement": [
+                        {
+                            "Action": [
+                                "kinesis:DescribeStream",
+                                "kinesis:GetShardIterator",
+                                "kinesis:GetRecords",
+                                "kinesis:MergeShards",
+                                "kinesis:SplitShard"
+                            ],
+                            "Effect": "Allow",
+                            "Resource": {
+                                "Fn::GetAtt": [
+                                    "EnrichedStream",
+                                    "Arn"
+                                ]
+                            }
+                        },
+                        {
+                            "Action": [
+                                "dynamodb:BatchGetItem",
+                                "dynamodb:BatchWriteItem",
+                                "dynamodb:DeleteItem",
+                                "dynamodb:DescribeStream",
+                                "dynamodb:DescribeTable",
+                                "dynamodb:GetItem",
+                                "dynamodb:GetRecords",
+                                "dynamodb:GetShardIterator",
+                                "dynamodb:ListStreams",
+                                "dynamodb:ListTables",
+                                "dynamodb:PutItem",
+                                "dynamodb:Query",
+                                "dynamodb:Scan",
+                                "dynamodb:UpdateItem",
+                                "dynamodb:UpdateTable"
+                            ],
+                            "Effect": "Allow",
+                            "Resource": {
+                                "Fn::Join": [
+                                    "",
+                                    [
+                                        "arn:aws:dynamodb:",
+                                        {
+                                            "Ref": "AWS::Region"
+                                        },
+                                        ":",
+                                        {
+                                            "Ref": "AWS::AccountId"
+                                        },
+                                        ":table/",
+                                        {
+                                            "Ref": "EnrichedReadCheckpoint"
+                                        }
+                                    ]
+                                ]
+                            }
+                        }
+                    ]
+                }
+            }
+        },
+        "RawReadCheckpoint": {
+            "Type": "AWS::DynamoDB::Table",
+            "Properties": {
+                "TableName": {
+                    "Ref": "RawReadCheckpointDdbName"
+                },
+                "ProvisionedThroughput": {
+                    "ReadCapacityUnits": "10",
+                    "WriteCapacityUnits": "10"
+                },
+                "AttributeDefinitions": [
+                    {
+                        "AttributeName": "leaseKey",
+                        "AttributeType": "S"
+                    }
+                ],
+                "KeySchema": [
+                    {
+                        "AttributeName": "leaseKey",
+                        "KeyType": "HASH"
+                    }
+                ]
+            },
+            "Metadata": {}
+        },
+        "EnrichedReadCheckpoint": {
+            "Type": "AWS::DynamoDB::Table",
+            "Properties": {
+                "TableName": {
+                    "Ref": "EnrichedReadCheckpointDdbName"
+                },
+                "ProvisionedThroughput": {
+                    "ReadCapacityUnits": "10",
+                    "WriteCapacityUnits": "10"
+                },
+                "AttributeDefinitions": [
+                    {
+                        "AttributeName": "leaseKey",
+                        "AttributeType": "S"
+                    }
+                ],
+                "KeySchema": [
+                    {
+                        "AttributeName": "leaseKey",
+                        "KeyType": "HASH"
+                    }
+                ]
+            }
+        },
+        "EventCollectionRole": {
+            "Type": "AWS::IAM::Role",
+            "Properties": {
+                "AssumeRolePolicyDocument": {
+                    "Version": "2012-10-17",
+                    "Statement": [
+                        {
+                            "Effect": "Allow",
+                            "Principal": {
+                                "Service": [
+                                    "ec2.amazonaws.com"
+                                ]
+                            },
+                            "Action": [
+                                "sts:AssumeRole"
+                            ]
+                        }
+                    ]
+                },
+                "Path": "/analytics/snowplow/"
+            }
+        },
+        "EventCollectionGroup": {
+            "Type": "AWS::AutoScaling::AutoScalingGroup",
+            "Properties": {
+                "AvailabilityZones": [
+                    "ap-southeast-2a",
+                    "ap-southeast-2b"
+                ],
+                "MinSize": "1",
+                "MaxSize": "10",
+                "DesiredCapacity": "1",
+                "LoadBalancerNames": [
+                    {
+                        "Ref": "EventCollectionEndPoint"
+                    }
+                ],
+                "LaunchConfigurationName": {
+                    "Ref": "EventCollectionLc"
+                },
+                "VPCZoneIdentifier": [
+                    {
+                        "Ref": "WebServerSubnet1Id"
+                    },
+                    {
+                        "Ref": "WebServerSubnet2Id"
+                    }
+                ]
+            }
+        },
+        "EventCollectionLc": {
+            "Type": "AWS::AutoScaling::LaunchConfiguration",
+            "Properties": {
+                "KeyName": {
+                    "Ref": "KeyPairName"
+                },
+                "ImageId": {
+                    "Ref": "UbuntuAmi"
+                },
+                "IamInstanceProfile": {
+                    "Ref": "EventCollectionIp"
+                },
+                "InstanceType": {
+                    "Ref": "InstanceType"
+                },
+                "SecurityGroups": [
+                    {
+                        "Ref": "WebServerSg"
+                    }
+                ]
+            }
+        },
+        "EventCollectionPermission": {
+            "Type": "AWS::IAM::ManagedPolicy",
+            "Properties": {
+                "Roles": [
+                    {
+                        "Ref": "EventCollectionRole"
+                    }
+                ],
+                "PolicyDocument": {
+                    "Version": "2012-10-17",
+                    "Statement": [
+                        {
+                            "Action": [
+                                "kinesis:DescribeStream",
+                                "kinesis:MergeShards",
+                                "kinesis:PutRecord",
+                                "kinesis:PutRecords",
+                                "kinesis:SplitShard"
+                            ],
+                            "Effect": "Allow",
+                            "Resource": {
+                                "Fn::GetAtt": [
+                                    "RawStream",
+                                    "Arn"
+                                ]
+                            }
+                        }
+                    ]
+                }
+            },
+            "Metadata": {
+                "AWS::CloudFormation::Designer": {
+                    "id": "ee9fe9e0-4442-46c1-9340-196cd52c6491"
+                }
+            }
+        },
+        "EnrichStreamRole": {
+            "Type": "AWS::IAM::Role",
+            "Properties": {
+                "AssumeRolePolicyDocument": {
+                    "Version": "2012-10-17",
+                    "Statement": [
+                        {
+                            "Effect": "Allow",
+                            "Principal": {
+                                "Service": [
+                                    "ec2.amazonaws.com"
+                                ]
+                            },
+                            "Action": [
+                                "sts:AssumeRole"
+                            ]
+                        }
+                    ]
+                },
+                "Path": "/analytics/snowplow/"
+            }
+        },
+        "EnrichStreamIp": {
+            "Type": "AWS::IAM::InstanceProfile",
+            "Properties": {
+                "Roles": [
+                    {
+                        "Ref": "EnrichStreamRole"
+                    }
+                ],
+                "Path": "/analytics/snowplow/"
+            }
+        },
+        "EventCollectionIp": {
+            "Type": "AWS::IAM::InstanceProfile",
+            "Properties": {
+                "Roles": [
+                    {
+                        "Ref": "EventCollectionRole"
+                    }
+                ],
+                "Path": "/analytics/snowplow/"
+            }
+        },
+        "EnrichStreamGroup": {
+            "Type": "AWS::AutoScaling::AutoScalingGroup",
+            "Properties": {
+                "AvailabilityZones": [
+                    "ap-southeast-2a",
+                    "ap-southeast-2b"
+                ],
+                "MinSize": "1",
+                "MaxSize": "10",
+                "DesiredCapacity": "1",
+                "LaunchConfigurationName": {
+                    "Ref": "EnrichStreamLc"
+                },
+                "VPCZoneIdentifier": [
+                    {
+                        "Ref": "WebServerSubnet1Id"
+                    },
+                    {
+                        "Ref": "WebServerSubnet2Id"
+                    }
+                ]
+            }
+        },
+        "EnrichStreamLc": {
+            "Type": "AWS::AutoScaling::LaunchConfiguration",
+            "Properties": {
+                "KeyName": {
+                    "Ref": "KeyPairName"
+                },
+                "ImageId": {
+                    "Ref": "UbuntuAmi"
+                },
+                "InstanceType": {
+                    "Ref": "InstanceType"
+                },
+                "IamInstanceProfile": {
+                    "Ref": "EnrichStreamIp"
+                },
+                "SecurityGroups": [
+                    {
+                        "Ref": "Outbound"
+                    }
+                ]
+            }
+        },
+        "EnrichedStreamRole": {
+            "Type": "AWS::IAM::Role",
+            "Properties": {
+                "AssumeRolePolicyDocument": {
+                    "Version": "2012-10-17",
+                    "Statement": [
+                        {
+                            "Effect": "Allow",
+                            "Principal": {
+                                "Service": [
+                                    "ec2.amazonaws.com"
+                                ]
+                            },
+                            "Action": [
+                                "sts:AssumeRole"
+                            ]
+                        }
+                    ]
+                },
+                "Path": "/analytics/snowplow/"
+            }
+        },
+        "EnrichedStreamIp": {
+            "Type": "AWS::IAM::InstanceProfile",
+            "Properties": {
+                "Roles": [
+                    {
+                        "Ref": "EnrichedStreamRole"
+                    }
+                ],
+                "Path": "/analytics/snowplow/"
+            }
+        },
+        "EnrichedStreamGroup": {
+            "Type": "AWS::AutoScaling::AutoScalingGroup",
+            "Properties": {
+                "AvailabilityZones": [
+                    "ap-southeast-2a",
+                    "ap-southeast-2b"
+                ],
+                "MinSize": "1",
+                "MaxSize": "10",
+                "DesiredCapacity": "1",
+                "LaunchConfigurationName": {
+                    "Ref": "EnrichedStreamLc"
+                },
+                "VPCZoneIdentifier": [
+                    {
+                        "Ref": "WebServerSubnet1Id"
+                    },
+                    {
+                        "Ref": "WebServerSubnet2Id"
+                    }
+                ]
+            }
+        },
+        "EnrichedStreamLc": {
+            "Type": "AWS::AutoScaling::LaunchConfiguration",
+            "Properties": {
+                "KeyName": {
+                    "Ref": "KeyPairName"
+                },
+                "IamInstanceProfile": {
+                    "Ref": "EnrichedStreamIp"
+                },
+                "ImageId": {
+                    "Ref": "UbuntuAmi"
+                },
+                "InstanceType": {
+                    "Ref": "InstanceType"
+                },
+                "SecurityGroups": [
+                    {
+                        "Ref": "Outbound"
+                    }
+                ]
+            }
+        },
+        "EventCollectionEndPoint": {
+            "Type": "AWS::ElasticLoadBalancing::LoadBalancer",
+            "Properties": {
+                "Subnets": [
+                    {
+                        "Ref": "ElbSubnet1Id"
+                    },
+                    {
+                        "Ref": "ElbSubnet2Id"
+                    }
+                ],
+                "Listeners": [
+                    {
+                        "LoadBalancerPort": "80",
+                        "InstancePort": "80",
+                        "Protocol": "HTTP"
+                    }
+                ],
+                "HealthCheck": {
+                    "Target": "HTTP:80/health",
+                    "HealthyThreshold": "3",
+                    "UnhealthyThreshold": "5",
+                    "Interval": "30",
+                    "Timeout": "5"
+                },
+                "AccessLoggingPolicy": {
+                    "EmitInterval": "5",
+                    "Enabled": "true",
+                    "S3BucketName": {
+                        "Ref": "AccessLogBucket"
+                    }
+                },
+                "SecurityGroups": [
+                    {
+                        "Ref": "ElbSg"
+                    }
+                ],
+                "Scheme": {
+                    "Fn::If": [
+                        "IsPublicFacingCondition",
+                        "internet-facing",
+                        "internal"
+                    ]
+                }
+            }
+        },
+        "Outbound": {
+            "Type": "AWS::EC2::SecurityGroup",
+            "Properties": {
+                "GroupDescription": "Unlimited outbound access.",
+                "SecurityGroupEgress": [
+                    {
+                        "CidrIp": "0.0.0.0/0",
+                        "FromPort": "0",
+                        "IpProtocol": "6",
+                        "ToPort": "65535"
+                    }
+                ],
+                "VpcId": {
+                    "Ref": "VpcId"
+                }
+            }
+        }
+    }
+}
