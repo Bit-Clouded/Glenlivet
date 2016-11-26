@@ -57,7 +57,25 @@
         "AccessLogBucket": {
             "Description": "Image id of the frontend [s3-aws-logs.resources.Raw]",
             "Type": "String"
-        }
+        },
+
+		"CwlUbuntuAgentDocker": {
+			"Description": "Name of cluster. This is used for discovery.",
+			"Type": "String",
+			"Default": "bitclouded/aws-cwl-agent:4.1"
+		},
+		"CwlLinuxParams" : {
+			"Description": "Environment variables for syslog and authlog cwl group names [logs-store.outputs.LxDockerLogParams]",
+			"Type": "String"
+		},
+		"CwlDockerParams" : {
+			"Description": "Docker log driver params [logs-store.outputs.DockerCwlParams]",
+			"Type": "String"
+		},
+		"CwlPolicy" : {
+			"Description": "Managed policy for linux logging. [logs-store.resources.LinuxLogPolicy]",
+			"Type": "String"
+		}
     },
 
 	"Conditions" : {
@@ -71,7 +89,15 @@
             "Type": "AWS::Kinesis::Stream",
             "Properties": { "ShardCount" : "1" }
         },
+        "RawStreamBad": {
+            "Type": "AWS::Kinesis::Stream",
+            "Properties": { "ShardCount" : "1" }
+        },
         "EnrichedStream": {
+            "Type": "AWS::Kinesis::Stream",
+            "Properties": { "ShardCount" : "1" }
+        },
+        "EnrichedStreamBad": {
             "Type": "AWS::Kinesis::Stream",
             "Properties": { "ShardCount" : "1" }
         },
@@ -92,12 +118,8 @@
                             ],
                             "Effect": "Allow",
                             "Resource": [
-                                {
-                                    "Fn::GetAtt": [
-                                        "EnrichedStream",
-                                        "Arn"
-                                    ]
-                                }
+                                { "Fn::GetAtt": ["EnrichedStream","Arn"] },
+                                { "Fn::GetAtt": ["EnrichedStreamBad","Arn"] }
                             ]
                         },
                         {
@@ -109,12 +131,7 @@
                                 "kinesis:SplitShard"
                             ],
                             "Effect": "Allow",
-                            "Resource": {
-                                "Fn::GetAtt": [
-                                    "RawStream",
-                                    "Arn"
-                                ]
-                            }
+                            "Resource": [{ "Fn::GetAtt": ["RawStream","Arn"] }]
                         },
                         {
                             "Action": [
@@ -135,9 +152,9 @@
                                 "dynamodb:UpdateTable"
                             ],
                             "Effect": "Allow",
-                            "Resource": { "Fn::Join": ["", [
+                            "Resource": [ { "Fn::Join": ["", [
                                 "arn:aws:dynamodb:", { "Ref" : "AWS::Region" }, ":", { "Ref" : "AWS::AccountId" }, ":table/", { "Ref" : "RawReadCheckpoint" }
-                            ]]}
+                            ]]}]
                         }
                     ]
                 }
@@ -159,12 +176,7 @@
                                 "kinesis:SplitShard"
                             ],
                             "Effect": "Allow",
-                            "Resource": {
-                                "Fn::GetAtt": [
-                                    "EnrichedStream",
-                                    "Arn"
-                                ]
-                            }
+                            "Resource": { "Fn::GetAtt": ["EnrichedStream","Arn"] }
                         },
                         {
                             "Action": [
@@ -185,19 +197,9 @@
                                 "dynamodb:UpdateTable"
                             ],
                             "Effect": "Allow",
-                            "Resource": {
-                                "Fn::Join": [
-                                    "",
-                                    [
-                                        "arn:aws:dynamodb:",
-                                        { "Ref" : "AWS::Region" },
-                                        ":",
-                                        { "Ref" : "AWS::AccountId" },
-                                        ":table/",
-                                        { "Ref" : "EnrichedReadCheckpoint" }
-                                    ]
-                                ]
-                            }
+                            "Resource": { "Fn::Join": ["", [
+                                "arn:aws:dynamodb:", { "Ref" : "AWS::Region" }, ":", { "Ref" : "AWS::AccountId" }, ":table/", { "Ref" : "EnrichedReadCheckpoint" }
+                            ]]}
                         }
                     ]
                 }
@@ -210,18 +212,14 @@
                     "ReadCapacityUnits": "10",
                     "WriteCapacityUnits": "10"
                 },
-                "AttributeDefinitions": [
-                    {
-                        "AttributeName": "leaseKey",
-                        "AttributeType": "S"
-                    }
-                ],
-                "KeySchema": [
-                    {
-                        "AttributeName": "leaseKey",
-                        "KeyType": "HASH"
-                    }
-                ]
+                "AttributeDefinitions": [{
+                    "AttributeName": "leaseKey",
+                    "AttributeType": "S"
+                }],
+                "KeySchema": [{
+                    "AttributeName": "leaseKey",
+                    "KeyType": "HASH"
+                }]
             }
         },
         "EnrichedReadCheckpoint": {
@@ -231,18 +229,14 @@
                     "ReadCapacityUnits": "10",
                     "WriteCapacityUnits": "10"
                 },
-                "AttributeDefinitions": [
-                    {
-                        "AttributeName": "leaseKey",
-                        "AttributeType": "S"
-                    }
-                ],
-                "KeySchema": [
-                    {
-                        "AttributeName": "leaseKey",
-                        "KeyType": "HASH"
-                    }
-                ]
+                "AttributeDefinitions": [{
+                    "AttributeName": "leaseKey",
+                    "AttributeType": "S"
+                }],
+                "KeySchema": [{
+                    "AttributeName": "leaseKey",
+                    "KeyType": "HASH"
+                }]
             }
         },
         "EventCollectionRole": {
@@ -256,7 +250,10 @@
                         "Action": ["sts:AssumeRole"]
                     }]
                 },
-                "Path": "/analytics/snowplow/"
+                "Path": "/analytics/snowplow/",
+				"ManagedPolicyArns" : [
+					{"Ref":"CwlPolicy"}
+				]
             }
         },
         "EventCollectionGroup": {
@@ -277,7 +274,24 @@
                 "ImageId": { "Ref" : "DebianJsAmiId" },
                 "IamInstanceProfile": { "Ref" : "EventCollectionIp" },
                 "InstanceType": { "Ref" : "InstanceType" },
-                "SecurityGroups": [{ "Ref" : "ElbTargetSg" }]
+                "SecurityGroups": [{ "Ref" : "ElbTargetSg" }],
+                "UserData" : { "Fn::Base64" : { "Fn::Join" : ["", [
+                    "#!/bin/bash\n",
+					"ECID=$(curl http://instance-data/latest/meta-data/instance-id)\n",
+					"CWLA=cwlagent_$ECID\n",
+					"docker run -d --restart=always ",
+						"--name $CWLA --log-opt awslogs-stream=$CWLA ",
+						"-v /var/log:/var/log-host:ro ",
+						{"Ref":"CwlLinuxParams"}," ",
+						{"Ref":"CwlDockerParams"}," ",
+						{"Ref":"CwlUbuntuAgentDocker"},"\n",
+					"docker run -d --restart=always --name cwlcron ",
+						{"Ref":"CwlUbuntuAgentDocker"}," cron\n",
+
+					"MAIN=snowplow-ssc_$ECID\n",
+                    "#docker run --name $MAIN -d --restart=always --log-opt awslogs-stream=$MAIN ",
+                        {"Ref":"CwlLinuxParams"}," ", "test"
+                ] ] } }
             }
         },
         "EventCollectionPermission": {
@@ -295,7 +309,10 @@
                             "kinesis:SplitShard"
                         ],
                         "Effect": "Allow",
-                        "Resource": { "Fn::GetAtt": ["RawStream", "Arn"] }
+                        "Resource": [
+                            { "Fn::GetAtt": ["RawStream", "Arn"] },
+                            { "Fn::GetAtt": ["RawStreamBad", "Arn"] }
+                        ]
                     }]
                 }
             }
@@ -313,7 +330,10 @@
                         }
                     ]
                 },
-                "Path": "/analytics/snowplow/"
+                "Path": "/analytics/snowplow/",
+				"ManagedPolicyArns" : [
+					{"Ref":"CwlPolicy"}
+				]
             }
         },
         "EnrichStreamIp": {
@@ -363,7 +383,10 @@
                         }
                     ]
                 },
-                "Path": "/analytics/snowplow/"
+                "Path": "/analytics/snowplow/",
+				"ManagedPolicyArns" : [
+					{"Ref":"CwlPolicy"}
+				]
             }
         },
         "EnrichedStreamIp": {
