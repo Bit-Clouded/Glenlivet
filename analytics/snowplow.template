@@ -10,6 +10,16 @@
             "Type": "String",
             "Default": ""
         },
+        "ContainerSssc": {
+            "Description": "",
+            "Type": "String",
+            "Default": "sleepersmith/test-misch:sssc"
+        },
+        "ContainerSse": {
+            "Description": "",
+            "Type": "String",
+            "Default": "sleepersmith/test-misch:sse"
+        },
         "InstanceType": {
             "Description": "Type of EC2 instance to launch for frontend",
             "Type": "String",
@@ -35,7 +45,7 @@
 			"Type": "String"
 		},
 		"ElbSubnets": {
-			"Description" : "Subnet to run HA web cluster on. [elb.outputs.ElbSubnets]",
+			"Description" : "[elb.outputs.ElbSubnets]",
 			"Type": "List<AWS::EC2::Subnet::Id>"
 		},
 		"WebServerSubnets": {
@@ -135,21 +145,7 @@
                         },
                         {
                             "Action": [
-                                "dynamodb:BatchGetItem",
-                                "dynamodb:BatchWriteItem",
-                                "dynamodb:DeleteItem",
-                                "dynamodb:DescribeStream",
-                                "dynamodb:DescribeTable",
-                                "dynamodb:GetItem",
-                                "dynamodb:GetRecords",
-                                "dynamodb:GetShardIterator",
-                                "dynamodb:ListStreams",
-                                "dynamodb:ListTables",
-                                "dynamodb:PutItem",
-                                "dynamodb:Query",
-                                "dynamodb:Scan",
-                                "dynamodb:UpdateItem",
-                                "dynamodb:UpdateTable"
+                                "dynamodb:*"
                             ],
                             "Effect": "Allow",
                             "Resource": [ { "Fn::Join": ["", [
@@ -180,21 +176,7 @@
                         },
                         {
                             "Action": [
-                                "dynamodb:BatchGetItem",
-                                "dynamodb:BatchWriteItem",
-                                "dynamodb:DeleteItem",
-                                "dynamodb:DescribeStream",
-                                "dynamodb:DescribeTable",
-                                "dynamodb:GetItem",
-                                "dynamodb:GetRecords",
-                                "dynamodb:GetShardIterator",
-                                "dynamodb:ListStreams",
-                                "dynamodb:ListTables",
-                                "dynamodb:PutItem",
-                                "dynamodb:Query",
-                                "dynamodb:Scan",
-                                "dynamodb:UpdateItem",
-                                "dynamodb:UpdateTable"
+                                "dynamodb:*"
                             ],
                             "Effect": "Allow",
                             "Resource": { "Fn::Join": ["", [
@@ -261,10 +243,12 @@
             "Properties": {
                 "MinSize": "1",
                 "MaxSize": "10",
-                "DesiredCapacity": "1",
                 "LoadBalancerNames": [{ "Ref" : "EventCollectionEndPoint" }],
                 "LaunchConfigurationName": { "Ref" : "EventCollectionLc" },
-                "VPCZoneIdentifier": {"Ref":"WebServerSubnets"}
+                "VPCZoneIdentifier": {"Ref":"WebServerSubnets"},
+                "Tags": [
+                    { "PropagateAtLaunch": "true", "Key": "Name", "Value": "Snowplow Collector" }
+                ]
             }
         },
         "EventCollectionLc": {
@@ -289,9 +273,14 @@
 						{"Ref":"CwlUbuntuAgentDocker"}," cron\n",
 
 					"MAIN=snowplow-ssc_$ECID\n",
-                    "#docker run --name $MAIN -d --restart=always --log-opt awslogs-stream=$MAIN ",
-                        {"Ref":"CwlLinuxParams"}," ", "test"
-                ] ] } }
+                    "docker run --name $MAIN -d --restart=always -p 80:80 ",
+                        "--log-opt awslogs-stream=$MAIN ",
+                        {"Ref":"CwlLinuxParams"}, " ", 
+                        "-e STREAM_GOOD=", {"Ref":"RawStream"}, " ",
+                        "-e STREAM_BAD=", {"Ref":"RawStreamBad"}, " ",
+                        {"Ref":"ContainerSssc"}
+                ]]}}
+
             }
         },
         "EventCollectionPermission": {
@@ -355,9 +344,11 @@
             "Properties": {
                 "MinSize": "1",
                 "MaxSize": "10",
-                "DesiredCapacity": "1",
                 "LaunchConfigurationName": { "Ref" : "EnrichStreamLc" },
-                "VPCZoneIdentifier": { "Ref" : "WebServerSubnets" }
+                "VPCZoneIdentifier": { "Ref" : "WebServerSubnets" },
+                "Tags": [
+                    { "PropagateAtLaunch": "true", "Key": "Name", "Value": "Snowplow Enrich" }
+                ]
             }
         },
         "EnrichStreamLc": {
@@ -367,7 +358,29 @@
                 "ImageId": { "Ref" : "DebianJsAmiId" },
                 "InstanceType": { "Ref" : "InstanceType" },
                 "IamInstanceProfile": { "Ref" : "EnrichStreamIp" },
-                "SecurityGroups": [{ "Ref" : "Outbound" }]
+                "SecurityGroups": [{ "Ref" : "Outbound" }],
+                "UserData" : { "Fn::Base64" : { "Fn::Join" : ["", [
+                    "#!/bin/bash\n",
+					"ECID=$(curl http://instance-data/latest/meta-data/instance-id)\n",
+					"CWLA=cwlagent_$ECID\n",
+					"docker run -d --restart=always ",
+						"--name $CWLA --log-opt awslogs-stream=$CWLA ",
+						"-v /var/log:/var/log-host:ro ",
+						{"Ref":"CwlLinuxParams"}," ",
+						{"Ref":"CwlDockerParams"}," ",
+						{"Ref":"CwlUbuntuAgentDocker"},"\n",
+					"docker run -d --restart=always --name cwlcron ",
+						{"Ref":"CwlUbuntuAgentDocker"}," cron\n",
+
+					"MAIN=snowplow-sse_$ECID\n",
+                    "docker run --name $MAIN -d --restart=always --log-opt awslogs-stream=$MAIN ",
+                        {"Ref":"CwlLinuxParams"}, " ", 
+                        "-e STREAM_SOURCE=", {"Ref":"RawStream"}, " ",
+                        "-e DDB_CHECKPOINT=", {"Ref":"RawReadCheckpoint"}, " ",
+                        "-e STREAM_GOOD=", {"Ref":"EnrichedStream"}, " ",
+                        "-e STREAM_BAD=", {"Ref":"EnrichedStreamBad"}, " ",
+                        {"Ref":"ContainerSse"}
+                ]]}}
             }
         },
         "EnrichedStreamRole": {
@@ -399,11 +412,14 @@
         "EnrichedStreamGroup": {
             "Type": "AWS::AutoScaling::AutoScalingGroup",
             "Properties": {
-                "MinSize": "1",
+                "MinSize": "0",
                 "MaxSize": "10",
-                "DesiredCapacity": "1",
+                "DesiredCapacity": "0",
                 "LaunchConfigurationName": { "Ref" : "EnrichedStreamLc" },
-                "VPCZoneIdentifier": { "Ref" : "WebServerSubnets" }
+                "VPCZoneIdentifier": { "Ref" : "WebServerSubnets" },
+                "Tags": [
+                    { "PropagateAtLaunch": "true", "Key": "Name", "Value": "Snowplow Enriched" }
+                ]
             }
         },
         "EnrichedStreamLc": {
@@ -413,7 +429,27 @@
                 "IamInstanceProfile": { "Ref" : "EnrichedStreamIp" },
                 "ImageId": { "Ref" : "DebianJsAmiId" },
                 "InstanceType": { "Ref" : "InstanceType" },
-                "SecurityGroups": [{ "Ref" : "Outbound" }]
+                "SecurityGroups": [{ "Ref" : "Outbound" }],
+                "UserData" : { "Fn::Base64" : { "Fn::Join" : ["", [
+                    "#!/bin/bash\n",
+					"ECID=$(curl http://instance-data/latest/meta-data/instance-id)\n",
+					"CWLA=cwlagent_$ECID\n",
+					"docker run -d --restart=always ",
+						"--name $CWLA --log-opt awslogs-stream=$CWLA ",
+						"-v /var/log:/var/log-host:ro ",
+						{"Ref":"CwlLinuxParams"}," ",
+						{"Ref":"CwlDockerParams"}," ",
+						{"Ref":"CwlUbuntuAgentDocker"},"\n",
+					"docker run -d --restart=always --name cwlcron ",
+						{"Ref":"CwlUbuntuAgentDocker"}," cron\n",
+
+					"MAIN=snowplow-ssc_$ECID\n",
+                    "#docker run --name $MAIN -d --restart=always --log-opt awslogs-stream=$MAIN ",
+                        {"Ref":"CwlLinuxParams"}, " ", 
+                        "-e STREAM_GOOD=", {"Ref":"RawStream"}, " ",
+                        "-e STREAM_BAD=", {"Ref":"RawStreamBad"}, " ",
+                        {"Ref":"ContainerSssc"}
+                ]]}}
             }
         },
         "EventCollectionEndPoint": {
@@ -423,7 +459,7 @@
 				"Listeners" : [
 					{
 						"LoadBalancerPort" : "80",
-						"InstancePort" : "8153",
+						"InstancePort" : "80",
 						"Protocol" : "HTTP"
 					},
 					{"Fn::If" : [ "HasSsl",
