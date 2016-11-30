@@ -18,6 +18,7 @@
             "Type" : "String",
             "Default" : "m3.medium",
             "AllowedValues": [
+                "t2.small",
                 "m3.medium",
                 "m4.large",
                 "m4.xlarge",
@@ -35,6 +36,7 @@
             "Type" : "String",
             "Default" : "t2.medium",
             "AllowedValues": [
+                "t2.small",
                 "t2.medium",
                 "m3.medium",
                 "m4.large",
@@ -171,9 +173,13 @@
                     "#!/bin/bash\n",
                     "sysctl -w vm.max_map_count=262144\n",
 
-                    "mkdir /mnt/xvdk\n",
+					"umount /mnt/\n",
                     "mkfs -t ext4 /dev/xvdk\n",
-                    "mount /dev/xvdk /mnt/xvdk\n",
+					"mkdir /mnt/xvdk\n",
+					"cp /etc/fstab /etc/fstab.bak && rm /etc/fstab\n",
+					"cat /etc/fstab.bak | grep -v ^/dev/xvdk | tee /etc/fstab\n",
+					"echo -e \"/dev/xvdk\\t/mnt/xvdk\\tauto\\tdefaults\\t0\\t2\" >> /etc/fstab\n",
+					"mount -a\n",
 
                     "ECID=$(curl http://instance-data/latest/meta-data/instance-id)\n",
                     "CWLA=cwlagent_$ECID\n",
@@ -188,6 +194,7 @@
 
                     "ESDN=es-data_$ECID\n",
                     "docker run --restart=always -p 9200:9200 -p 9300:9300 -d ",
+                        "-v /mnt/xvdk:/usr/share/elasticsearch/data ",
                         "-e ES_JAVA_OPTS=\"-Xms",{ "Fn::FindInMap": [ "InstanceVariables", { "Ref": "DataNodeInstanceType" }, "ram" ] },"m -Xmx",{ "Fn::FindInMap": [ "InstanceVariables", { "Ref": "DataNodeInstanceType" }, "ram" ] },"m\" ",
                         "--cap-add=IPC_LOCK --ulimit memlock=-1:-1 ",
                         "--name $ESDN --log-opt awslogs-stream=$ESDN ",
@@ -259,9 +266,13 @@
                     "#!/bin/bash\n",
                     "sysctl -w vm.max_map_count=262144\n",
 
-                    "mkdir /mnt/xvdk\n",
+					"umount /mnt/\n",
                     "mkfs -t ext4 /dev/xvdk\n",
-                    "mount /dev/xvdk /mnt/xvdk\n",
+					"mkdir /mnt/xvdk\n",
+					"cp /etc/fstab /etc/fstab.bak && rm /etc/fstab\n",
+					"cat /etc/fstab.bak | grep -v ^/dev/xvdk | tee /etc/fstab\n",
+					"echo -e \"/dev/xvdk\\t/mnt/xvdk\\tauto\\tdefaults\\t0\\t2\" >> /etc/fstab\n",
+					"mount -a\n",
 
                     "ECID=$(curl http://instance-data/latest/meta-data/instance-id)\n",
                     "CWLA=cwlagent_$ECID\n",
@@ -276,6 +287,7 @@
 
                     "ESDN=es-data_$ECID\n",
                     "docker run --restart=always -p 9200:9200 -p 9300:9300 -d ",
+                        "-v /mnt/xvdk:/usr/share/elasticsearch/data ",
                         "-e ES_JAVA_OPTS=\"-Xms",{ "Fn::FindInMap": [ "InstanceVariables", { "Ref": "DataNodeInstanceType" }, "ram" ] },"m -Xmx",{ "Fn::FindInMap": [ "InstanceVariables", { "Ref": "DataNodeInstanceType" }, "ram" ] },"m\" ",
                         "--cap-add=IPC_LOCK --ulimit memlock=-1:-1 ",
                         "--name $ESDN --log-opt awslogs-stream=$ESDN ",
@@ -365,6 +377,7 @@
 
                     "ESDN=es-master_$ECID\n",
                     "docker run --restart=always -p 9200:9200 -p 9300:9300 -d ",
+                        "-v /mnt/xvdk:/usr/share/elasticsearch/data ",
                         "--cap-add=IPC_LOCK --ulimit memlock=-1:-1 ",
                         "-e ES_JAVA_OPTS=\"-Xms",{ "Fn::FindInMap": [ "InstanceVariables", { "Ref": "MasterNodeInstanceType" }, "ram" ] },"m -Xmx",{ "Fn::FindInMap": [ "InstanceVariables", { "Ref": "MasterNodeInstanceType" }, "ram" ] },"m\" ",
                         "--name $ESDN --log-opt awslogs-stream=$ESDN ",
