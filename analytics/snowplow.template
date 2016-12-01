@@ -20,6 +20,11 @@
             "Type": "String",
             "Default": "sleepersmith/test-misch:sse"
         },
+        "ContainerSks": {
+            "Description": "",
+            "Type": "String",
+            "Default": "sleepersmith/test-misch:sks"
+        },
         "InstanceType": {
             "Description": "Type of EC2 instance to launch for frontend",
             "Type": "String",
@@ -41,15 +46,15 @@
             "Type": "AWS::EC2::Image::Id"
         },
 		"VpcId": {
-			"Description" : "VPCid associated with the subnets. [elb.parameters.VpcId]",
+			"Description" : "VPCid associated with the subnets. [logs-store.parameters.VpcId]",
 			"Type": "String"
 		},
 		"ElbSubnets": {
-			"Description" : "[elb.outputs.ElbSubnets]",
+			"Description" : "[logs-store.outputs.ElbSubnets]",
 			"Type": "List<AWS::EC2::Subnet::Id>"
 		},
 		"WebServerSubnets": {
-			"Description" : "Subnet to run HA web cluster on. [elb.outputs.WebServerSubnets]",
+			"Description" : "Subnet to run HA web cluster on. [elb-subnets.outputs.WebServerSubnets]",
 			"Type": "List<AWS::EC2::Subnet::Id>"
 		},
 		"ElbSg" : {
@@ -65,7 +70,7 @@
             "Type": "String"
 		},
         "AccessLogBucket": {
-            "Description": "Image id of the frontend [s3-aws-logs.resources.Raw]",
+            "Description": "Image id of the frontend [logs-store.resources.Raw]",
             "Type": "String"
         },
 
@@ -108,6 +113,10 @@
             "Properties": { "ShardCount" : "1" }
         },
         "EnrichedStreamBad": {
+            "Type": "AWS::Kinesis::Stream",
+            "Properties": { "ShardCount" : "1" }
+        },
+        "SinkOutputBad": {
             "Type": "AWS::Kinesis::Stream",
             "Properties": { "ShardCount" : "1" }
         },
@@ -172,7 +181,22 @@
                                 "kinesis:SplitShard"
                             ],
                             "Effect": "Allow",
-                            "Resource": { "Fn::GetAtt": ["EnrichedStream","Arn"] }
+                            "Resource": [
+                                { "Fn::GetAtt": ["EnrichedStream","Arn"] }
+                            ]
+                        },
+                        {
+                            "Action": [
+                                "kinesis:DescribeStream",
+                                "kinesis:MergeShards",
+                                "kinesis:PutRecord",
+                                "kinesis:PutRecords",
+                                "kinesis:SplitShard"
+                            ],
+                            "Effect": "Allow",
+                            "Resource": [
+                                { "Fn::GetAtt": ["SinkOutputBad","Arn"] }
+                            ]
                         },
                         {
                             "Action": [
@@ -182,6 +206,20 @@
                             "Resource": { "Fn::Join": ["", [
                                 "arn:aws:dynamodb:", { "Ref" : "AWS::Region" }, ":", { "Ref" : "AWS::AccountId" }, ":table/", { "Ref" : "EnrichedReadCheckpoint" }
                             ]]}
+                        },
+                        {
+                            "Effect": "Allow",
+                            "Action": [
+                                "s3:*"
+                            ],
+                            "Resource": [
+                                { "Fn::Join" : ["", [
+                                    "arn:aws:s3:::", {"Ref":"RawDataStore"}, "/*"
+                                ]]},
+                                { "Fn::Join" : ["", [
+                                    "arn:aws:s3:::", {"Ref":"RawDataStore"}
+                                ]]}
+                            ]
                         }
                     ]
                 }
@@ -412,9 +450,8 @@
         "EnrichedStreamGroup": {
             "Type": "AWS::AutoScaling::AutoScalingGroup",
             "Properties": {
-                "MinSize": "0",
+                "MinSize": "1",
                 "MaxSize": "10",
-                "DesiredCapacity": "0",
                 "LaunchConfigurationName": { "Ref" : "EnrichedStreamLc" },
                 "VPCZoneIdentifier": { "Ref" : "WebServerSubnets" },
                 "Tags": [
@@ -443,12 +480,14 @@
 					"docker run -d --restart=always --name cwlcron ",
 						{"Ref":"CwlUbuntuAgentDocker"}," cron\n",
 
-					"MAIN=snowplow-ssc_$ECID\n",
-                    "#docker run --name $MAIN -d --restart=always --log-opt awslogs-stream=$MAIN ",
+					"MAIN=snowplow-sks_$ECID\n",
+                    "docker run --name $MAIN -d --restart=always --log-opt awslogs-stream=$MAIN ",
                         {"Ref":"CwlLinuxParams"}, " ", 
-                        "-e STREAM_GOOD=", {"Ref":"RawStream"}, " ",
-                        "-e STREAM_BAD=", {"Ref":"RawStreamBad"}, " ",
-                        {"Ref":"ContainerSssc"}
+                        "-e STREAM_SOURCE=", {"Ref":"EnrichedStream"}, " ",
+                        "-e DDB_CHECKPOINT=", {"Ref":"EnrichedReadCheckpoint"}, " ",
+                        "-e BUCKET_NAME=", {"Ref":"RawDataStore"}, " ",
+                        "-e STREAM_BAD=", {"Ref":"SinkOutputBad"}, " ",
+                        {"Ref":"ContainerSks"}
                 ]]}}
             }
         },
@@ -496,6 +535,13 @@
                 "GroupDescription": "Unlimited outbound access.",
                 "VpcId": { "Ref" : "VpcId" }
             }
+        },
+        
+        "RawDataStore": {
+            "Type" : "AWS::S3::Bucket",
+            "Properties" : {
+            },
+            "DeletionPolicy" : "Retain"
         }
     }
 }
