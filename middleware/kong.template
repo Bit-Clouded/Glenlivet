@@ -284,11 +284,12 @@
         "LoadBalancerSecurityGroup" : {
             "Type" : "AWS::EC2::SecurityGroup",
             "Properties" : {
-                "GroupDescription" : "Enable HTTP access on port 8000 and 8001",
+                "GroupDescription" : "Enable HTTP access on port 80, 443, 8000 and 8001",
                 "VpcId" : { "Ref" : "VpcId" },
                 "SecurityGroupIngress" : [ 
-                    { "IpProtocol" : "tcp", "FromPort" : "8000", "ToPort" : "8000", "CidrIp" : { "Ref" : "ProxyAccess" } },
-                    { "IpProtocol" : "tcp", "FromPort" : "8001", "ToPort" : "8001", "CidrIp" : { "Ref" : "AdminAccess" } }
+                    { "IpProtocol" : "tcp", "FromPort" : "80", "ToPort" : "80", "CidrIp" : { "Ref" : "ProxyAccess" } },
+                    { "IpProtocol" : "tcp", "FromPort" : "443", "ToPort" : "443", "CidrIp" : { "Ref" : "ProxyAccess" } },
+                    { "IpProtocol" : "tcp", "FromPort" : "8000", "ToPort" : "8001", "CidrIp" : { "Ref" : "AdminAccess" } }
                 ]
             }
         },
@@ -315,6 +316,7 @@
         "KongLaunchConfig": {
             "Type": "AWS::AutoScaling::LaunchConfiguration",
             "Properties": {
+                "IamInstanceProfile" : {"Ref":"WebServersInstanceProfile"},
                 "ImageId": { "Ref" : "DebianJsAmiId" },
                 "InstanceType": {
                     "Ref": "InstanceType"
@@ -359,20 +361,59 @@
                         { "Ref" : "KongDockerImage" }, "\n",
 
 					"KUI=kong-web-ui_$ECID\n",
-                    "docker run -it --rm -p 8080:8080 ",
+                    "docker run -d --restart=always -p 8080:8080 ",
 						{"Ref":"CwlLinuxParams"}," ",
                         "--name $KUI --log-opt awslogs-stream=$KUI ",
                         "pgbi/kong-dashboard"
                 ]]}}
             }
         },
+
+		"WebServersRole" : {
+			"Type": "AWS::IAM::Role",
+			"Properties": {
+				"AssumeRolePolicyDocument": {
+					"Version": "2012-10-17",
+					"Statement": [{
+						"Effect": "Allow",
+						"Principal": {
+							"Service": [ "ec2.amazonaws.com" ]
+						},
+						"Action": [ "sts:AssumeRole" ]
+					}]
+				},
+				"Path": "/middleware/kong/",
+				"ManagedPolicyArns" : [
+					{"Ref":"CwlPolicy"}
+				]
+			}
+		},
+		"WebServersInstanceProfile" : {
+			"Type": "AWS::IAM::InstanceProfile",
+			"Properties": {
+				"Path": "/middleware/kong/",
+				"Roles": [{"Ref" : "WebServersRole"}]
+			}
+		},
+
         "KongSecurityGroup": {
             "Type": "AWS::EC2::SecurityGroup",
             "Properties": {
                 "GroupDescription": "Enable SSH access and HTTP access on the inbound port",
                 "VpcId" :    { "Ref" : "VpcId" },
                 "SecurityGroupIngress": [
-                    { "IpProtocol" : "tcp", "FromPort" : "8000", "ToPort" : "8001", "SourceSecurityGroupId" :    { "Ref" : "LoadBalancerSecurityGroup" } }
+                    {
+                        "IpProtocol" : "tcp",
+                        "FromPort" : "8080",
+                        "ToPort" : "8080",
+                        "SourceSecurityGroupId" : { "Ref" : "LoadBalancerSecurityGroup" }
+                    },
+                    {
+                        "IpProtocol" : "tcp",
+                        "FromPort" : "8000",
+                        "ToPort" : "8001",
+                        "SourceSecurityGroupId" : { "Ref" : "LoadBalancerSecurityGroup" }
+                    }
                 ]
             }
         },
@@ -422,7 +463,7 @@
             "Properties" : {
                 "GroupDescription" : "Database security groups",
                 "SecurityGroupIngress" : [
-                    { "IpProtocol" : "tcp", "FromPort": 5432, "ToPort" : "5432", "SourceSecurityGroupId": {"Ref" : "KongSecurityGroup"}}
+                    { "IpProtocol" : "tcp", "FromPort": "5432", "ToPort" : "5432", "SourceSecurityGroupId": {"Ref" : "KongSecurityGroup"}}
                 ],
                 "VpcId" : { "Ref" : "VpcId" }
             }
