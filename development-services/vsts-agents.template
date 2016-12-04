@@ -1,0 +1,156 @@
+{
+	"AWSTemplateFormatVersion": "2010-09-09",
+
+	"Description": "A template to launch Vsts build servers.",
+
+	"Parameters": {
+		"KeyPairName": {
+			"Description": "Name of an existing EC2 KeyPair",
+			"Type": "String"
+		},
+		"AgentInstanceType" : {
+			"Description" : "Agent EC2 instance type",
+			"Type" : "String",
+			"Default" : "t2.medium",
+			"AllowedValues": [
+				"t2.nano",
+				"t2.micro",
+				"t2.small",
+				"t2.medium",
+				"t2.large",
+				"m3.medium",
+				"m4.large",
+				"m4.xlarge",
+				"m4.2xlarge",
+				"r3.large",
+				"r3.xlarge",
+				"r3.2xlarge",
+				"r3.4xlarge",
+				"r3.8xlarge"
+			],
+			"ConstraintDescription" : "must be a valid EC2 instance type."
+		},
+
+		"WindowsAgentAmi": {
+			"Description": "AMI to use for windows build agent.",
+			"Type": "String"
+		},
+		"VstsOrganisation": {
+			"Description": "",
+			"Type": "String"
+		},
+		"VstsPatToken": {
+			"Description": "",
+			"Type": "String"
+		},
+		"VstsdAgentBinUrl": {
+			"Description": "",
+			"Type": "String",
+			"Default": "https://github.com/Microsoft/vsts-agent/releases/download/v2.109.1/vsts-agent-win7-x64-2.109.1.zip"
+		},
+		"VpcId": {
+            "Description" : "VPCid associated with the ssubnets. [elb-subnets.parameters.VpcId]",
+            "Type": "AWS::EC2::VPC::Id"
+        },
+        "ServerSubnets" : {
+            "Description" : "VPCid associated with the subnets. [elb-subnets.outputs.WebServerSubnets]",
+            "Type": "List<AWS::EC2::Subnet::Id>"
+        }
+	},
+
+	"Resources" : {
+
+		"WebServersRole" : {
+			"Type": "AWS::IAM::Role",
+			"Properties": {
+				"AssumeRolePolicyDocument": {
+					"Version": "2012-10-17",
+					"Statement": [{
+						"Effect": "Allow",
+						"Principal": {
+							"Service": [ "ec2.amazonaws.com" ]
+						},
+						"Action": [ "sts:AssumeRole" ]
+					}]
+				},
+				"Path": "/devservices/vsts-agents/",
+				"ManagedPolicyArns" : [
+				]
+			}
+		},
+		"WebServersInstanceProfile" : {
+			"Type": "AWS::IAM::InstanceProfile",
+			"Properties": {
+				"Path": "/devservices/vsts-agents/",
+				"Roles": [{"Ref" : "WebServersRole"}]
+			}
+		},
+
+		"VstsWindowsAgentLc" : {
+			"Type" : "AWS::AutoScaling::LaunchConfiguration",
+			"Properties": {
+				"InstanceType" : { "Ref" : "AgentInstanceType" },
+				"ImageId" : { "Ref" : "WindowsAgentAmi" },
+				"IamInstanceProfile" : {"Ref":"WebServersInstanceProfile"},
+				"KeyName" : { "Ref" : "KeyPairName" },
+				"SecurityGroups": [
+					{ "Ref" : "AgentSg" }
+				],
+				"BlockDeviceMappings": [
+					{ "DeviceName" : "/dev/sda1", "Ebs" : { "VolumeSize" : "80", "VolumeType" : "gp2" } }
+				],
+				"UserData" : { "Fn::Base64" : { "Fn::Join" : ["", [
+					"<powershell>\n",
+"$vsts_agent_url = \"", { "Ref": "VstsdAgentBinUrl"}, "\"\n",
+"$vsts_org_name = \"", { "Ref": "VstsOrganisation"}, "\"\n",
+"$vsts_pat_token = \"", { "Ref": "VstsPatToken"}, "\"\n",
+
+"$file_name = \"vsts-agent.zip\"\n",
+"mkdir c:\\vsts\n",
+"mkdir c:\\vsts\\workspace\n",
+"cd c:\\vsts\n",
+"Invoke-WebRequest -UseBasicParsing -OutFile $file_name $vsts_agent_url\n",
+"Add-Type -AssemblyName System.IO.Compression.FileSystem;\n",
+"[System.IO.Compression.ZipFile]::ExtractToDirectory(\"$PWD\\$file_name\", \"$PWD\")\n",
+"$id = (Invoke-WebRequest http://169.254.169.254/latest/meta-data/instance-id).Content\n",
+".\\config.cmd --unattended --url https://$vsts_org_name.visualstudio.com ",
+    "--auth PAT --token $vsts_pat_token ",
+    "--pool Default --agent $id --work c:\\vsts\\workspace\\\n",
+".\\run.cmd\n",
+                    "</powershell>"
+				]]}}
+			}
+		},
+		"VstsWindowsAgentAsg" : {
+			"Type" : "AWS::AutoScaling::AutoScalingGroup",
+			"Properties" : {
+				"VPCZoneIdentifier": { "Ref" : "ServerSubnets" },
+				"LaunchConfigurationName" : { "Ref" : "VstsWindowsAgentLc" },
+				"MinSize" : "0",
+				"MaxSize" : "20",
+				"Tags" : [{"Key": "Name", "Value" : "Vsts Agent", "PropagateAtLaunch" : "True"}]
+			}
+		},
+
+		"AgentSg" : {
+			"Type" : "AWS::EC2::SecurityGroup",
+			"Properties" : {
+				"GroupDescription" : "Vsts Agent Security Group. No in bound traffic other than Vsts Server.",
+				"VpcId" : { "Ref" : "VpcId"},
+				"Tags": [{"Key": "Name", "Value" : "Vsts Agent Security Group"}]
+			}
+		},
+		"DeploymentTargetSg" : {
+			"Type" : "AWS::EC2::SecurityGroup",
+			"Properties" : {
+				"GroupDescription" : "Vsts Agent Security Group. No in bound traffic other than Vsts Server.",
+				"SecurityGroupIngress" : [
+					{ "IpProtocol": "-1", "SourceSecurityGroupId" : {"Ref" : "AgentSg"} }
+				],
+				"VpcId" : { "Ref" : "VpcId"},
+				"Tags": [{"Key": "Name", "Value" : "Vsts Agent Security Group"}]
+			}
+		}
+
+	}
+}
