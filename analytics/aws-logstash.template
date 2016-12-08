@@ -3,6 +3,10 @@
 
 	"Description": "A template to launch elasticsearch cluster.",
 
+	"Metadata" : {
+        "DefaultName" : "Logstash"
+    },
+
 	"Parameters": {
 		"KeyPairName": {
 			"Description": "Name of an existing EC2 KeyPair to enable SSH access to the instances",

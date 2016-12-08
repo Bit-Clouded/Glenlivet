@@ -1,5 +1,12 @@
 {
     "AWSTemplateFormatVersion" : "2010-09-09",
+
+    "Description" : "S3 Hosting",
+
+    "Metadata" : {
+        "DefaultName" : "S3 Hosting"
+    },
+
     "Parameters": {
         "SubDomain" : {
             "Description" : "Site Subdomain",
@@ -15,6 +22,7 @@
             "Type" : "String"
         }
     },
+
 	"Mappings" : {
 		"RegionMap" : {
 			"us-east-1" : { "HostedZoneId" : "Z3AQBSTGFYJSTF " },

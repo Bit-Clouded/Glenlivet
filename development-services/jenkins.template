@@ -3,6 +3,10 @@
 
 	"Description": "A template to launch Jenkins build servers.",
 
+	"Metadata" : {
+        "DefaultName" : "Jenkins"
+    },
+
 	"Parameters": {
 		"KeyPairName": {
 			"Description": "Name of an existing EC2 KeyPair",

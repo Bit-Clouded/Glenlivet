@@ -3,6 +3,10 @@
 
     "Description" : "MongoDB Replica Set",
 
+    "Metadata" : {
+        "DefaultName" : "MongoDb"
+    },
+
     "Parameters" : {
 		"VpcId": {
 			"Description" : "VPCid associated with the subnets. [nat-subnets.parameters.VpcId]",

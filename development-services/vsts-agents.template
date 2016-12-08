@@ -3,6 +3,10 @@
 
 	"Description": "A template to launch Vsts build servers.",
 
+	"Metadata" : {
+        "DefaultName" : "VSTS"
+    },
+
 	"Parameters": {
 		"KeyPairName": {
 			"Description": "Name of an existing EC2 KeyPair",

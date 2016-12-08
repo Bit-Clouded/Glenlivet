@@ -3,6 +3,11 @@
 
     "Description" : "Subnets thave have no access outbound access whatsoever.",
 
+    "Metadata" : {
+        "DefaultName" : "Private Subnets"
+    },
+
+
     "Parameters" : {
 
         "Subnet1Suffix" : {
