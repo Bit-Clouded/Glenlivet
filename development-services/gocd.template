@@ -231,7 +231,7 @@
 					"cat /etc/fstab.bak | grep -v ^/dev/xvdb | tee /etc/fstab\n",
 					"echo -e \"/dev/xvdb\\t/mnt/xvdb\\tauto\\tdefaults\\t0\\t2\" >> /etc/fstab\n",
 					"mount -a\n",
-                    "chmod 777 -R /mnt/xvdb\n",
+                    "chown 999 -R /mnt/xvdb\n",
 
 					"ECID=$(curl http://instance-data/latest/meta-data/instance-id)\n",
 					"CWLA=cwlagent_$ECID\n",
@@ -249,7 +249,9 @@
                         "--name $GOCD_MASTER --log-opt awslogs-stream=$GOCD_MASTER ",
                         "-p 8153:8153 -p 8154:8154 ",
 						{"Ref":"CwlLinuxParams"}," ",
-                        "-v /mnt/xvdb:/var/lib/go-server ",
+                        "-v /mnt/xvdb/lib:/var/lib/go-server ",
+                        "-v /mnt/xvdb/log:/var/log/go-server ",
+                        "-v /mnt/xvdb/etc:/etc/go ",
                         {"Ref":"GocdServerContainer"},"\n"
 				]]}},
 				"Volumes" : [

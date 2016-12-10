@@ -193,8 +193,9 @@
 					"docker run -d --restart=always --name cwlcron ",
 						{"Ref":"CwlUbuntuAgentDocker"}," cron\n",
 
-					"MONGONAME=mongodb-data_$ECID\n",
-                    "docker run --name $MONGONAME -p 27017:27017 -d ",
+                    "docker run -p 27017:27017 ",
+                        "--name $MONGONAME --log-opt awslogs-stream=$MONGONAME ",
+                        "-d --restart=always ",
                         {"Ref":"CwlLinuxParams"}," ",
                         {"Ref":"MongoDbContainer"},
                         " --replSet \"", {"Ref":"ReplicaSetName"}, "\" --bind_ip \"0.0.0.0\"\n",
@@ -262,8 +263,9 @@
 					"docker run -d --restart=always --name cwlcron ",
 						{"Ref":"CwlUbuntuAgentDocker"}," cron\n",
 
-					"MONGONAME=mongodb-data_$ECID\n",
-                    "docker run --name $MONGONAME -p 27017:27017 -d ",
+                    "docker run -p 27017:27017 ",
+                        "--name $MONGONAME --log-opt awslogs-stream=$MONGONAME ",
+                        "-d --restart=always ",
                         {"Ref":"CwlLinuxParams"}," ",
                         {"Ref":"MongoDbContainer"},
                         " --replSet \"", {"Ref":"ReplicaSetName"}, "\" --bind_ip \"0.0.0.0\"\n"
@@ -326,7 +328,9 @@
 						{"Ref":"CwlUbuntuAgentDocker"}," cron\n",
 
 					"MONGONAME=mongodb-data_$ECID\n",
-                    "docker run --name $MONGONAME -p 27017:27017 -d ",
+                    "docker run -p 27017:27017 ",
+                        "--name $MONGONAME --log-opt awslogs-stream=$MONGONAME ",
+                        "-d --restart=always ",
                         {"Ref":"CwlLinuxParams"}," ",
                         {"Ref":"MongoDbContainer"},
                         " --replSet \"", {"Ref":"ReplicaSetName"}, "\" --bind_ip \"0.0.0.0\"\n"
