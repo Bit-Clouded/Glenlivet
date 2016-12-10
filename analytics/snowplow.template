@@ -13,17 +13,22 @@
         "ContainerSssc": {
             "Description": "",
             "Type": "String",
-            "Default": "sleepersmith/test-misch:sssc"
+            "Default": "bitclouded/snowplow-scala-stream-collector:4-1"
         },
         "ContainerSse": {
-            "Description": "",
+            "Description": "Container for",
             "Type": "String",
-            "Default": "sleepersmith/test-misch:sse"
+            "Default": "bitclouded/snowplow-stream-enrich:2-1"
         },
         "ContainerSks": {
-            "Description": "",
+            "Description": "Container image for s3 sink",
             "Type": "String",
-            "Default": "sleepersmith/test-misch:sks"
+            "Default": "bitclouded/snowplow-stream-s3-sink:3-1"
+        },
+        "ContainerSess": {
+            "Description": "Container image for elasticsearch sink",
+            "Type": "String",
+            "Default": "bitclouded/snowplow-stream-es-sink:1-1"
         },
         "InstanceType": {
             "Description": "Type of EC2 instance to launch for frontend",
@@ -46,11 +51,11 @@
             "Type": "AWS::EC2::Image::Id"
         },
 		"VpcId": {
-			"Description" : "VPCid associated with the subnets. [logs-store.parameters.VpcId]",
+			"Description" : "VPCid associated with the subnets. [elb-subnets.parameters.VpcId]",
 			"Type": "String"
 		},
 		"ElbSubnets": {
-			"Description" : "[logs-store.outputs.ElbSubnets]",
+			"Description" : "[elb-subnets.outputs.ElbSubnets]",
 			"Type": "List<AWS::EC2::Subnet::Id>"
 		},
 		"WebServerSubnets": {
@@ -90,12 +95,21 @@
 		"CwlPolicy" : {
 			"Description": "Managed policy for linux logging. [logs-store.resources.LinuxLogPolicy]",
 			"Type": "String"
+		},
+
+        "EsHost" : {
+			"Description": "Hostname of Elasticsearch [elasticsearch.outputs.EsElb]",
+			"Type": "String",
+			"Default": ""
 		}
     },
 
 	"Conditions" : {
 		"HasSsl" : {"Fn::Not": [{"Fn::Equals": [
 			{"Ref": "SslCertId"}, ""
+		]}]},
+		"HasEsHost" : {"Fn::Not": [{"Fn::Equals": [
+			{"Ref": "EsHost"}, ""
 		]}]}
 	},
 
@@ -203,9 +217,15 @@
                                 "dynamodb:*"
                             ],
                             "Effect": "Allow",
-                            "Resource": { "Fn::Join": ["", [
-                                "arn:aws:dynamodb:", { "Ref" : "AWS::Region" }, ":", { "Ref" : "AWS::AccountId" }, ":table/", { "Ref" : "EnrichedReadCheckpoint" }
-                            ]]}
+                            "Resource": [{ "Fn::Join": ["", [
+                                "arn:aws:dynamodb:", { "Ref" : "AWS::Region" }, ":", { "Ref" : "AWS::AccountId" }, ":table/", { "Ref" : "EnrichedToS3Checkpoint" }
+                            ]]},
+                            {"Fn::If": ["HasEsHost",
+                                { "Fn::Join": ["", [
+                                    "arn:aws:dynamodb:", { "Ref" : "AWS::Region" }, ":", { "Ref" : "AWS::AccountId" }, ":table/", { "Ref" : "EnrichedToEsCheckpoint" }
+                                ]]},
+                                { "Ref": "AWS::NoValue" } 
+                            ]}]
                         },
                         {
                             "Effect": "Allow",
@@ -229,8 +249,8 @@
             "Type": "AWS::DynamoDB::Table",
             "Properties": {
                 "ProvisionedThroughput": {
-                    "ReadCapacityUnits": "10",
-                    "WriteCapacityUnits": "10"
+                    "ReadCapacityUnits": "5",
+                    "WriteCapacityUnits": "5"
                 },
                 "AttributeDefinitions": [{
                     "AttributeName": "leaseKey",
@@ -242,12 +262,30 @@
                 }]
             }
         },
-        "EnrichedReadCheckpoint": {
+        "EnrichedToS3Checkpoint": {
             "Type": "AWS::DynamoDB::Table",
             "Properties": {
                 "ProvisionedThroughput": {
-                    "ReadCapacityUnits": "10",
-                    "WriteCapacityUnits": "10"
+                    "ReadCapacityUnits": "5",
+                    "WriteCapacityUnits": "5"
+                },
+                "AttributeDefinitions": [{
+                    "AttributeName": "leaseKey",
+                    "AttributeType": "S"
+                }],
+                "KeySchema": [{
+                    "AttributeName": "leaseKey",
+                    "KeyType": "HASH"
+                }]
+            }
+        },
+        "EnrichedToEsCheckpoint": {
+            "Condition" : "HasEsHost",
+            "Type": "AWS::DynamoDB::Table",
+            "Properties": {
+                "ProvisionedThroughput": {
+                    "ReadCapacityUnits": "5",
+                    "WriteCapacityUnits": "5"
                 },
                 "AttributeDefinitions": [{
                     "AttributeName": "leaseKey",
@@ -484,10 +522,21 @@
                     "docker run --name $MAIN -d --restart=always --log-opt awslogs-stream=$MAIN ",
                         {"Ref":"CwlLinuxParams"}, " ", 
                         "-e STREAM_SOURCE=", {"Ref":"EnrichedStream"}, " ",
-                        "-e DDB_CHECKPOINT=", {"Ref":"EnrichedReadCheckpoint"}, " ",
+                        "-e DDB_CHECKPOINT=", {"Ref":"EnrichedToS3Checkpoint"}, " ",
                         "-e BUCKET_NAME=", {"Ref":"RawDataStore"}, " ",
                         "-e STREAM_BAD=", {"Ref":"SinkOutputBad"}, " ",
-                        {"Ref":"ContainerSks"}
+                        {"Ref":"ContainerSks"}, "\n",
+					"ES_SINK=snowplow-sess_$ECID\n",
+                    { "Fn::If" : ["HasEsHost",
+                        { "Fn::Join": ["", [
+                            "docker run --name $ES_SINK -d --restart=always --log-opt awslogs-stream=$ES_SINK ",
+                                {"Ref":"CwlLinuxParams"}, " ", 
+                                "-e STREAM_SOURCE=", {"Ref":"EnrichedStream"}, " ",
+                                "-e DDB_CHECKPOINT=", {"Ref":"EnrichedToEsCheckpoint"}, " ",
+                                "-e ES_HOST=", {"Ref":"EsHost"}, " ",
+                                {"Ref":"ContainerSess"}, "\n"
+                        ]]},
+                        ""]}
                 ]]}}
             }
         },
