@@ -3,6 +3,10 @@
 
 	"Description": "A template to launch GoCD build servers.",
 
+	"Metadata" : {
+        "DefaultName" : "GoCD"
+    },
+
 	"Parameters": {
 		"KeyPairName": {
 			"Description": "Name of an existing EC2 KeyPair",

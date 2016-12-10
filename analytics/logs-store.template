@@ -1,9 +1,12 @@
 {
 	"AWSTemplateFormatVersion": "2010-09-09",
+
 	"Description": "Buckets to hold aws logs.",
+
 	"Metadata" : {
 		"DefaultName" : "LogStore"
 	},
+	
 	"Parameters": {
 		"BucketPrefix" : {
 			"Description" : "Bucket name for raw logs from elastic load balancer and cloud trail.",

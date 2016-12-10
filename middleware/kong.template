@@ -1,6 +1,12 @@
 {
     "AWSTemplateFormatVersion": "2010-09-09",
+
     "Description": "Kong CloudFormation template.Template creates load balanced Kong instances with Postgres RDS instance in a new VPC",
+
+    "Metadata" : {
+        "DefaultName" : "Kong"
+    },
+
     "Parameters": {
 		"DebianJsAmiId": {
 			"Description": "Debian Jessie AMI Id.",
