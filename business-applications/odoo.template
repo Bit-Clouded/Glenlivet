@@ -1,0 +1,258 @@
+{
+	"AWSTemplateFormatVersion": "2010-09-09",
+
+	"Description": "A template to launch GoCD build servers.",
+
+	"Metadata" : {
+        "DefaultName" : "Odoo"
+    },
+    "Parameters": {
+        "KeyPairName": {
+            "Description": "Name of an existing EC2 KeyPair",
+            "Type": "String"
+        },
+
+        "ServerInstanceType" : {
+            "Description" : "GoCDmaster server EC2 instance type",
+            "Type" : "String",
+            "Default" : "t2.micro",
+            "AllowedValues": [
+                "t2.micro",
+                "t2.small",
+                "t2.medium",
+                "t2.large",
+                "m3.medium",
+                "m4.large",
+                "m4.xlarge",
+                "m4.2xlarge"
+            ],
+            "ConstraintDescription" : "must be a valid EC2 instance type."
+        },
+
+        "OdooStateDiskSize" : {
+			"Description" : "Size of the disk for storing Odoo state.",
+			"Type" : "Number",
+			"Default" : "100"
+		},
+
+        "PostgresContainer": {
+            "Description": "Postgres container name with tag.",
+            "Default": "postgres:9.4",
+            "Type": "String"
+        },
+        "OdooContainer": {
+            "Description": "Odoo container name with tag.",
+            "Default": "odoo:10.0-20161123",
+            "Type": "String"
+        },
+        "DebianJsAmiId": {
+            "Description": "Debian Jessie AMI Id",
+            "Type": "String"
+        },
+
+        "SslCertId" : {
+            "Description": "Id of the SSL certificate to use.",
+            "Default" : "",
+            "Type": "String"
+        },
+        "ElbSg" : {
+            "Description": "Elb Security Group. [vpc.resources.ElbSecGroup]",
+            "Type": "String"
+        },
+        "ElbTargetSg" : {
+            "Description": "Elb Target Security Group. [vpc.resources.ElbTargetSecGroup]",
+            "Type": "String"
+        },
+        "HttpSg" : {
+            "Description": "Elb Target Security Group. [vpc.resources.HttpNsSecGroup]",
+            "Type": "String"
+        },
+        "IsPublicFacing": {
+            "Description" : "Is publicly accessable deployment.",
+            "Type" : "String",
+            "AllowedValues": [
+                "internet-facing",
+                "internal"
+            ],
+            "Default": "internal",
+            "ConstraintDescription": "Valid schemes: 'internet-facing' or 'internal'."
+        },
+        "VpcId": {
+            "Description" : "VPCid associated with the subnets. [elb-subnets.parameters.VpcId]",
+            "Type": "AWS::EC2::VPC::Id"
+        },
+        "ElbSubnets" : {
+            "Description" : "VPCid associated with the subnets. [elb-subnets.outputs.ElbSubnets]",
+            "Type": "List<AWS::EC2::Subnet::Id>"
+        },
+        "ServerSubnets" : {
+            "Description" : "VPCid associated with the subnets. [elb-subnets.outputs.WebServerSubnets]",
+            "Type": "List<AWS::EC2::Subnet::Id>"
+        },
+
+        "CwlUbuntuAgentDocker": {
+            "Description": "Name of cluster. This is used for discovery.",
+            "Type": "String",
+            "Default": "bitclouded/aws-cwl-agent:4.1"
+        },
+        "CwlLinuxParams" : {
+            "Description": "Environment variables for syslog and authlog cwl group names [logs-store.outputs.LxDockerLogParams]",
+            "Type": "String"
+        },
+        "CwlDockerParams" : {
+            "Description": "Docker log driver params [logs-store.outputs.DockerCwlParams]",
+            "Type": "String"
+        },
+        "CwlPolicy" : {
+            "Description": "Managed policy for linux logging. [logs-store.resources.LinuxLogPolicy]",
+            "Type": "String"
+        }
+    },
+
+    "Mappings" : {
+		"InstanceVariables" : {
+			"t2.micro": { "ram" : "450" },
+			"t2.small": { "ram" : "950" },
+			"t2.medium": { "ram" : "1950" },
+			"m3.medium": { "ram" : "1800", "lspotprice": "0.028", "wspotprice": "0.08" },
+			"m3.large": { "ram" : "3600", "lspotprice": "0.056", "wspotprice": "0.15" },
+			"m3.xlarge": { "ram" : "7000", "lspotprice": "0.111", "wspotprice": "0.271" },
+			"m3.2xlarge": { "ram" : "14500", "lspotprice": "0.222", "wspotprice": "0.543" },
+			"r3.large": { "ram" : "7500", "lspotprice": "0.065", "wspotprice": "0.155" },
+			"r3.xlarge": { "ram" : "15000", "lspotprice": "0.130", "wspotprice": "0.280" },
+			"r3.2xlarge": { "ram" : "30000", "lspotprice": "0.261", "wspotprice": "0.539" },
+			"r3.4xlarge": { "ram" : "60000", "lspotprice": "0.522", "wspotprice": "0.948" },
+			"r3.8xlarge": { "ram" : "12000", "lspotprice": "1.043", "wspotprice": "1.228" }
+		}
+	},
+
+	"Conditions" : {
+		"IsPublicFacingCondition" : {
+			"Fn::Equals": [{"Ref":"IsPublicFacing"},"true"]
+		},
+		"HasDeploymentBucketMp" : {"Fn::Not": [{"Fn::Equals": [
+			{"Ref": "DeploymentBucketMp"}, ""
+		]}]},
+		"HasSsl" : {"Fn::Not": [{"Fn::Equals": [
+			{"Ref": "SslCertId"}, ""
+		]}]}
+	},
+
+    "Resources" : {
+
+        "HttpGateway" : {
+            "Type" : "AWS::ElasticLoadBalancing::LoadBalancer",
+            "Properties" : {
+                "Subnets": {"Ref": "ElbSubnets"},
+                "Listeners" : [
+                    {
+                        "LoadBalancerPort" : "80",
+                        "InstancePort" : "8069",
+                        "Protocol" : "HTTP"
+                    },
+                    {"Fn::If" : [ "HasSsl",
+                    {
+                        "LoadBalancerPort" : "443",
+                        "InstancePort" : "8069",
+                        "Protocol" : "HTTPS",
+                        "InstanceProtocol": "HTTP",
+                        "SSLCertificateId": { "Ref": "SslCertId" }
+                    },{"Ref":"AWS::NoValue"}]}
+                ],
+                "HealthCheck" : {
+                    "Target" : { "Fn::Join" : [ "", ["TCP:8069"]]},
+                    "HealthyThreshold" : "3",
+                    "UnhealthyThreshold" : "5",
+                    "Interval" : "30",
+                    "Timeout" : "5"
+                },
+                "SecurityGroups": [
+                    { "Ref": "ElbSg" },
+                { "Ref": "HttpSg" }
+            ],
+            "Scheme": { "Ref" : "IsPublicFacing" },
+            "Instances" : [
+                {"Ref":"OdooInstance"}
+            ]}
+		},
+
+        "RepoDisk" : {
+			"Type":"AWS::EC2::Volume",
+			"Properties" : {
+				"AvailabilityZone" : {"Fn::Select":["0", { "Fn::GetAZs": "" }]},
+				"Size" : {"Ref": "OdooStateDiskSize"},
+				"Tags" : [],
+				"VolumeType" : "gp2"
+			}
+		},
+
+        "OdooInstance" : {
+            "Type" : "AWS::EC2::Instance",
+            "Properties" : {
+                "IamInstanceProfile" : {"Ref":"WebServersInstanceProfile"},
+                "InstanceType" : { "Ref" : "ServerInstanceType" },
+                "ImageId" : { "Ref" : "DebianJsAmiId" },
+                "KeyName" : { "Ref" : "KeyPairName" },
+                "SecurityGroupIds": [
+                    { "Ref" : "ServerSg" },
+                    { "Ref" : "ElbTargetSg" }
+                ],
+                "SubnetId": { "Fn::Select" : ["0", {"Ref": "ServerSubnets"}]},
+                "UserData" : { "Fn::Base64" : { "Fn::Join" : ["", [
+                    "#!/bin/bash\n",
+
+                    "docker run -d -e POSTGRES_USER=odoo -e POSTGRES_PASSWORD=odoo --name db ",
+                    {"Ref" : "PostgresContainer"}, "\n",
+
+                    "docker run -p 8069:8069 --name odoo --link db:db -t ",
+                    {"Ref" : "OdooContainer"}, "\n"
+
+                ]]}},
+                "Volumes" : [
+                    {"Device": "xvdb", "VolumeId" : {"Ref": "RepoDisk"}}
+                ],
+                "Tags": [
+                    {"Key": "Name", "Value" : "Odoo"}
+                ]
+            }
+        },
+
+		"WebServersInstanceProfile" : {
+			"Type": "AWS::IAM::InstanceProfile",
+			"Properties": {
+				"Path": "/devservices/odoo/",
+				"Roles": [{"Ref" : "WebServersRole"}]
+			}
+		},
+
+        "WebServersRole" : {
+            "Type": "AWS::IAM::Role",
+            "Properties": {
+                "AssumeRolePolicyDocument": {
+                    "Version": "2012-10-17",
+                    "Statement": [{
+                        "Effect": "Allow",
+                        "Principal": {
+                            "Service": [ "ec2.amazonaws.com" ]
+                        },
+                        "Action": [ "sts:AssumeRole" ]
+                    }]
+                },
+                "Path": "/devservices/odoo/",
+				"ManagedPolicyArns" : [
+					{"Fn::If":["HasDeploymentBucketMp",
+						{"Ref":"DeploymentBucketMp"}, {"Ref":"AWS::NoValue"}
+					]},
+					{"Ref":"CwlPolicy"}
+				]
+            }
+        }
+    },
+    
+    "Outputs" : {
+		"Gateway" : {
+			"Value" : { "Fn::GetAtt" : ["OdooInstance", "PrivateIp"] },
+			"Description" : "IP of the Odoo server."
+		}
+	}
+}
