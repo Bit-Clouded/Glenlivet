@@ -1,4 +1,4 @@
-﻿$templateNameTag = "TemplateName"
+﻿$templateNameTag = "bc:template-name"
 # Name > Environment > LogicalUnit
 
 function New-Deployment {

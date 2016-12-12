@@ -1,0 +1,596 @@
+{
+    "AWSTemplateFormatVersion": "2010-09-09",
+    "Parameters": {
+        "KeyPairName": {
+            "Description": "Name of an existing EC2 KeyPair to enable SSH access to the instances",
+            "Type": "AWS::EC2::KeyPair::KeyName"
+        },
+        "SslCertId": {
+            "Description": "Id of the SSL certificate to use.",
+            "Type": "String",
+            "Default": ""
+        },
+        "ContainerSssc": {
+            "Description": "",
+            "Type": "String",
+            "Default": "bitclouded/snowplow-scala-stream-collector:4-1"
+        },
+        "ContainerSse": {
+            "Description": "Container for",
+            "Type": "String",
+            "Default": "bitclouded/snowplow-stream-enrich:2-1"
+        },
+        "ContainerSks": {
+            "Description": "Container image for s3 sink",
+            "Type": "String",
+            "Default": "bitclouded/snowplow-stream-s3-sink:3-1"
+        },
+        "ContainerSess": {
+            "Description": "Container image for elasticsearch sink",
+            "Type": "String",
+            "Default": "bitclouded/snowplow-stream-es-sink:1-1"
+        },
+        "InstanceType": {
+            "Description": "Type of EC2 instance to launch for frontend",
+            "Type": "String",
+            "Default": "t2.micro",
+            "AllowedValues": [
+                "t2.micro",
+                "t2.small",
+                "t2.medium",
+                "t2.large",
+                "m3.medium",
+                "m4.large",
+                "m4.xlarge",
+                "m4.2xlarge"
+            ],
+            "ConstraintDescription": "Must be a valid EC2 instance type."
+        },
+        "DebianJsAmiId": {
+            "Description": "Image id of the frontend",
+            "Type": "AWS::EC2::Image::Id"
+        },
+		"VpcId": {
+			"Description" : "VPCid associated with the subnets. [elb-subnets.parameters.VpcId]",
+			"Type": "String"
+		},
+		"ElbSubnets": {
+			"Description" : "[elb-subnets.outputs.ElbSubnets]",
+			"Type": "List<AWS::EC2::Subnet::Id>"
+		},
+		"WebServerSubnets": {
+			"Description" : "Subnet to run HA web cluster on. [elb-subnets.outputs.WebServerSubnets]",
+			"Type": "List<AWS::EC2::Subnet::Id>"
+		},
+		"ElbSg" : {
+			"Description": "Elb Security Group. [vpc.resources.ElbSecGroup]",
+            "Type": "String"
+		},
+		"ElbTargetSg" : {
+			"Description": "Elb Target Security Group. [vpc.resources.ElbTargetSecGroup]",
+            "Type": "String"
+		},
+		"HttpSg" : {
+			"Description": "Elb Target Security Group. [vpc.resources.HttpNsSecGroup]",
+            "Type": "String"
+		},
+        "AccessLogBucket": {
+            "Description": "Image id of the frontend [logs-store.resources.Raw]",
+            "Type": "String"
+        },
+
+		"CwlUbuntuAgentDocker": {
+			"Description": "Name of cluster. This is used for discovery.",
+			"Type": "String",
+			"Default": "bitclouded/aws-cwl-agent:4.1"
+		},
+		"CwlLinuxParams" : {
+			"Description": "Environment variables for syslog and authlog cwl group names [logs-store.outputs.LxDockerLogParams]",
+			"Type": "String"
+		},
+		"CwlDockerParams" : {
+			"Description": "Docker log driver params [logs-store.outputs.DockerCwlParams]",
+			"Type": "String"
+		},
+		"CwlPolicy" : {
+			"Description": "Managed policy for linux logging. [logs-store.resources.LinuxLogPolicy]",
+			"Type": "String"
+		},
+
+        "EsHost" : {
+			"Description": "Hostname of Elasticsearch [elasticsearch.outputs.EsElb]",
+			"Type": "String",
+			"Default": ""
+		}
+    },
+
+	"Conditions" : {
+		"HasSsl" : {"Fn::Not": [{"Fn::Equals": [
+			{"Ref": "SslCertId"}, ""
+		]}]},
+		"HasEsHost" : {"Fn::Not": [{"Fn::Equals": [
+			{"Ref": "EsHost"}, ""
+		]}]}
+	},
+
+    "Resources": {
+        "RawStream": {
+            "Type": "AWS::Kinesis::Stream",
+            "Properties": { "ShardCount" : "1" }
+        },
+        "RawStreamBad": {
+            "Type": "AWS::Kinesis::Stream",
+            "Properties": { "ShardCount" : "1" }
+        },
+        "EnrichedStream": {
+            "Type": "AWS::Kinesis::Stream",
+            "Properties": { "ShardCount" : "1" }
+        },
+        "EnrichedStreamBad": {
+            "Type": "AWS::Kinesis::Stream",
+            "Properties": { "ShardCount" : "1" }
+        },
+        "SinkOutputBad": {
+            "Type": "AWS::Kinesis::Stream",
+            "Properties": { "ShardCount" : "1" }
+        },
+        "EnrichStreamPermission": {
+            "Type": "AWS::IAM::ManagedPolicy",
+            "Properties": {
+                "Roles": [{ "Ref" : "EnrichStreamRole" }],
+                "PolicyDocument": {
+                    "Version": "2012-10-17",
+                    "Statement": [
+                        {
+                            "Action": [
+                                "kinesis:DescribeStream",
+                                "kinesis:MergeShards",
+                                "kinesis:PutRecord",
+                                "kinesis:PutRecords",
+                                "kinesis:SplitShard"
+                            ],
+                            "Effect": "Allow",
+                            "Resource": [
+                                { "Fn::GetAtt": ["EnrichedStream","Arn"] },
+                                { "Fn::GetAtt": ["EnrichedStreamBad","Arn"] }
+                            ]
+                        },
+                        {
+                            "Action": [
+                                "kinesis:DescribeStream",
+                                "kinesis:GetShardIterator",
+                                "kinesis:GetRecords",
+                                "kinesis:MergeShards",
+                                "kinesis:SplitShard"
+                            ],
+                            "Effect": "Allow",
+                            "Resource": [{ "Fn::GetAtt": ["RawStream","Arn"] }]
+                        },
+                        {
+                            "Action": [
+                                "dynamodb:*"
+                            ],
+                            "Effect": "Allow",
+                            "Resource": [ { "Fn::Join": ["", [
+                                "arn:aws:dynamodb:", { "Ref" : "AWS::Region" }, ":", { "Ref" : "AWS::AccountId" }, ":table/", { "Ref" : "RawReadCheckpoint" }
+                            ]]}]
+                        }
+                    ]
+                }
+            }
+        },
+        "EnrichedStreamPermission": {
+            "Type": "AWS::IAM::ManagedPolicy",
+            "Properties": {
+                "Roles": [{ "Ref" : "EnrichedStreamRole" }],
+                "PolicyDocument": {
+                    "Version": "2012-10-17",
+                    "Statement": [
+                        {
+                            "Action": [
+                                "kinesis:DescribeStream",
+                                "kinesis:GetShardIterator",
+                                "kinesis:GetRecords",
+                                "kinesis:MergeShards",
+                                "kinesis:SplitShard"
+                            ],
+                            "Effect": "Allow",
+                            "Resource": [
+                                { "Fn::GetAtt": ["EnrichedStream","Arn"] }
+                            ]
+                        },
+                        {
+                            "Action": [
+                                "kinesis:DescribeStream",
+                                "kinesis:MergeShards",
+                                "kinesis:PutRecord",
+                                "kinesis:PutRecords",
+                                "kinesis:SplitShard"
+                            ],
+                            "Effect": "Allow",
+                            "Resource": [
+                                { "Fn::GetAtt": ["SinkOutputBad","Arn"] }
+                            ]
+                        },
+                        {
+                            "Action": [
+                                "dynamodb:*"
+                            ],
+                            "Effect": "Allow",
+                            "Resource": [{ "Fn::Join": ["", [
+                                "arn:aws:dynamodb:", { "Ref" : "AWS::Region" }, ":", { "Ref" : "AWS::AccountId" }, ":table/", { "Ref" : "EnrichedToS3Checkpoint" }
+                            ]]},
+                            {"Fn::If": ["HasEsHost",
+                                { "Fn::Join": ["", [
+                                    "arn:aws:dynamodb:", { "Ref" : "AWS::Region" }, ":", { "Ref" : "AWS::AccountId" }, ":table/", { "Ref" : "EnrichedToEsCheckpoint" }
+                                ]]},
+                                { "Ref": "AWS::NoValue" } 
+                            ]}]
+                        },
+                        {
+                            "Effect": "Allow",
+                            "Action": [
+                                "s3:*"
+                            ],
+                            "Resource": [
+                                { "Fn::Join" : ["", [
+                                    "arn:aws:s3:::", {"Ref":"RawDataStore"}, "/*"
+                                ]]},
+                                { "Fn::Join" : ["", [
+                                    "arn:aws:s3:::", {"Ref":"RawDataStore"}
+                                ]]}
+                            ]
+                        }
+                    ]
+                }
+            }
+        },
+        "RawReadCheckpoint": {
+            "Type": "AWS::DynamoDB::Table",
+            "Properties": {
+                "ProvisionedThroughput": {
+                    "ReadCapacityUnits": "5",
+                    "WriteCapacityUnits": "5"
+                },
+                "AttributeDefinitions": [{
+                    "AttributeName": "leaseKey",
+                    "AttributeType": "S"
+                }],
+                "KeySchema": [{
+                    "AttributeName": "leaseKey",
+                    "KeyType": "HASH"
+                }]
+            }
+        },
+        "EnrichedToS3Checkpoint": {
+            "Type": "AWS::DynamoDB::Table",
+            "Properties": {
+                "ProvisionedThroughput": {
+                    "ReadCapacityUnits": "5",
+                    "WriteCapacityUnits": "5"
+                },
+                "AttributeDefinitions": [{
+                    "AttributeName": "leaseKey",
+                    "AttributeType": "S"
+                }],
+                "KeySchema": [{
+                    "AttributeName": "leaseKey",
+                    "KeyType": "HASH"
+                }]
+            }
+        },
+        "EnrichedToEsCheckpoint": {
+            "Condition" : "HasEsHost",
+            "Type": "AWS::DynamoDB::Table",
+            "Properties": {
+                "ProvisionedThroughput": {
+                    "ReadCapacityUnits": "5",
+                    "WriteCapacityUnits": "5"
+                },
+                "AttributeDefinitions": [{
+                    "AttributeName": "leaseKey",
+                    "AttributeType": "S"
+                }],
+                "KeySchema": [{
+                    "AttributeName": "leaseKey",
+                    "KeyType": "HASH"
+                }]
+            }
+        },
+        "EventCollectionRole": {
+            "Type": "AWS::IAM::Role",
+            "Properties": {
+                "AssumeRolePolicyDocument": {
+                    "Version": "2012-10-17",
+                    "Statement": [{
+                        "Effect": "Allow",
+                        "Principal": { "Service" : "ec2.amazonaws.com" },
+                        "Action": ["sts:AssumeRole"]
+                    }]
+                },
+                "Path": "/analytics/snowplow/",
+				"ManagedPolicyArns" : [
+					{"Ref":"CwlPolicy"}
+				]
+            }
+        },
+        "EventCollectionGroup": {
+            "Type": "AWS::AutoScaling::AutoScalingGroup",
+            "Properties": {
+                "MinSize": "1",
+                "MaxSize": "10",
+                "LoadBalancerNames": [{ "Ref" : "EventCollectionEndPoint" }],
+                "LaunchConfigurationName": { "Ref" : "EventCollectionLc" },
+                "VPCZoneIdentifier": {"Ref":"WebServerSubnets"},
+                "Tags": [
+                    { "PropagateAtLaunch": "true", "Key": "Name", "Value": "Snowplow Collector" }
+                ]
+            }
+        },
+        "EventCollectionLc": {
+            "Type": "AWS::AutoScaling::LaunchConfiguration",
+            "Properties": {
+                "KeyName": { "Ref" : "KeyPairName" },
+                "ImageId": { "Ref" : "DebianJsAmiId" },
+                "IamInstanceProfile": { "Ref" : "EventCollectionIp" },
+                "InstanceType": { "Ref" : "InstanceType" },
+                "SecurityGroups": [{ "Ref" : "ElbTargetSg" }],
+                "UserData" : { "Fn::Base64" : { "Fn::Join" : ["", [
+                    "#!/bin/bash\n",
+					"ECID=$(curl http://instance-data/latest/meta-data/instance-id)\n",
+					"CWLA=cwlagent_$ECID\n",
+					"docker run -d --restart=always ",
+						"--name $CWLA --log-opt awslogs-stream=$CWLA ",
+						"-v /var/log:/var/log-host:ro ",
+						{"Ref":"CwlLinuxParams"}," ",
+						{"Ref":"CwlDockerParams"}," ",
+						{"Ref":"CwlUbuntuAgentDocker"},"\n",
+					"docker run -d --restart=always --name cwlcron ",
+						{"Ref":"CwlUbuntuAgentDocker"}," cron\n",
+
+					"MAIN=snowplow-ssc_$ECID\n",
+                    "docker run --name $MAIN -d --restart=always -p 80:80 ",
+                        "--log-opt awslogs-stream=$MAIN ",
+                        {"Ref":"CwlLinuxParams"}, " ", 
+                        "-e STREAM_GOOD=", {"Ref":"RawStream"}, " ",
+                        "-e STREAM_BAD=", {"Ref":"RawStreamBad"}, " ",
+                        {"Ref":"ContainerSssc"}
+                ]]}}
+
+            }
+        },
+        "EventCollectionPermission": {
+            "Type": "AWS::IAM::ManagedPolicy",
+            "Properties": {
+                "Roles": [{ "Ref" : "EventCollectionRole" }],
+                "PolicyDocument": {
+                    "Version": "2012-10-17",
+                    "Statement": [{
+                        "Action": [
+                            "kinesis:DescribeStream",
+                            "kinesis:MergeShards",
+                            "kinesis:PutRecord",
+                            "kinesis:PutRecords",
+                            "kinesis:SplitShard"
+                        ],
+                        "Effect": "Allow",
+                        "Resource": [
+                            { "Fn::GetAtt": ["RawStream", "Arn"] },
+                            { "Fn::GetAtt": ["RawStreamBad", "Arn"] }
+                        ]
+                    }]
+                }
+            }
+        },
+        "EnrichStreamRole": {
+            "Type": "AWS::IAM::Role",
+            "Properties": {
+                "AssumeRolePolicyDocument": {
+                    "Version": "2012-10-17",
+                    "Statement": [
+                        {
+                            "Effect": "Allow",
+                            "Principal": { "Service" : "ec2.amazonaws.com" },
+                            "Action": ["sts:AssumeRole"]
+                        }
+                    ]
+                },
+                "Path": "/analytics/snowplow/",
+				"ManagedPolicyArns" : [
+					{"Ref":"CwlPolicy"}
+				]
+            }
+        },
+        "EnrichStreamIp": {
+            "Type": "AWS::IAM::InstanceProfile",
+            "Properties": {
+                "Roles": [{ "Ref" : "EnrichStreamRole" }],
+                "Path": "/analytics/snowplow/"
+            }
+        },
+        "EventCollectionIp": {
+            "Type": "AWS::IAM::InstanceProfile",
+            "Properties": {
+                "Roles": [{ "Ref" : "EventCollectionRole" }],
+                "Path": "/analytics/snowplow/"
+            }
+        },
+        "EnrichStreamGroup": {
+            "Type": "AWS::AutoScaling::AutoScalingGroup",
+            "Properties": {
+                "MinSize": "1",
+                "MaxSize": "10",
+                "LaunchConfigurationName": { "Ref" : "EnrichStreamLc" },
+                "VPCZoneIdentifier": { "Ref" : "WebServerSubnets" },
+                "Tags": [
+                    { "PropagateAtLaunch": "true", "Key": "Name", "Value": "Snowplow Enrich" }
+                ]
+            }
+        },
+        "EnrichStreamLc": {
+            "Type": "AWS::AutoScaling::LaunchConfiguration",
+            "Properties": {
+                "KeyName": { "Ref" : "KeyPairName" },
+                "ImageId": { "Ref" : "DebianJsAmiId" },
+                "InstanceType": { "Ref" : "InstanceType" },
+                "IamInstanceProfile": { "Ref" : "EnrichStreamIp" },
+                "SecurityGroups": [{ "Ref" : "Outbound" }],
+                "UserData" : { "Fn::Base64" : { "Fn::Join" : ["", [
+                    "#!/bin/bash\n",
+					"ECID=$(curl http://instance-data/latest/meta-data/instance-id)\n",
+					"CWLA=cwlagent_$ECID\n",
+					"docker run -d --restart=always ",
+						"--name $CWLA --log-opt awslogs-stream=$CWLA ",
+						"-v /var/log:/var/log-host:ro ",
+						{"Ref":"CwlLinuxParams"}," ",
+						{"Ref":"CwlDockerParams"}," ",
+						{"Ref":"CwlUbuntuAgentDocker"},"\n",
+					"docker run -d --restart=always --name cwlcron ",
+						{"Ref":"CwlUbuntuAgentDocker"}," cron\n",
+
+					"MAIN=snowplow-sse_$ECID\n",
+                    "docker run --name $MAIN -d --restart=always --log-opt awslogs-stream=$MAIN ",
+                        {"Ref":"CwlLinuxParams"}, " ", 
+                        "-e STREAM_SOURCE=", {"Ref":"RawStream"}, " ",
+                        "-e DDB_CHECKPOINT=", {"Ref":"RawReadCheckpoint"}, " ",
+                        "-e STREAM_GOOD=", {"Ref":"EnrichedStream"}, " ",
+                        "-e STREAM_BAD=", {"Ref":"EnrichedStreamBad"}, " ",
+                        {"Ref":"ContainerSse"}
+                ]]}}
+            }
+        },
+        "EnrichedStreamRole": {
+            "Type": "AWS::IAM::Role",
+            "Properties": {
+                "AssumeRolePolicyDocument": {
+                    "Version": "2012-10-17",
+                    "Statement": [
+                        {
+                            "Effect": "Allow",
+                            "Principal": { "Service" : "ec2.amazonaws.com" },
+                            "Action": ["sts:AssumeRole"]
+                        }
+                    ]
+                },
+                "Path": "/analytics/snowplow/",
+				"ManagedPolicyArns" : [
+					{"Ref":"CwlPolicy"}
+				]
+            }
+        },
+        "EnrichedStreamIp": {
+            "Type": "AWS::IAM::InstanceProfile",
+            "Properties": {
+                "Roles": [{ "Ref" : "EnrichedStreamRole" }],
+                "Path": "/analytics/snowplow/"
+            }
+        },
+        "EnrichedStreamGroup": {
+            "Type": "AWS::AutoScaling::AutoScalingGroup",
+            "Properties": {
+                "MinSize": "1",
+                "MaxSize": "10",
+                "LaunchConfigurationName": { "Ref" : "EnrichedStreamLc" },
+                "VPCZoneIdentifier": { "Ref" : "WebServerSubnets" },
+                "Tags": [
+                    { "PropagateAtLaunch": "true", "Key": "Name", "Value": "Snowplow Enriched" }
+                ]
+            }
+        },
+        "EnrichedStreamLc": {
+            "Type": "AWS::AutoScaling::LaunchConfiguration",
+            "Properties": {
+                "KeyName": { "Ref" : "KeyPairName" },
+                "IamInstanceProfile": { "Ref" : "EnrichedStreamIp" },
+                "ImageId": { "Ref" : "DebianJsAmiId" },
+                "InstanceType": { "Ref" : "InstanceType" },
+                "SecurityGroups": [{ "Ref" : "Outbound" }],
+                "UserData" : { "Fn::Base64" : { "Fn::Join" : ["", [
+                    "#!/bin/bash\n",
+					"ECID=$(curl http://instance-data/latest/meta-data/instance-id)\n",
+					"CWLA=cwlagent_$ECID\n",
+					"docker run -d --restart=always ",
+						"--name $CWLA --log-opt awslogs-stream=$CWLA ",
+						"-v /var/log:/var/log-host:ro ",
+						{"Ref":"CwlLinuxParams"}," ",
+						{"Ref":"CwlDockerParams"}," ",
+						{"Ref":"CwlUbuntuAgentDocker"},"\n",
+					"docker run -d --restart=always --name cwlcron ",
+						{"Ref":"CwlUbuntuAgentDocker"}," cron\n",
+
+					"MAIN=snowplow-sks_$ECID\n",
+                    "docker run --name $MAIN -d --restart=always --log-opt awslogs-stream=$MAIN ",
+                        {"Ref":"CwlLinuxParams"}, " ", 
+                        "-e STREAM_SOURCE=", {"Ref":"EnrichedStream"}, " ",
+                        "-e DDB_CHECKPOINT=", {"Ref":"EnrichedToS3Checkpoint"}, " ",
+                        "-e BUCKET_NAME=", {"Ref":"RawDataStore"}, " ",
+                        "-e STREAM_BAD=", {"Ref":"SinkOutputBad"}, " ",
+                        {"Ref":"ContainerSks"}, "\n",
+					"ES_SINK=snowplow-sess_$ECID\n",
+                    { "Fn::If" : ["HasEsHost",
+                        { "Fn::Join": ["", [
+                            "docker run --name $ES_SINK -d --restart=always --log-opt awslogs-stream=$ES_SINK ",
+                                {"Ref":"CwlLinuxParams"}, " ", 
+                                "-e STREAM_SOURCE=", {"Ref":"EnrichedStream"}, " ",
+                                "-e DDB_CHECKPOINT=", {"Ref":"EnrichedToEsCheckpoint"}, " ",
+                                "-e ES_HOST=", {"Ref":"EsHost"}, " ",
+                                {"Ref":"ContainerSess"}, "\n"
+                        ]]},
+                        ""]}
+                ]]}}
+            }
+        },
+        "EventCollectionEndPoint": {
+            "Type": "AWS::ElasticLoadBalancing::LoadBalancer",
+            "Properties": {
+                "Subnets": { "Ref" : "ElbSubnets" },
+				"Listeners" : [
+					{
+						"LoadBalancerPort" : "80",
+						"InstancePort" : "80",
+						"Protocol" : "HTTP"
+					},
+					{"Fn::If" : [ "HasSsl",
+					{
+						"LoadBalancerPort" : "443",
+						"InstancePort" : "80",
+						"Protocol" : "HTTPS",
+						"InstanceProtocol": "HTTP",
+						"SSLCertificateId": { "Ref": "SslCertId" }
+					},{"Ref":"AWS::NoValue"}]}
+				],
+                "HealthCheck": {
+                    "Target": "HTTP:80/health",
+                    "HealthyThreshold": "3",
+                    "UnhealthyThreshold": "5",
+                    "Interval": "30",
+                    "Timeout": "5"
+                },
+                "AccessLoggingPolicy": {
+                    "EmitInterval": "5",
+                    "Enabled": "true",
+                    "S3BucketName": { "Ref" : "AccessLogBucket" }
+                },
+                "SecurityGroups": [
+                    { "Ref" : "ElbSg" },
+                    { "Ref" : "HttpSg" }
+                ],
+                "Scheme": "internet-facing"
+            }
+        },
+        "Outbound": {
+            "Type": "AWS::EC2::SecurityGroup",
+            "Properties": {
+                "GroupDescription": "Unlimited outbound access.",
+                "VpcId": { "Ref" : "VpcId" }
+            }
+        },
+        
+        "RawDataStore": {
+            "Type" : "AWS::S3::Bucket",
+            "Properties" : {
+            },
+            "DeletionPolicy" : "Retain"
+        }
+    }
+}

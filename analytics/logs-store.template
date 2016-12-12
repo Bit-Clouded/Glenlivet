@@ -1,62 +1,112 @@
 {
 	"AWSTemplateFormatVersion": "2010-09-09",
+
 	"Description": "Buckets to hold aws logs.",
+
 	"Metadata" : {
 		"DefaultName" : "LogStore"
 	},
+	
 	"Parameters": {
-		"RawLogBucketName" : {
+		"BucketPrefix" : {
 			"Description" : "Bucket name for raw logs from elastic load balancer and cloud trail.",
-			"Type" : "String"
+			"Type" : "String",
+			"Default" : "bc"
 		},
-		"AccessLogBucketName" : {
+		"BucketSuffix" : {
 			"Description" : "Bucket name for raw logs from s3 bucket and cloud front.",
-			"Type" : "String"
+			"Type" : "String",
+			"Default" : ""
 		}
 	},
 
 	"Resources" : {
-		"AccessLog" : {
+		"AccessS3Log" : {
 			"Type" : "AWS::S3::Bucket",
+			"DependsOn": "AccessS3LogBucketSnsPolicy",
 			"Properties" : {
 				"AccessControl" : "LogDeliveryWrite",
-				"BucketName" : {"Ref": "AccessLogBucketName"},
+				"BucketName" : {"Fn::Join": ["",[
+					{"Ref":"BucketPrefix"}, "-access-s3-log", {"Ref":"BucketSuffix"}
+				]]},
 				"VersioningConfiguration" : {
 					"Status": "Enabled"
 				},
 				"NotificationConfiguration" : {
 					"TopicConfigurations" : [{
-						"Topic": {"Ref":"AccessLogBucketNotification"},
+						"Topic": {"Ref":"AccessS3LogBucketNotification"},
 						"Event": "s3:ObjectCreated:*"
 					}]
 				}
 			},
 			"DeletionPolicy" : "Retain"
 		},
-		"AccessLogBucketPolicy" : {
+		"AccessS3LogBucketPolicy" : {
 			"Type" : "AWS::S3::BucketPolicy",
 			"Properties" : {
-				"Bucket" : {"Ref" : "AccessLog"},
+				"Bucket" : {"Ref" : "AccessS3Log"},
 				"PolicyDocument": {
 					"Statement":[{
 						"Action":["s3:DeleteObject","s3:DeleteObjectVersion"],
 						"Effect":"Deny",
-						"Resource": { "Fn::Join" : ["", ["arn:aws:s3:::", { "Ref" : "AccessLog" } , "/*" ]]},
+						"Resource": { "Fn::Join" : ["", ["arn:aws:s3:::", { "Ref" : "AccessS3Log" } , "/*" ]]},
 						"Principal":"*"
 					}]
 				}
 			}
   		},
-
+		"AccessCfLog" : {
+			"Type" : "AWS::S3::Bucket",
+			"DependsOn": "AccessCfLogBucketSnsPolicy",
+			"Properties" : {
+				"AccessControl" : "LogDeliveryWrite",
+				"BucketName" : {"Fn::Join": ["",[
+					{"Ref":"BucketPrefix"}, "-access-cf-log", {"Ref":"BucketSuffix"}
+				]]},
+				"LoggingConfiguration": {
+					"DestinationBucketName" : { "Ref": "AccessS3Log"},
+					"LogFilePrefix" : {"Fn::Join": ["",[
+						{"Ref":"BucketPrefix"}, "-access-cf-log", {"Ref":"BucketSuffix"}, "/"
+					]]}
+				},
+				"VersioningConfiguration" : {
+					"Status": "Enabled"
+				},
+				"NotificationConfiguration" : {
+					"TopicConfigurations" : [{
+						"Topic": {"Ref":"AccessCfLogBucketNotification"},
+						"Event": "s3:ObjectCreated:*"
+					}]
+				}
+			},
+			"DeletionPolicy" : "Retain"
+		},
+		"AccessCfLogBucketPolicy" : {
+			"Type" : "AWS::S3::BucketPolicy",
+			"Properties" : {
+				"Bucket" : {"Ref" : "AccessCfLog"},
+				"PolicyDocument": {
+					"Statement":[{
+						"Action":["s3:DeleteObject","s3:DeleteObjectVersion"],
+						"Effect":"Deny",
+						"Resource": { "Fn::Join" : ["", ["arn:aws:s3:::", { "Ref" : "AccessCfLog" } , "/*" ]]},
+						"Principal":"*"
+					}]
+				}
+			}
+  		},
 		"Raw" : {
 			"Type" : "AWS::S3::Bucket",
+			"DependsOn": "RawBucketSnsPolicy",
 			"Properties" : {
 				"AccessControl" : "Private",
-				"BucketName" : {"Ref": "RawLogBucketName"},
+				"BucketName" : {"Fn::Join": ["",[
+					{"Ref":"BucketPrefix"}, "-raw-log", {"Ref":"BucketSuffix"}
+				]]},
 				"LoggingConfiguration": {
-					"DestinationBucketName" : { "Ref": "AccessLog"},
+					"DestinationBucketName" : { "Ref": "AccessS3Log"},
 					"LogFilePrefix" : {"Fn::Join": ["",[
-						"s3-access/", {"Ref": "RawLogBucketName"}, "/"
+						{"Ref":"BucketPrefix"}, "-raw-log", {"Ref":"BucketSuffix"}, "/"
 					]]}
 				},
 				"VersioningConfiguration" : {
@@ -138,7 +188,7 @@
 			"Properties" : {
 				"DisplayName" : "CloudTrail and ELB Bucket Event Notification",
 				"TopicName" : { "Fn::Join": ["", [
-					"s3-event-", {"Ref": "RawLogBucketName"}
+					"s3-event-", {"Ref":"BucketPrefix"}, "-raw-log", {"Ref":"BucketSuffix"}
 				]]}
 			}
 		},
@@ -163,7 +213,7 @@
 						"Condition": {
 							"ArnLike": {          
 								"aws:SourceArn": { "Fn::Join": ["", [
-									"arn:aws:s3:*:*:", {"Ref": "RawLogBucketName"}
+									"arn:aws:s3:*:*:", {"Ref":"BucketPrefix"}, "-raw-log", {"Ref":"BucketSuffix"}
 								]]}
 							}
 						}
@@ -175,16 +225,16 @@
 			}
 		},
 
-		"AccessLogBucketNotification" : {
+		"AccessS3LogBucketNotification" : {
 			"Type" : "AWS::SNS::Topic",
 			"Properties" : {
 				"DisplayName" : "S3 and CloudFront Access Log Bucket Event Notification",
 				"TopicName" : { "Fn::Join": ["", [
-					"s3-event-", {"Ref": "AccessLogBucketName"}
+					"s3-event-", {"Ref":"BucketPrefix"}, "-access-s3-log", {"Ref":"BucketSuffix"}
 				]]}
 			}
 		},
-		"AccessLogBucketSnsPolicy" : {
+		"AccessS3LogBucketSnsPolicy" : {
 			"Type" : "AWS::SNS::TopicPolicy",
 			"Properties" :
 			{
@@ -201,19 +251,61 @@
 							"SNS:Publish"
 						],
 						"Resource": [
-							{"Ref": "AccessLogBucketNotification" }
+							{"Ref": "AccessS3LogBucketNotification" }
 						],
 						"Condition": {
 							"ArnLike": {          
 								"aws:SourceArn": { "Fn::Join": ["", [
-									"arn:aws:s3:*:*:", {"Ref": "AccessLogBucketName"}
+									"arn:aws:s3:*:*:", {"Ref":"BucketPrefix"}, "-access-s3-log", {"Ref":"BucketSuffix"}
 								]]}
 							}
 						}
 					}]
 				},
 				"Topics": [
-					{"Ref": "AccessLogBucketNotification" }
+					{"Ref": "AccessS3LogBucketNotification" }
+				]
+			}
+		},
+		"AccessCfLogBucketNotification" : {
+			"Type" : "AWS::SNS::Topic",
+			"Properties" : {
+				"DisplayName" : "S3 and CloudFront Access Log Bucket Event Notification",
+				"TopicName" : { "Fn::Join": ["", [
+					"s3-event-", {"Ref":"BucketPrefix"}, "-access-cf-log", {"Ref":"BucketSuffix"}
+				]]}
+			}
+		},
+		"AccessCfLogBucketSnsPolicy" : {
+			"Type" : "AWS::SNS::TopicPolicy",
+			"Properties" :
+			{
+				"PolicyDocument": {
+					"Version": "2008-10-17",
+					"Statement": [
+					{
+						"Sid": "s3-access-file-created-sns",
+						"Effect": "Allow",
+						"Principal": {
+							"AWS" : "*"  
+						},
+						"Action": [
+							"SNS:Publish"
+						],
+						"Resource": [
+							{"Ref": "AccessCfLogBucketNotification" }
+						],
+						"Condition": {
+							"ArnLike": {          
+								"aws:SourceArn": { "Fn::Join": ["", [
+									"arn:aws:s3:*:*:", {"Ref":"BucketPrefix"}, "-access-cf-log", {"Ref":"BucketSuffix"}
+								]]}
+							}
+						}
+					}]
+				},
+				"Topics": [
+					{"Ref": "AccessCfLogBucketNotification" }
 				]
 			}
 		},
@@ -300,7 +392,7 @@
                         "Action": "sts:AssumeRole"
                     }]
                 },
-                "Path": "/cloudtrail/",
+                "Path": "/analytics/log-store/",
                 "Policies": [{
                     "PolicyName": "root",
                     "PolicyDocument": {
@@ -354,7 +446,7 @@
 						"Action": "sts:AssumeRole"
 					}]
                 },
-                "Path": "/aws-logs/vpc/",
+                "Path": "/analytics/log-store/",
                 "Policies": [{
                     "PolicyName": "root",
                     "PolicyDocument": {
@@ -428,7 +520,7 @@
 		"LinuxLogPolicy" : {
 			"Type": "AWS::IAM::ManagedPolicy",
 			"Properties": {
-				"Path" : "/log/linux/",
+				"Path" : "/analytics/log-store/",
 				"PolicyDocument" : {
 					"Version": "2012-10-17",
 					"Statement": [{
@@ -508,12 +600,6 @@
 
 	},
 	"Outputs" : {
-		"S3Prefix" : {
-			"Value" : "s3-access"
-		},
-		"CfPrefix" : {
-			"Value" : "cf-access"
-		},
 		"LxDockerLogParams" : {
 			"Value":{"Fn::Join":["",[
 				"--log-driver=awslogs ",

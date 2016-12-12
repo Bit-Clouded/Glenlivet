@@ -1,0 +1,522 @@
+{
+    "AWSTemplateFormatVersion": "2010-09-09",
+
+    "Description": "Kong CloudFormation template.Template creates load balanced Kong instances with Postgres RDS instance in a new VPC",
+
+    "Metadata" : {
+        "DefaultName" : "Kong"
+    },
+
+    "Parameters": {
+		"DebianJsAmiId": {
+			"Description": "Debian Jessie AMI Id.",
+			"Type": "String"
+		},
+        "DbName": {
+            "Default": "kong",
+            "Description" : "The database name",
+            "Type": "String",
+            "MinLength": "1",
+            "AllowedPattern" : "[a-zA-Z][a-zA-Z0-9]*",
+            "ConstraintDescription" : "must begin with a letter and contain only alphanumeric characters."
+        },
+        "DbMultiAZ" : {
+            "Default" : false,
+            "Description" : "Allow MultiAZ database deployment ",
+            "Type" : "String",
+            "AllowedValues" : [ true, false ]
+        },
+		"SslCertId" : {
+			"Description": "Id of the SSL certificate to use.",
+			"Default" : "",
+            "Type": "String"
+		},
+        "DbVersion" : {
+            "Description": "Postgres version",
+            "Type": "String",
+            "Default": "9.4.7",
+            "AllowedValues": [
+                "9.5.2",
+                "9.4.7",
+                "9.4.5",
+                "9.4.4",
+                "9.4.1"
+            ]
+        },
+        "DbSnapshotIdentifier" : {
+            "Description" : "Optional- The RDS snapshot name to restore to the new DB instance.",
+            "Type": "String",
+            "Default": ""
+        },
+        "DbStorageEncrypted" : {
+            "Default" : false,
+            "Description" : "Specifies whether the DB instance is encrypted",
+            "Type" : "String",
+            "AllowedValues" : [ true, false ]
+        },
+        "DbUsername": {
+            "Default": "kong",
+            "Description" : "The database admin account username",
+            "Type": "String",
+            "MinLength": "1",
+            "AllowedPattern" : "[a-zA-Z][a-zA-Z0-9]*",
+            "ConstraintDescription" : "must begin with a letter and contain only alphanumeric characters."
+        },
+        "DbPassword": {
+            "Default": "Password1234",
+            "NoEcho": "true",
+            "Description" : "The database admin account password",
+            "Type": "String",
+            "MinLength": "8"
+        },
+        "DbInstanceType" : {
+			"Description" : "MariaDB server instance type",
+			"Type" : "String",
+			"Default" : "db.t2.micro",
+			"AllowedValues": [
+				"db.t2.micro",
+				"db.t2.small",
+				"db.t2.medium",
+				"db.t2.large",
+				"db.m3.medium",
+				"db.m4.large",
+				"db.m4.xlarge",
+				"db.m4.2xlarge",
+				"db.r3.large",
+				"db.r3.xlarge",
+				"db.r3.2xlarge",
+				"db.r3.4xlarge",
+				"db.r3.8xlarge"
+			],
+			"ConstraintDescription" : "must be a valid RDS instance type."
+		},
+
+        "DbAllocatedStorage" : {
+            "Default": "5",
+            "Description" : "The size of the database (Gb)",
+            "Type": "Number",
+            "MinValue": "5",
+            "MaxValue": "6144",
+            "ConstraintDescription" : "must be between 5+"
+        },
+        "ProxyAccess": {
+            "Description": "The IP address range that can be used to access the Kong proxy port 8000",
+            "Type": "String",
+            "MinLength": "9",
+            "MaxLength": "18",
+            "Default": "0.0.0.0\/0",
+            "AllowedPattern": "(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})\/(\\d{1,2})",
+            "ConstraintDescription": "must be a valid IP CIDR range of the form x.x.x.x\/x."
+        },
+        "AdminAccess": {
+            "Description": "The IP address range that can be used to access the Kong Admin port 8001",
+            "Type": "String",
+            "MinLength": "9",
+            "MaxLength": "18",
+            "Default": "0.0.0.0\/0",
+            "AllowedPattern": "(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})\/(\\d{1,2})",
+            "ConstraintDescription": "must be a valid IP CIDR range of the form x.x.x.x\/x."
+        },
+		"DbSubnetGroup" : {
+			"Description" : "Subnet Group for hosting the MariaDB server. [private-subnets.resources.RdsSubnetGroup]",
+			"Type" : "String"
+		},
+        "KeyPairName": {
+            "Description": "Required- Name of an existing EC2 KeyPair to enable SSH access to the instances for Kong",
+            "Type": "AWS::EC2::KeyPair::KeyName"
+        },
+        "KongFleetMaxSize": {
+            "Description": "Max Number of Kong instances",
+            "Type": "Number",
+            "Default": "10",
+            "MinValue": "4"
+        },
+        "InstanceType": {
+            "Description": "Kong EC2 instance type. Note: T2 instance is not supported on the EC2-Classic platform",
+            "Type": "String",
+            "Default": "t2.micro",
+            "AllowedValues": [
+                "t2.micro",
+                "t2.small",
+                "t2.medium",
+                "t2.large",
+                "m3.medium",
+                "m4.large",
+                "m4.xlarge",
+                "m4.2xlarge",
+                "m4.4xlarge",
+                "m4.10xlarge",
+                "c4.large",
+                "c4.xlarge",
+                "c4.xlarge",
+                "c4.2xlarge",
+                "c4.4xlarge",
+                "c4.8xlarge",
+                "r3.large",
+                "r3.xlarge",
+                "r3.2xlarge",
+                "r3.4xlarge",
+                "r3.8xlarge"
+            ],
+            "ConstraintDescription": "must be a valid EC2 instance type."
+        },
+        "KongVersion": {
+            "Description": "Kong version (Only 0.9.x and above supported)",
+            "Type": "String",
+            "Default": "0.9.5",
+            "AllowedValues": [
+                "0.9.5",
+                "0.9.4",
+                "0.9.3",
+                "0.9.2",
+                "0.9.1",
+                "0.9.0"
+            ]
+        },
+
+        "ElbSg" : {
+			"Description": "Elb Security Group. [vpc.resources.ElbSecGroup]",
+            "Type": "String"
+		},
+		"ElbTargetSg" : {
+			"Description": "Elb Target Security Group. [vpc.resources.ElbTargetSecGroup]",
+            "Type": "String"
+		},
+		"HttpSg" : {
+			"Description": "Elb Target Security Group. [vpc.resources.HttpNsSecGroup]",
+            "Type": "String"
+		},
+		"IsPublicFacing": {
+			"Description" : "Is publicly accessable deployment.",
+			"Type" : "String",
+			"AllowedValues": [
+				"internet-facing",
+				"internal"
+			],
+			"Default": "internal",
+			"ConstraintDescription": "Valid schemes: 'internet-facing' or 'internal'."
+		},
+        "KongDockerImage" : {
+			"Description": "Official Kong Docker Image",
+            "Type": "String",
+            "Default": "kong:0.9.5"
+        },
+		"RawLogBucket" : {
+			"Description": "Elb Target Security Group. [logs-store.resources.Raw]",
+            "Type": "String"
+		},
+		"VpcId": {
+            "Description" : "VPCid associated with the subnets. [elb-subnets.parameters.VpcId]",
+            "Type": "AWS::EC2::VPC::Id"
+        },
+        "ElbSubnets" : {
+            "Description" : "VPCid associated with the subnets. [elb-subnets.outputs.ElbSubnets]",
+            "Type": "List<AWS::EC2::Subnet::Id>"
+        },
+        "ServerSubnets" : {
+            "Description" : "VPCid associated with the subnets. [elb-subnets.outputs.WebServerSubnets]",
+            "Type": "List<AWS::EC2::Subnet::Id>"
+        },
+
+		"CwlUbuntuAgentDocker": {
+			"Description": "Name of cluster. This is used for discovery.",
+			"Type": "String",
+			"Default": "bitclouded/aws-cwl-agent:4.1"
+		},
+		"CwlLinuxParams" : {
+			"Description": "Environment variables for syslog and authlog cwl group names [logs-store.outputs.LxDockerLogParams]",
+			"Type": "String"
+		},
+		"CwlDockerParams" : {
+			"Description": "Docker log driver params [logs-store.outputs.DockerCwlParams]",
+			"Type": "String"
+		},
+		"CwlPolicy" : {
+			"Description": "Managed policy for linux logging. [logs-store.resources.LinuxLogPolicy]",
+			"Type": "String"
+		}
+    },
+    "Conditions" : {
+        "UseDbSnapshot" : {
+            "Fn::Not" : [{ "Fn::Equals" : [
+                {"Ref" : "DbSnapshotIdentifier"}, ""
+            ]}]
+        },
+		"HasSsl" : {"Fn::Not": [{"Fn::Equals": [
+			{"Ref": "SslCertId"}, ""
+		]}]}
+    },
+    "Resources": {
+    	"HttpGateway": {
+            "Type": "AWS::ElasticLoadBalancing::LoadBalancer",
+            "Properties": {
+                "SecurityGroups" : [ { "Ref" : "LoadBalancerSecurityGroup" } ],
+                "Subnets" : { "Ref" : "ElbSubnets" },
+                "Scheme": { "Ref" : "IsPublicFacing" },
+                "Listeners": [
+                    {
+                        "LoadBalancerPort": "80",
+                        "InstancePort": "8080",
+                        "Protocol": "HTTP"
+                    },
+					{"Fn::If" : [ "HasSsl",
+					{
+						"LoadBalancerPort" : "443",
+						"InstancePort" : "8080",
+						"Protocol" : "HTTPS",
+						"InstanceProtocol": "HTTP",
+						"SSLCertificateId": { "Ref": "SslCertId" }
+					},{"Ref":"AWS::NoValue"}]},
+                    {
+                        "LoadBalancerPort": "8000",
+                        "InstancePort": "8000",
+                        "Protocol": "HTTP"
+                    },
+                    {
+                        "LoadBalancerPort": "8001",
+                        "InstancePort": "8001",
+                        "Protocol": "HTTP"
+                    }
+                ],
+                "HealthCheck": {
+                    "Target": "TCP:8000",
+                    "HealthyThreshold": "3",
+                    "UnhealthyThreshold": "5",
+                    "Interval" : "90",
+                    "Timeout" : "60"
+                }
+            }
+        },
+        "LoadBalancerSecurityGroup" : {
+            "Type" : "AWS::EC2::SecurityGroup",
+            "Properties" : {
+                "GroupDescription" : "Enable HTTP access on port 80, 443, 8000 and 8001",
+                "VpcId" : { "Ref" : "VpcId" },
+                "SecurityGroupIngress" : [ 
+                    { "IpProtocol" : "tcp", "FromPort" : "80", "ToPort" : "80", "CidrIp" : { "Ref" : "ProxyAccess" } },
+                    { "IpProtocol" : "tcp", "FromPort" : "443", "ToPort" : "443", "CidrIp" : { "Ref" : "ProxyAccess" } },
+                    { "IpProtocol" : "tcp", "FromPort" : "8000", "ToPort" : "8001", "CidrIp" : { "Ref" : "AdminAccess" } }
+                ]
+            }
+        },
+
+        "ServerScalingGroup": {
+            "Type": "AWS::AutoScaling::AutoScalingGroup",
+            "Properties": {
+                "VPCZoneIdentifier" : { "Ref" : "ServerSubnets" },
+                "LaunchConfigurationName": {
+                    "Ref": "KongLaunchConfig"
+                },
+                "MinSize": "2",
+                "MaxSize": {
+                    "Ref": "KongFleetMaxSize"
+                },
+                "LoadBalancerNames": [
+                    {"Ref" : "HttpGateway"}
+                ],
+                "Tags" : [
+                    { "Key" : "Name", "Value" : "Kong Web Server", "PropagateAtLaunch" : "true" }
+                ]
+            }
+        },
+        "KongLaunchConfig": {
+            "Type": "AWS::AutoScaling::LaunchConfiguration",
+            "Properties": {
+                "IamInstanceProfile" : {"Ref":"WebServersInstanceProfile"},
+                "ImageId": { "Ref" : "DebianJsAmiId" },
+                "InstanceType": {
+                    "Ref": "InstanceType"
+                },
+                "KeyName": {
+                    "Ref": "KeyPairName"
+                },
+                "SecurityGroups": [
+                    {
+                        "Ref": "KongSecurityGroup"
+                    }
+                ],
+                "UserData": { "Fn::Base64": { "Fn::Join": ["", [
+                    "#!/bin/bash\n",
+					"ECID=$(curl http://instance-data/latest/meta-data/instance-id)\n",
+					"CWLA=cwlagent_$ECID\n",
+					"docker run -d --restart=always ",
+						"--name $CWLA --log-opt awslogs-stream=$CWLA ",
+						"-v /var/log:/var/log-host:ro ",
+						{"Ref":"CwlLinuxParams"}," ",
+						{"Ref":"CwlDockerParams"}," ",
+						{"Ref":"CwlUbuntuAgentDocker"},"\n",
+					"docker run -d --restart=always --name cwlcron ",
+						{"Ref":"CwlUbuntuAgentDocker"}," cron\n",
+
+					"MAIN=kong_$ECID\n",
+                    "docker run -d --restart=always ",
+						{"Ref":"CwlLinuxParams"}," ",
+                        "--name $MAIN --log-opt awslogs-stream=$MAIN ",
+                        "-e KONG_LOG_LEVEL=info ",
+                        "-e KONG_DATABASE=postgres ",
+                        "-e KONG_PG_HOST=", { "Fn::GetAtt" : [ "PostgresDB", "Endpoint.Address" ] }, " ",
+                        "-e KONG_PG_PORT=", { "Fn::GetAtt" : [ "PostgresDB", "Endpoint.Port" ] }, " ",
+                        "-e KONG_PG_USER=", { "Ref" : "DbUsername" }, " ",
+                        "-e KONG_PG_PASSWORD=", { "Ref" : "DbPassword" }, " ",
+                        "-e KONG_PG_DATABASE=", { "Ref" : "DbName" }, " ",
+                        "-p 8000:8000 ",
+                        "-p 8443:8443 ",
+                        "-p 8001:8001 ",
+                        "-p 7946:7946 ",
+                        "-p 7946:7946/udp ",
+                        { "Ref" : "KongDockerImage" }, "\n",
+
+					"KUI=kong-web-ui_$ECID\n",
+                    "docker run -d --restart=always -p 8080:8080 ",
+						{"Ref":"CwlLinuxParams"}," ",
+                        "--name $KUI --log-opt awslogs-stream=$KUI ",
+                        "pgbi/kong-dashboard"
+                ]]}}
+            }
+        },
+
+		"WebServersRole" : {
+			"Type": "AWS::IAM::Role",
+			"Properties": {
+				"AssumeRolePolicyDocument": {
+					"Version": "2012-10-17",
+					"Statement": [{
+						"Effect": "Allow",
+						"Principal": {
+							"Service": [ "ec2.amazonaws.com" ]
+						},
+						"Action": [ "sts:AssumeRole" ]
+					}]
+				},
+				"Path": "/middleware/kong/",
+				"ManagedPolicyArns" : [
+					{"Ref":"CwlPolicy"}
+				]
+			}
+		},
+		"WebServersInstanceProfile" : {
+			"Type": "AWS::IAM::InstanceProfile",
+			"Properties": {
+				"Path": "/middleware/kong/",
+				"Roles": [{"Ref" : "WebServersRole"}]
+			}
+		},
+
+        "KongSecurityGroup": {
+            "Type": "AWS::EC2::SecurityGroup",
+            "Properties": {
+                "GroupDescription": "Enable SSH access and HTTP access on the inbound port",
+                "VpcId" :    { "Ref" : "VpcId" },
+                "SecurityGroupIngress": [
+                    {
+                        "IpProtocol" : "tcp",
+                        "FromPort" : "8080",
+                        "ToPort" : "8080",
+                        "SourceSecurityGroupId" : { "Ref" : "LoadBalancerSecurityGroup" }
+                    },
+                    {
+                        "IpProtocol" : "tcp",
+                        "FromPort" : "8000",
+                        "ToPort" : "8001",
+                        "SourceSecurityGroupId" : { "Ref" : "LoadBalancerSecurityGroup" }
+                    }
+                ]
+            }
+        },
+        "Ingress7946": {
+            "Type": "AWS::EC2::SecurityGroupIngress",
+            "Properties": {
+                "GroupId" : {
+                    "Fn::GetAtt" : [ "KongSecurityGroup", "GroupId" ]
+                },
+                "IpProtocol": "tcp", "FromPort": "7946", "ToPort": "7946", 
+                "SourceSecurityGroupId": {
+                    "Fn::GetAtt" : [ "KongSecurityGroup", "GroupId" ]
+                }
+            }
+        },
+        "PostgresDB" : {
+    	    "Type" : "AWS::RDS::DBInstance",
+            "Properties" : {
+                "Engine" : "postgres",
+                "DBName" : { "Ref" : "DbName" },
+                "MasterUsername" : { "Ref" : "DbUsername" },
+                "DBInstanceClass" : { "Ref" : "DbInstanceType" },
+                "AllocatedStorage" : { "Ref" : "DbAllocatedStorage" },
+                "MasterUserPassword" : { "Ref" : "DbPassword" },
+                "DBSubnetGroupName" : { "Ref" : "DbSubnetGroup" },
+                "EngineVersion" : {"Ref" : "DbVersion"},
+                "DbSnapshotIdentifier" : {
+                    "Fn::If" : [
+                        "UseDbSnapshot",
+                        { "Ref" : "DbSnapshotIdentifier" },
+                        { "Ref" : "AWS::NoValue"}
+                    ]
+                },
+                "MultiAZ" : { "Ref" : "DbMultiAZ" },
+                "StorageEncrypted" : { "Ref" : "DbStorageEncrypted" },
+                "StorageType" : "gp2",
+                "VPCSecurityGroups": [
+                    {
+                        "Ref": "DbSecurityGroup"
+                    }
+                ]
+            },
+            "DeletionPolicy" : "Snapshot"
+        },
+        "DbSecurityGroup": {
+            "Type" : "AWS::EC2::SecurityGroup",
+            "Properties" : {
+                "GroupDescription" : "Database security groups",
+                "SecurityGroupIngress" : [
+                    { "IpProtocol" : "tcp", "FromPort": "5432", "ToPort" : "5432", "SourceSecurityGroupId": {"Ref" : "KongSecurityGroup"}}
+                ],
+                "VpcId" : { "Ref" : "VpcId" }
+            }
+        } 
+    },
+    "Outputs": {
+        "ProxyURL": {
+            "Description": "Kong Proxy URL",
+            "Value": {
+                "Fn::Join": [
+                    "",
+                    [
+                        "http:\/\/",
+                        {
+                            "Fn::GetAtt": [
+                                "HttpGateway",
+                                "DNSName"
+                            ]
+                        },
+                        ":8000"
+                    ]
+                ]
+            }
+        },
+        "AdminURL": {
+            "Description": "Kong Admin URL",
+            "Value": {
+                "Fn::Join": [
+                    "",
+                    [
+                        "http:\/\/",
+                        {
+                            "Fn::GetAtt": [
+                                "HttpGateway",
+                                "DNSName"
+                            ]
+                        },
+                        ":8001"
+                    ]
+                ]
+            }
+        },
+        "AdminUi": {
+            "Description": "Kong Admin Web UI",
+            "Value": { "Fn::Join": ["", [
+                "http:\/\/", { "Fn::GetAtt": ["HttpGateway", "DNSName"]
+            }]]}
+        }
+    }
+}

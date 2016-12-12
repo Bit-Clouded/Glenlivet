@@ -3,6 +3,11 @@
 
     "Description" : "Subnets thave have no access outbound access whatsoever.",
 
+    "Metadata" : {
+        "DefaultName" : "Private Subnets"
+    },
+
+
     "Parameters" : {
 
         "Subnet1Suffix" : {
@@ -219,6 +224,19 @@
                     {"Fn::If":["IsThreeAz",{"Ref": "Subnet3"},{"Ref" : "AWS::NoValue"}]}
                 ]
             }
+        }
+    },
+
+    "Outputs" : {
+        "Subnets" : {
+            "Description" : "The list of subnets for the ELBs",
+            "Value" : { "Fn::Join" : ["", [
+                {"Ref":"Subnet1"}, ",", {"Ref":"Subnet2"},
+                { "Fn::If" : ["IsThreeAz",
+                    { "Fn::Join" : ["", [",", {"Ref":"Subnet3"}]] },
+                    { "Ref" : "AWS::NoValue" }
+                ]}
+            ]]}
         }
     }
 }
