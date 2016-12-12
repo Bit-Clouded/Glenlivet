@@ -13,12 +13,58 @@
             "Type": "AWS::EC2::KeyPair::KeyName"
         },
 
+        "KibanaInstanceType" : {
+            "Description" : "WebServer EC2 instance type",
+            "Type" : "String",
+            "Default" : "t2.nano",
+            "AllowedValues": [
+                "t2.nano",
+                "t2.micro",
+                "t2.small",
+                "t2.medium",
+                "t2.large",
+                "t2.xlarge",
+                "t2.2xlarge",
+                "m3.medium",
+                "m4.large",
+                "m4.xlarge",
+                "m4.2xlarge",
+                "r3.large",
+                "r3.xlarge",
+                "r3.2xlarge",
+                "r3.4xlarge",
+                "r3.8xlarge"
+            ],
+            "ConstraintDescription" : "must be a valid EC2 instance type."
+        },
+        "GatewayNodeInstanceType" : {
+            "Description" : "WebServer EC2 instance type",
+            "Type" : "String",
+            "Default" : "m3.medium",
+            "AllowedValues": [
+                "t2.micro",
+                "t2.small",
+                "t2.medium",
+                "m3.medium",
+                "m4.large",
+                "m4.xlarge",
+                "m4.2xlarge",
+                "r3.large",
+                "r3.xlarge",
+                "r3.2xlarge",
+                "r3.4xlarge",
+                "r3.8xlarge"
+            ],
+            "ConstraintDescription" : "must be a valid EC2 instance type."
+        },
         "DataNodeInstanceType" : {
             "Description" : "WebServer EC2 instance type",
             "Type" : "String",
             "Default" : "m3.medium",
             "AllowedValues": [
+                "t2.micro",
                 "t2.small",
+                "t2.medium",
                 "m3.medium",
                 "m4.large",
                 "m4.xlarge",
@@ -34,14 +80,20 @@
         "MasterNodeInstanceType" : {
             "Description" : "WebServer EC2 instance type",
             "Type" : "String",
-            "Default" : "t2.medium",
+            "Default" : "t2.small",
             "AllowedValues": [
+                "t2.micro",
                 "t2.small",
                 "t2.medium",
                 "m3.medium",
                 "m4.large",
                 "m4.xlarge",
-                "m4.2xlarge"
+                "m4.2xlarge",
+                "r3.large",
+                "r3.xlarge",
+                "r3.2xlarge",
+                "r3.4xlarge",
+                "r3.8xlarge"
             ],
             "ConstraintDescription" : "must be a valid EC2 instance type."
         },
@@ -355,8 +407,7 @@
                 "KeyName" : { "Ref" : "KeyPairName" },
                 "AssociatePublicIpAddress": "false",
                 "SecurityGroups": [
-                    { "Ref" : "EsClusterNodeSg" },
-                    { "Ref" : "EsClusterGatewayNodeSg" }
+                    { "Ref" : "EsClusterNodeSg" }
                 ],
                 "IamInstanceProfile": { "Ref" : "EsDataNodeInstanceProfile" },
                 "UserData" : { "Fn::Base64" : { "Fn::Join" : ["", [
@@ -407,12 +458,92 @@
                                     " --node.master=true",
                                     " --node.data=false\n"
                             ]]}
+                        ]}
+                ]]}},
+                "BlockDeviceMappings" : [
+                    {
+                        "DeviceName" : "/dev/xvda",
+                        "Ebs" : { "VolumeSize" : "30", "VolumeType" : "gp2" }
+                    }
+                ]
+            }
+        },
+        "EsMasterNodeAsg" : {
+            "Type" : "AWS::AutoScaling::AutoScalingGroup",
+            "Properties" : {
+                "VPCZoneIdentifier": {"Ref":"ServerSubnets"},
+                "LaunchConfigurationName" : { "Ref" : "EsMasterNodeLc" },
+                "MinSize" : "3",
+                "MaxSize" : "7",
+                "Tags" : [{"Key": "Name", "Value" : "Elasticsearch Cluster Master Node", "PropagateAtLaunch" : "True"}]
+            }
+        },
+        "EsGatewayNodeLc" : {
+            "Type" : "AWS::AutoScaling::LaunchConfiguration",
+            "Properties": {
+                "InstanceType" : { "Ref" : "GatewayNodeInstanceType" },
+                "ImageId" : { "Ref" : "DebianJsAmiId" },
+                "KeyName" : { "Ref" : "KeyPairName" },
+                "AssociatePublicIpAddress": "false",
+                "SecurityGroups": [
+                    { "Ref" : "EsClusterNodeSg" },
+                    { "Ref" : "EsClusterGatewayNodeSg" }
+                ],
+                "IamInstanceProfile": { "Ref" : "EsDataNodeInstanceProfile" },
+                "UserData" : { "Fn::Base64" : { "Fn::Join" : ["", [
+                    "#!/bin/bash\n",
+                    "mkdir /home/xvdk\n",
+                    "sysctl -w vm.max_map_count=262144\n",
+
+                    "ECID=$(curl http://instance-data/latest/meta-data/instance-id)\n",
+                    "CWLA=cwlagent_$ECID\n",
+                    "docker run -d --restart=always ",
+                        "--name $CWLA --log-opt awslogs-stream=$CWLA ",
+                        "-v /var/log:/var/log-host:ro ",
+                        {"Ref":"CwlLinuxParams"}," ",
+                        {"Ref":"CwlDockerParams"}," ",
+                        {"Ref":"CwlUbuntuAgentDocker"},"\n",
+                    "docker run -d --restart=always --name cwlcron ",
+                        {"Ref":"CwlUbuntuAgentDocker"}," cron\n",
+
+                    "ESDN=es-gateway_$ECID\n",
+                    "docker run --restart=always -p 9200:9200 -p 9300:9300 -d ",
+                        "-v /mnt/xvdk:/usr/share/elasticsearch/data ",
+                        "--cap-add=IPC_LOCK --ulimit memlock=-1:-1 ",
+                        "-e ES_JAVA_OPTS=\"-Xms",{ "Fn::FindInMap": [ "InstanceVariables", { "Ref": "MasterNodeInstanceType" }, "ram" ] },"m -Xmx",{ "Fn::FindInMap": [ "InstanceVariables", { "Ref": "MasterNodeInstanceType" }, "ram" ] },"m\" ",
+                        "--name $ESDN --log-opt awslogs-stream=$ESDN ",
+                        {"Ref":"CwlLinuxParams"}," ",
+                        {"Fn::If": ["IsVersionFive",
+                            {"Fn::Join":["", [
+                                {"Ref":"EsFiveContainerName"},
+                                    " -E bootstrap.memory_lock=true",
+                                    " -E network.publish_host=$(curl http://instance-data/latest/meta-data/local-ipv4)",
+                                    " -E cluster.name=",{"Ref":"EsConfClusterName"},
+                                    " -E cloud.aws.region=",{"Ref":"AWS::Region"},
+                                    " -E discovery.ec2.groups=",{"Ref":"EsClusterNodeSg"},
+                                    " -E node.attr.rack_id=master",
+                                    " -E node.master=false",
+                                    " -E node.data=false\n"
+                            ]]},
+                            {"Fn::Join":["", [
+                                {"Ref":"EsTwoContainerName"},
+                                    " --bootstrap.mlockall=true",
+                                    " --index.number_of_replicas=1",
+                                    " --index.number_of_shards=5",
+                                    " --network.publish_host=$(curl http://instance-data/latest/meta-data/local-ipv4)",
+                                    " --cluster.name=",{"Ref":"EsConfClusterName"},
+                                    " --cloud.aws.region=",{"Ref":"AWS::Region"},
+                                    " --discovery.ec2.groups=",{"Ref":"EsClusterNodeSg"},
+                                    " --node.rack_id=master",
+                                    " --node.master=false",
+                                    " --node.data=false\n"
+                            ]]}
                         ]},
                         "KDN=kibana_$ECID\n",
                         "docker run -p 80:5601 -d --restart=always ",
                             "--name $KDN --log-opt awslogs-stream=$KDN ",
                             {"Ref":"CwlLinuxParams"}," ",
-                            " -e ELASTICSEARCH_URL=http://", {"Fn::GetAtt":["EsMasterLoadBalancer","DNSName"]}, ":9200 ",
+                            " -e ELASTICSEARCH_URL=http://", {"Fn::GetAtt":["ClusterGateway","DNSName"]}, ":9200 ",
                             {"Fn::If": ["IsVersionFive",
                                 {"Ref":"KFiveContainerName"},
                                 {"Ref":"KFourContainerName"}
@@ -427,18 +558,18 @@
                 ]
             }
         },
-        "EsMasterNodeAsg" : {
-          "Type" : "AWS::AutoScaling::AutoScalingGroup",
-          "Properties" : {
-            "VPCZoneIdentifier": {"Ref":"ServerSubnets"},
-            "LaunchConfigurationName" : { "Ref" : "EsMasterNodeLc" },
-            "MinSize" : "1",
-            "MaxSize" : "7",
-            "LoadBalancerNames" : [ { "Ref" : "EsMasterLoadBalancer" } ],
-            "Tags" : [{"Key": "Name", "Value" : "Elasticsearch Cluster Master Node", "PropagateAtLaunch" : "True"}]
-          }
+        "EsGatewayNodeAsg" : {
+            "Type" : "AWS::AutoScaling::AutoScalingGroup",
+            "Properties" : {
+                "VPCZoneIdentifier": {"Ref":"ServerSubnets"},
+                "LaunchConfigurationName" : { "Ref" : "EsGatewayNodeLc" },
+                "MinSize" : "2",
+                "MaxSize" : "10",
+                "LoadBalancerNames" : [ { "Ref" : "ClusterGateway" } ],
+                "Tags" : [{"Key": "Name", "Value" : "Elasticsearch Cluster Gateway Node", "PropagateAtLaunch" : "True"}]
+            }
         },
-        "EsMasterLoadBalancer" : {
+        "ClusterGateway" : {
             "Type" : "AWS::ElasticLoadBalancing::LoadBalancer",
             "Properties" : {
                 "Subnets": {"Ref":"ElbSubnets"},
@@ -469,7 +600,80 @@
                 "Scheme": "internal"
             }
         },
-
+        "KibanaLc" : {
+            "Type" : "AWS::AutoScaling::LaunchConfiguration",
+            "Properties": {
+                "InstanceType" : { "Ref" : "KibanaInstanceType" },
+                "ImageId" : { "Ref" : "DebianJsAmiId" },
+                "KeyName" : { "Ref" : "KeyPairName" },
+                "AssociatePublicIpAddress": "false",
+                "SecurityGroups": [
+                    { "Ref" : "EsClusterNodeSg" },
+                    { "Ref" : "EsClusterGatewayNodeSg" }
+                ],
+                "IamInstanceProfile": { "Ref" : "EsDataNodeInstanceProfile" },
+                "UserData" : { "Fn::Base64" : { "Fn::Join" : ["", [
+                    "#!/bin/bash\n",
+                    "ECID=$(curl http://instance-data/latest/meta-data/instance-id)\n",
+                    "CWLA=cwlagent_$ECID\n",
+                    "docker run -d --restart=always ",
+                        "--name $CWLA --log-opt awslogs-stream=$CWLA ",
+                        "-v /var/log:/var/log-host:ro ",
+                        {"Ref":"CwlLinuxParams"}," ",
+                        {"Ref":"CwlDockerParams"}," ",
+                        {"Ref":"CwlUbuntuAgentDocker"},"\n",
+                    "docker run -d --restart=always --name cwlcron ",
+                        {"Ref":"CwlUbuntuAgentDocker"}," cron\n",
+                    "KDN=kibana_$ECID\n",
+                    "docker run -p 80:5601 -d --restart=always ",
+                        "--name $KDN --log-opt awslogs-stream=$KDN ",
+                        {"Ref":"CwlLinuxParams"}," ",
+                        " -e ELASTICSEARCH_URL=http://", {"Fn::GetAtt":["ClusterGateway","DNSName"]}, ":9200 ",
+                        {"Fn::If": ["IsVersionFive",
+                            {"Ref":"KFiveContainerName"},
+                            {"Ref":"KFourContainerName"}
+                        ]}
+                            
+                ]]}},
+                "BlockDeviceMappings" : [
+                    {
+                        "DeviceName" : "/dev/xvda",
+                        "Ebs" : { "VolumeSize" : "30", "VolumeType" : "gp2" }
+                    }
+                ]
+            }
+        },
+        "KibanaAsg" : {
+            "Type" : "AWS::AutoScaling::AutoScalingGroup",
+            "Properties" : {
+                "VPCZoneIdentifier": {"Ref":"ServerSubnets"},
+                "LaunchConfigurationName" : { "Ref" : "KibanaLc" },
+                "MinSize" : "1",
+                "MaxSize" : "10",
+                "LoadBalancerNames" : [ { "Ref" : "KibanaGateway" } ],
+                "Tags" : [{"Key": "Name", "Value" : "Kibana", "PropagateAtLaunch" : "True"}]
+            }
+        },
+        "KibanaGateway" : {
+            "Type" : "AWS::ElasticLoadBalancing::LoadBalancer",
+            "Properties" : {
+                "Subnets": {"Ref":"ElbSubnets"},
+                "Listeners" : [{
+                    "LoadBalancerPort" : "80",
+                    "InstancePort" : "80",
+                    "Protocol" : "HTTP"
+                }],
+                "HealthCheck" : {
+                    "Target" : { "Fn::Join" : [ "", ["HTTP:80/"]]},
+                    "HealthyThreshold" : "3",
+                    "UnhealthyThreshold" : "5",
+                    "Interval" : "30",
+                    "Timeout" : "5"
+                },
+                "SecurityGroups": [{ "Ref": "EsElbSg" }],
+                "Scheme": "internal"
+            }
+        },
         "EsDataNodeInstanceProfile": {
             "Type": "AWS::IAM::InstanceProfile",
             "Properties": {
@@ -609,7 +813,7 @@
 
     "Outputs" : {
         "EsElb" : {
-            "Value" : { "Fn::GetAtt" : ["EsMasterLoadBalancer", "DNSName"] },
+            "Value" : { "Fn::GetAtt" : ["ClusterGateway", "DNSName"] },
             "Description" : "Private A record for ES Master Node ELB"
         }
     }
