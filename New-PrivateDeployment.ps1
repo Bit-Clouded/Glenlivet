@@ -1,6 +1,6 @@
 ﻿param(
-    $bucketname = "bc-glenfiddich-local",
-    $projectname = "aws-lego",
+    $bucketname = "bc-pvt-deployment",
+    $projectname = "glenlivet",
     $version = "test"
 )
 
