@@ -12,6 +12,116 @@
             "Type": "String"
         },
 
+        "DbName": {
+            "Default": "kong",
+            "Description" : "The database name",
+            "Type": "String",
+            "MinLength": "1",
+            "AllowedPattern" : "[a-zA-Z][a-zA-Z0-9]*",
+            "ConstraintDescription" : "must begin with a letter and contain only alphanumeric characters."
+        },
+        "DbMultiAZ" : {
+            "Default" : false,
+            "Description" : "Allow MultiAZ database deployment ",
+            "Type" : "String",
+            "AllowedValues" : [ true, false ]
+        },
+		"SslCertId" : {
+			"Description": "Id of the SSL certificate to use.",
+			"Default" : "",
+            "Type": "String"
+		},
+        "DbVersion" : {
+            "Description": "Postgres version",
+            "Type": "String",
+            "Default": "9.4.7",
+            "AllowedValues": [
+                "9.5.2",
+                "9.4.7",
+                "9.4.5",
+                "9.4.4",
+                "9.4.1"
+            ]
+        },
+        "DbSnapshotIdentifier" : {
+            "Description" : "Optional- The RDS snapshot name to restore to the new DB instance.",
+            "Type": "String",
+            "Default": ""
+        },
+        "DbStorageEncrypted" : {
+            "Default" : false,
+            "Description" : "Specifies whether the DB instance is encrypted",
+            "Type" : "String",
+            "AllowedValues" : [ true, false ]
+        },
+        "DbUsername": {
+            "Default": "kong",
+            "Description" : "The database admin account username",
+            "Type": "String",
+            "MinLength": "1",
+            "AllowedPattern" : "[a-zA-Z][a-zA-Z0-9]*",
+            "ConstraintDescription" : "must begin with a letter and contain only alphanumeric characters."
+        },
+        "DbPassword": {
+            "Default": "Password1234",
+            "NoEcho": "true",
+            "Description" : "The database admin account password",
+            "Type": "String",
+            "MinLength": "8"
+        },
+        "DbInstanceType" : {
+			"Description" : "MariaDB server instance type",
+			"Type" : "String",
+			"Default" : "db.t2.micro",
+			"AllowedValues": [
+				"db.t2.micro",
+				"db.t2.small",
+				"db.t2.medium",
+				"db.t2.large",
+				"db.m3.medium",
+				"db.m4.large",
+				"db.m4.xlarge",
+				"db.m4.2xlarge",
+				"db.r3.large",
+				"db.r3.xlarge",
+				"db.r3.2xlarge",
+				"db.r3.4xlarge",
+				"db.r3.8xlarge"
+			],
+			"ConstraintDescription" : "must be a valid RDS instance type."
+		},
+
+        "DbAllocatedStorage" : {
+            "Default": "5",
+            "Description" : "The size of the database (Gb)",
+            "Type": "Number",
+            "MinValue": "5",
+            "MaxValue": "6144",
+            "ConstraintDescription" : "must be between 5+"
+        },
+        "ProxyAccess": {
+            "Description": "The IP address range that can be used to access the Kong proxy port 8000",
+            "Type": "String",
+            "MinLength": "9",
+            "MaxLength": "18",
+            "Default": "0.0.0.0\/0",
+            "AllowedPattern": "(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})\/(\\d{1,2})",
+            "ConstraintDescription": "must be a valid IP CIDR range of the form x.x.x.x\/x."
+        },
+        "AdminAccess": {
+            "Description": "The IP address range that can be used to access the Kong Admin port 8001",
+            "Type": "String",
+            "MinLength": "9",
+            "MaxLength": "18",
+            "Default": "0.0.0.0\/0",
+            "AllowedPattern": "(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})\/(\\d{1,2})",
+            "ConstraintDescription": "must be a valid IP CIDR range of the form x.x.x.x\/x."
+        },
+		"DbSubnetGroup" : {
+			"Description" : "Subnet Group for hosting the MariaDB server. [private-subnets.resources.RdsSubnetGroup]",
+			"Type" : "String"
+		},
+
         "ServerInstanceType" : {
             "Description" : "GoCDmaster server EC2 instance type",
             "Type" : "String",
@@ -28,7 +138,7 @@
             ],
             "ConstraintDescription" : "must be a valid EC2 instance type."
         },
-
+        
         "OdooStateDiskSize" : {
 			"Description" : "Size of the disk for storing Odoo state.",
 			"Type" : "Number",
@@ -50,11 +160,6 @@
             "Type": "String"
         },
 
-        "SslCertId" : {
-            "Description": "Id of the SSL certificate to use.",
-            "Default" : "",
-            "Type": "String"
-        },
         "ElbSg" : {
             "Description": "Elb Security Group. [vpc.resources.ElbSecGroup]",
             "Type": "String"
@@ -127,12 +232,14 @@
 	},
 
 	"Conditions" : {
+        "UseDbSnapshot" : {
+            "Fn::Not" : [{ "Fn::Equals" : [
+                {"Ref" : "DbSnapshotIdentifier"}, ""
+            ]}]
+        },
 		"IsPublicFacingCondition" : {
 			"Fn::Equals": [{"Ref":"IsPublicFacing"},"true"]
 		},
-		"HasDeploymentBucketMp" : {"Fn::Not": [{"Fn::Equals": [
-			{"Ref": "DeploymentBucketMp"}, ""
-		]}]},
 		"HasSsl" : {"Fn::Not": [{"Fn::Equals": [
 			{"Ref": "SslCertId"}, ""
 		]}]}
@@ -169,12 +276,26 @@
                 "SecurityGroups": [
                     { "Ref": "ElbSg" },
                 { "Ref": "HttpSg" }
-            ],
-            "Scheme": { "Ref" : "IsPublicFacing" },
-            "Instances" : [
-                {"Ref":"OdooInstance"}
-            ]}
-		},
+                ],
+                "Scheme": { "Ref" : "IsPublicFacing" }
+            }
+        },
+
+        "OdooSecurityGroup": {
+            "Type": "AWS::EC2::SecurityGroup",
+			"Properties" : {
+				"GroupDescription" : "Odoo Server Security Group",
+				"VpcId" : { "Ref" : "VpcId"},
+                "SecurityGroupIngress" : [ 
+                    { "IpProtocol" : "-1", "FromPort" : "80", "ToPort" : "80", "CidrIp" : { "Ref" : "ProxyAccess" } },
+                    { "IpProtocol" : "-1", "FromPort" : "443", "ToPort" : "443", "CidrIp" : { "Ref" : "ProxyAccess" } },
+                    { "IpProtocol" : "-1", "FromPort" : "8069", "ToPort" : "8069", "CidrIp" : { "Ref" : "AdminAccess" } }
+                ],
+				"SecurityGroupEgress" : [
+					{ "IpProtocol": "-1", "CidrIp": "0.0.0.0/0" }
+				]
+			}
+        },
 
         "RepoDisk" : {
 			"Type":"AWS::EC2::Volume",
@@ -186,34 +307,53 @@
 			}
 		},
 
-        "OdooInstance" : {
-            "Type" : "AWS::EC2::Instance",
+        "ServerScalingGroup": {
+            "Type": "AWS::AutoScaling::AutoScalingGroup",
+            "Properties": {
+                "VPCZoneIdentifier" : { "Ref" : "ServerSubnets" },
+                "LaunchConfigurationName": {
+                    "Ref": "OdooLcConfig"
+                },
+                "MinSize": "1",
+                "MaxSize": "5",
+                "LoadBalancerNames": [
+                    {"Ref" : "HttpGateway"}
+                ],
+                "Tags" : [
+                    { "Key" : "Name", "Value" : "Odoo Web Server", "PropagateAtLaunch" : "true" }
+                ]
+            }
+        },
+        
+        "OdooLcConfig" : {
+            "Type" : "AWS::AutoScaling::LaunchConfiguration",
             "Properties" : {
                 "IamInstanceProfile" : {"Ref":"WebServersInstanceProfile"},
                 "InstanceType" : { "Ref" : "ServerInstanceType" },
                 "ImageId" : { "Ref" : "DebianJsAmiId" },
                 "KeyName" : { "Ref" : "KeyPairName" },
-                "SecurityGroupIds": [
-                    { "Ref" : "ServerSg" },
-                    { "Ref" : "ElbTargetSg" }
+                "SecurityGroups": [
+                    {
+                        "Ref": "OdooSecurityGroup"
+                    }
                 ],
-                "SubnetId": { "Fn::Select" : ["0", {"Ref": "ServerSubnets"}]},
                 "UserData" : { "Fn::Base64" : { "Fn::Join" : ["", [
                     "#!/bin/bash\n",
-
-                    "docker run -d -e POSTGRES_USER=odoo -e POSTGRES_PASSWORD=odoo --name db ",
-                    {"Ref" : "PostgresContainer"}, "\n",
+                    "ECID=$(curl http://instance-data/latest/meta-data/instance-id)\n",
+					"CWLA=odoo_$ECID\n",
+					"docker run -d --restart=always ",
+						"--name $CWLA --log-opt awslogs-stream=$CWLA ",
+						"-v /var/log:/var/log-host:ro ",
+						{"Ref":"CwlLinuxParams"}," ",
+						{"Ref":"CwlDockerParams"}," ",
+						{"Ref":"CwlUbuntuAgentDocker"},"\n",
+					"docker run -d --restart=always --name cwlcron ",
+						{"Ref":"CwlUbuntuAgentDocker"}," cron\n",
 
                     "docker run -p 8069:8069 --name odoo --link db:db -t ",
                     {"Ref" : "OdooContainer"}, "\n"
 
-                ]]}},
-                "Volumes" : [
-                    {"Device": "xvdb", "VolumeId" : {"Ref": "RepoDisk"}}
-                ],
-                "Tags": [
-                    {"Key": "Name", "Value" : "Odoo"}
-                ]
+                ]]}}
             }
         },
 
@@ -240,19 +380,53 @@
                 },
                 "Path": "/devservices/odoo/",
 				"ManagedPolicyArns" : [
-					{"Fn::If":["HasDeploymentBucketMp",
-						{"Ref":"DeploymentBucketMp"}, {"Ref":"AWS::NoValue"}
-					]},
 					{"Ref":"CwlPolicy"}
 				]
             }
-        }
+        },
+
+        "PostgresDB" : {
+    	    "Type" : "AWS::RDS::DBInstance",
+            "Properties" : {
+                "Engine" : "postgres",
+                "DBName" : { "Ref" : "DbName" },
+                "MasterUsername" : { "Ref" : "DbUsername" },
+                "DBInstanceClass" : { "Ref" : "DbInstanceType" },
+                "AllocatedStorage" : { "Ref" : "DbAllocatedStorage" },
+                "MasterUserPassword" : { "Ref" : "DbPassword" },
+                "DBSubnetGroupName" : { "Ref" : "DbSubnetGroup" },
+                "EngineVersion" : {"Ref" : "DbVersion"},
+                "DbSnapshotIdentifier" : {
+                    "Fn::If" : [
+                        "UseDbSnapshot",
+                        { "Ref" : "DbSnapshotIdentifier" },
+                        { "Ref" : "AWS::NoValue"}
+                    ]
+                },
+                "MultiAZ" : { "Ref" : "DbMultiAZ" },
+                "StorageEncrypted" : { "Ref" : "DbStorageEncrypted" },
+                "StorageType" : "gp2",
+                "VPCSecurityGroups": [
+                    {
+                        "Ref": "DbSecurityGroup"
+                    }
+                ]
+            },
+            "DeletionPolicy" : "Snapshot"
+        },
+        "DbSecurityGroup": {
+            "Type" : "AWS::EC2::SecurityGroup",
+            "Properties" : {
+                "GroupDescription" : "Database security groups",
+                "SecurityGroupIngress" : [
+                    { "IpProtocol" : "tcp", "FromPort": "5432", "ToPort" : "5432", "SourceSecurityGroupId": {"Ref" : "OdooSecurityGroup"}}
+                ],
+                "VpcId" : { "Ref" : "VpcId" }
+            }
+        } 
     },
     
     "Outputs" : {
-		"Gateway" : {
-			"Value" : { "Fn::GetAtt" : ["OdooInstance", "PrivateIp"] },
-			"Description" : "IP of the Odoo server."
-		}
-	}
+	
+    }
 }
