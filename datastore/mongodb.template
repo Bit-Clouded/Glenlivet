@@ -197,6 +197,7 @@
 					"docker run -d --restart=always --name cwlcron ",
 						{"Ref":"CwlUbuntuAgentDocker"}," cron\n",
 
+					"MONGONAME=mongodb-data_$ECID\n",
                     "docker run -p 27017:27017 ",
                         "--name $MONGONAME --log-opt awslogs-stream=$MONGONAME ",
                         "-d --restart=always ",
@@ -244,7 +245,7 @@
 
         "SecondDataMember" : {
             "Type" : "AWS::EC2::Instance",
-
+            "DependsOn" : "FirstDataMember",
             "Properties" : {
                 "InstanceType" : { "Ref" : "DataNodeInstanceType" },
                 "ImageId" : { "Ref":"DebianJsAmiId" },
@@ -267,6 +268,7 @@
 					"docker run -d --restart=always --name cwlcron ",
 						{"Ref":"CwlUbuntuAgentDocker"}," cron\n",
 
+					"MONGONAME=mongodb-data_$ECID\n",
                     "docker run -p 27017:27017 ",
                         "--name $MONGONAME --log-opt awslogs-stream=$MONGONAME ",
                         "-d --restart=always ",
@@ -309,6 +311,7 @@
 
         "Arbiter" : {
             "Type" : "AWS::EC2::Instance",
+            "DependsOn" : "FirstDataMember",
             "Properties" : {
                 "InstanceType" : { "Ref" : "ArbiterNodeInstanceType" },
                 "ImageId" : { "Ref":"DebianJsAmiId" },
@@ -331,7 +334,7 @@
 					"docker run -d --restart=always --name cwlcron ",
 						{"Ref":"CwlUbuntuAgentDocker"}," cron\n",
 
-					"MONGONAME=mongodb-data_$ECID\n",
+					"MONGONAME=mongodb-arbiter_$ECID\n",
                     "docker run -p 27017:27017 ",
                         "--name $MONGONAME --log-opt awslogs-stream=$MONGONAME ",
                         "-d --restart=always ",
