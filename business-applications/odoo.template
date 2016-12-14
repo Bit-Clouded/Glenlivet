@@ -13,7 +13,7 @@
         },
 
         "DbName": {
-            "Default": "kong",
+            "Default": "odoo",
             "Description" : "The database name",
             "Type": "String",
             "MinLength": "1",
@@ -55,7 +55,7 @@
             "AllowedValues" : [ true, false ]
         },
         "DbUsername": {
-            "Default": "kong",
+            "Default": "odoo",
             "Description" : "The database admin account username",
             "Type": "String",
             "MinLength": "1",
@@ -152,7 +152,7 @@
         },
         "OdooContainer": {
             "Description": "Odoo container name with tag.",
-            "Default": "odoo:10.0-20161123",
+            "Default": "odoo:10.0",
             "Type": "String"
         },
         "DebianJsAmiId": {
@@ -350,7 +350,11 @@
 					"docker run -d --restart=always --name cwlcron ",
 						{"Ref":"CwlUbuntuAgentDocker"}," cron\n",
 
-                    "docker run -p 8069:8069 --name odoo --link db:db -t ",
+                    "docker run -d --restart=always -p 8069:8069 --name odoo ",
+                    "-e HOST=", {"Fn::GetAtt": ["PostgresDB", "Endpoint.Address"]}," ",
+                    "-e PORT=5432 ",
+                    "-e USER=", {"Ref": "DbUsername"}," ",
+                    "-e PASSWORD=", {"Ref": "DbPassword"}," ",
                     {"Ref" : "OdooContainer"}, "\n"
 
                 ]]}}
