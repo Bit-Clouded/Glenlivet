@@ -172,7 +172,8 @@
 						{"Ref":"CwlUbuntuAgentDocker"}," cron\n",
 
 					"RETHINK=rethinkdb_$ECID\n",
-                    "docker run --name $RETHINK --log-opt awslogs-stream=$RETHINK ",
+                    "docker run -d --restart=always ",
+                        "--name $RETHINK --log-opt awslogs-stream=$RETHINK ",
                         {"Ref":"CwlLinuxParams"}," ",
                         "-p 8080:8080 -p 29015:29015 -p 28015:28015 ",
                         {"Ref":"RethinkDbContainer"}, " rethinkdb --bind all ",
@@ -234,7 +235,8 @@
 						{"Ref":"CwlUbuntuAgentDocker"}," cron\n",
 
 					"RETHINK=rethinkdb_$ECID\n",
-                    "docker run --name $RETHINK --log-opt awslogs-stream=$RETHINK ",
+                    "docker run -d --restart=always ",
+                        "--name $RETHINK --log-opt awslogs-stream=$RETHINK ",
                         {"Ref":"CwlLinuxParams"}," ",
                         "-p 8080:8080 -p 29015:29015 -p 28015:28015 ",
                         {"Ref":"RethinkDbContainer"}, " rethinkdb --bind all ",
@@ -299,7 +301,8 @@
 						{"Ref":"CwlUbuntuAgentDocker"}," cron\n",
 
 					"RETHINK=rethinkdb_$ECID\n",
-                    "docker run --name $RETHINK --log-opt awslogs-stream=$RETHINK ",
+                    "docker run -d --restart=always ",
+                        "--name $RETHINK --log-opt awslogs-stream=$RETHINK ",
                         {"Ref":"CwlLinuxParams"}," ",
                         "-p 8080:8080 -p 29015:29015 -p 28015:28015 ",
                         {"Ref":"RethinkDbContainer"}, " rethinkdb --bind all ",
