@@ -1,7 +1,7 @@
 {
 	"AWSTemplateFormatVersion": "2010-09-09",
 
-	"Description": "A template to launch GoCD build servers.",
+	"Description": "A template to launch Odoo servers.",
 
 	"Metadata" : {
         "DefaultName" : "Odoo"
@@ -275,7 +275,7 @@
                 },
                 "SecurityGroups": [
                     { "Ref": "ElbSg" },
-                { "Ref": "HttpSg" }
+                    { "Ref": "HttpSg" }
                 ],
                 "Scheme": { "Ref" : "IsPublicFacing" }
             }
@@ -286,14 +286,15 @@
 			"Properties" : {
 				"GroupDescription" : "Odoo Server Security Group",
 				"VpcId" : { "Ref" : "VpcId"},
-                "SecurityGroupIngress" : [ 
-                    { "IpProtocol" : "-1", "FromPort" : "80", "ToPort" : "80", "CidrIp" : { "Ref" : "ProxyAccess" } },
-                    { "IpProtocol" : "-1", "FromPort" : "443", "ToPort" : "443", "CidrIp" : { "Ref" : "ProxyAccess" } },
-                    { "IpProtocol" : "-1", "FromPort" : "8069", "ToPort" : "8069", "CidrIp" : { "Ref" : "AdminAccess" } }
-                ],
+		        "SecurityGroupIngress" : [
+					{ "IpProtocol": "-1", "SourceSecurityGroupId" : {"Ref" : "DbSecurityGroup"}}
+				],
 				"SecurityGroupEgress" : [
 					{ "IpProtocol": "-1", "CidrIp": "0.0.0.0/0" }
-				]
+				],
+				"Tags": [
+                    {"Key": "Name", "Value" : "Odoo Security Group"}
+                ]
 			}
         },
 
@@ -335,6 +336,9 @@
                 "SecurityGroups": [
                     {
                         "Ref": "OdooSecurityGroup"
+                    },
+                    {   
+                        "Ref" : "ElbTargetSg" 
                     }
                 ],
                 "UserData" : { "Fn::Base64" : { "Fn::Join" : ["", [
@@ -423,14 +427,17 @@
             "Properties" : {
                 "GroupDescription" : "Database security groups",
                 "SecurityGroupIngress" : [
-                    { "IpProtocol" : "tcp", "FromPort": "5432", "ToPort" : "5432", "SourceSecurityGroupId": {"Ref" : "OdooSecurityGroup"}}
+                    { "IpProtocol" : "tcp", "FromPort": "5432", "ToPort" : "5432"}
                 ],
                 "VpcId" : { "Ref" : "VpcId" }
             }
-        } 
+        }
     },
     
     "Outputs" : {
-	
+        "EsElb" : {
+            "Value" : { "Fn::GetAtt" : ["HttpGateway", "DNSName"] },
+            "Description" : "Private A record for Odoo ELB"
+        }
     }
 }
