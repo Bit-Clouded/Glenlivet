@@ -145,11 +145,6 @@
 			"Default" : "100"
 		},
 
-        "PostgresContainer": {
-            "Description": "Postgres container name with tag.",
-            "Default": "postgres:9.4",
-            "Type": "String"
-        },
         "OdooContainer": {
             "Description": "Odoo container name with tag.",
             "Default": "odoo:10.0",
@@ -286,9 +281,6 @@
 			"Properties" : {
 				"GroupDescription" : "Odoo Server Security Group",
 				"VpcId" : { "Ref" : "VpcId"},
-		        "SecurityGroupIngress" : [
-					{ "IpProtocol": "-1", "SourceSecurityGroupId" : {"Ref" : "DbSecurityGroup"}}
-				],
 				"SecurityGroupEgress" : [
 					{ "IpProtocol": "-1", "CidrIp": "0.0.0.0/0" }
 				],
@@ -426,9 +418,12 @@
             "Type" : "AWS::EC2::SecurityGroup",
             "Properties" : {
                 "GroupDescription" : "Database security groups",
-                "SecurityGroupIngress" : [
-                    { "IpProtocol" : "tcp", "FromPort": "5432", "ToPort" : "5432"}
-                ],
+                "SecurityGroupIngress": [{
+                    "ToPort": "5432",
+                    "IpProtocol": "tcp",
+                    "FromPort": "5432",
+                    "SourceSecurityGroupId": { "Ref": "OdooSecurityGroup" }
+                }],
                 "VpcId" : { "Ref" : "VpcId" }
             }
         }
