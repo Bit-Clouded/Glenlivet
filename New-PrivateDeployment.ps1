@@ -1,5 +1,5 @@
 ﻿param(
-    $bucketname = "bc-pvt-deployment",
+    $bucketname = "local-glenfiddichbase-publicbucket-1mmtghaeejx68",
     $projectname = "glenlivet",
     $version = "test"
 )
