@@ -1,6 +1,6 @@
 ﻿param(
-    $bucketname = "bc-glenfiddich-local",
-    $projectname = "aws-lego",
+    $bucketname = "local-glenfiddichbase-publicbucket-1mmtghaeejx68",
+    $projectname = "glenlivet",
     $version = "test"
 )
 

@@ -17,32 +17,27 @@
             "Description" : "VPCid associated with the subnets. [elb-subnets.outputs.WebServerSubnets]",
             "Type": "List<AWS::EC2::Subnet::Id>"
         },
-		"ElbTargetSg" : {
-			"Description": "Elb Target Security Group. [vpc.resources.ElbTargetSecGroup]",
+        "ElbTargetSg" : {
+            "Description": "Elb Target Security Group. [vpc.resources.ElbTargetSecGroup]",
             "Type": "String"
-		},
+        },
 
-        "DesiredCapacity": {
-            "Type": "Number",
-            "Default" : "1",
-            "Description": "Number of instances to launch in your ECS cluster."
-        },    
         "InstanceType" : {
-			"Description" : "Phabricator server instance type",
-			"Type" : "String",
-			"Default" : "t2.micro",
-			"AllowedValues": [
-				"t2.micro",
-				"t2.small",
-				"t2.medium",
-				"t2.large",
-				"m3.medium",
-				"m4.large",
-				"m4.xlarge",
-				"m4.2xlarge"
-			],
-			"ConstraintDescription" : "Must be a valid EC2 instance type."
-		},
+            "Description" : "Phabricator server instance type",
+            "Type" : "String",
+            "Default" : "t2.medium",
+            "AllowedValues": [
+                "t2.micro",
+                "t2.small",
+                "t2.medium",
+                "t2.large",
+                "m3.medium",
+                "m4.large",
+                "m4.xlarge",
+                "m4.2xlarge"
+            ],
+            "ConstraintDescription" : "Must be a valid EC2 instance type."
+        },
         "EcsAmiId" : {
             "Description" : "ECS Optimised AMI.",
             "Type" : "AWS::EC2::Image::Id"
@@ -58,9 +53,8 @@
             "Properties" : {
                 "VPCZoneIdentifier" : { "Ref" : "ServerSubnets" },
                 "LaunchConfigurationName" : { "Ref" : "ContainerInstances" },
-                "MinSize" : "1",
-                "MaxSize" : "100",
-                "DesiredCapacity" : { "Ref" : "DesiredCapacity" }
+                "MinSize" : "2",
+                "MaxSize" : "100"
             },
             "CreationPolicy" : {
                 "ResourceSignal" : { "Timeout" : "PT15M" }
@@ -134,7 +128,8 @@
                 "IamInstanceProfile": { "Ref": "Ec2InstanceProfile" },
                 "KeyName" : { "Ref" : "KeyPairName" },
                 "SecurityGroups" : [
-                    { "Ref": "ElbTargetSg" }
+                    { "Ref": "ElbTargetSg" },
+                    { "Ref": "DbTargetClusterSg" }
                 ],
                 "UserData" : { "Fn::Base64" : { "Fn::Join" : ["", [
                     "#!/bin/bash -xe\n",
@@ -184,12 +179,32 @@
                     }
                 }]
             }
-        },    
+        },
         "Ec2InstanceProfile": {
             "Type": "AWS::IAM::InstanceProfile",
             "Properties": {
                 "Path": "/platforms/ecs/",
                 "Roles": [{ "Ref": "Ec2Role" }]
+            }
+        },
+        "DatabaseSg": {
+            "Type": "AWS::EC2::SecurityGroup",
+            "Properties": {
+                "SecurityGroupIngress": [{
+                    "IpProtocol": "-1",
+                    "SourceSecurityGroupId": { "Ref": "DbTargetClusterSg" }
+                }],
+                "VpcId": { "Ref": "VpcId" },
+                "GroupDescription": "RancherOS Database Security Group"
+            }
+        },
+        "DbTargetClusterSg": {
+            "Type": "AWS::EC2::SecurityGroup",
+            "Properties": {
+                "SecurityGroupIngress": [
+                ],
+                "VpcId": { "Ref": "VpcId" },
+                "GroupDescription": "Security group for database security to allow ingress from."
             }
         }
     },

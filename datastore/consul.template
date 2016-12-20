@@ -1,10 +1,10 @@
 {
     "AWSTemplateFormatVersion" : "2010-09-09",
 
-    "Description" : "MongoDB Replica Set",
+    "Description" : "Consul Cluster",
 
     "Metadata" : {
-        "DefaultName" : "MongoDb"
+        "DefaultName" : "Consul"
     },
 
     "Parameters" : {
@@ -35,29 +35,9 @@
 			"Type": "AWS::EC2::Image::Id"
 		},
 
-        "DataNodeInstanceType" : {
+        "ServerInstanceType" : {
             "Type" : "String",
             "Default" : "t2.medium",
-            "AllowedValues" : [
-				"t2.micro",
-				"t2.small",
-				"t2.medium",
-				"t2.large",
-				"m3.medium",
-				"m4.large",
-				"m4.xlarge",
-				"m4.2xlarge",
-				"r3.large",
-				"r3.xlarge",
-				"r3.2xlarge",
-				"r3.4xlarge",
-				"r3.8xlarge"
-            ],
-            "Description" : "EC2 instance type"
-        },
-        "ArbiterNodeInstanceType" : {
-            "Type" : "String",
-            "Default" : "t2.micro",
             "AllowedValues" : [
 				"t2.micro",
 				"t2.small",
@@ -82,17 +62,11 @@
             "Default" : "100"
         },
 
-        "MongoDbContainer": {
+        "ConsulContainer": {
 			"Description": "",
-			"Default": "mongo:3.3.15",
+			"Default": "consul:0.7.1",
 			"Type": "String"
 		},
-
-        "ReplicaSetName" : {
-            "Description" : "Name of the MongoDB replica set",
-            "Type" : "String",
-            "Default" : "MongoDbRepSet"
-        },
 
 		"CwlUbuntuAgentDocker": {
 			"Description": "Name of cluster. This is used for discovery.",
@@ -118,57 +92,57 @@
     },
 
     "Resources" : {
-        "MongoDBConsumer" : {
+        "ConsulConsumer" : {
             "Type" : "AWS::EC2::SecurityGroup",
             "Properties" : {
-                "GroupDescription" : "Allow inbound access to MongoDB Replica Set.",
-                "Tags" : [ {"Key":"Name", "Value":"MongoDB Consumer"} ],
+                "GroupDescription" : "Allow inbound access to Consul Cluster.",
+                "Tags" : [ {"Key":"Name", "Value":"Consul Consumer"} ],
                 "VpcId" : {"Ref":"VpcId"}
             }
         },
-        "EnableInterMongoDB" : {
+        "EnableInterConsul" : {
             "Type" : "AWS::EC2::SecurityGroup",
             "Properties" : {
-                "GroupDescription" : "Enable inter MongoDB member communication.",
+                "GroupDescription" : "Enable inter Consul member communication.",
                 "SecurityGroupIngress" : [{
                     "IpProtocol" : "-1",
-                    "SourceSecurityGroupId" : { "Ref" : "MongoDBConsumer" }
+                    "SourceSecurityGroupId" : { "Ref" : "ConsulConsumer" }
                 }],
-                "Tags" : [ {"Key":"Name", "Value":"Inter MongoDB Communication"} ],
+                "Tags" : [ {"Key":"Name", "Value":"Inter Consul Communication"} ],
                 "VpcId" : {"Ref":"VpcId"}
             }
         },
-        "EnableInterMongoDBIngress" : {
+        "EnableInterConsulIngress" : {
             "Type" : "AWS::EC2::SecurityGroupIngress",
             "Properties" : {
-                "GroupId" : { "Ref" : "EnableInterMongoDB" },
+                "GroupId" : { "Ref" : "EnableInterConsul" },
                 "IpProtocol" : "-1",
-                "SourceSecurityGroupId" : { "Ref" : "EnableInterMongoDB" }
+                "SourceSecurityGroupId" : { "Ref" : "EnableInterConsul" }
             }
         },
 
-        "MongoDataVolume1" : {
+        "DataVolume1" : {
             "Type" : "AWS::EC2::Volume",
             "Properties" : {
                 "Size" : { "Ref" : "VolumeSize" },
-                "Tags" : [{ "Key" : "Name", "Value" : "Mongo Data Volume 1" }],
+                "Tags" : [{ "Key" : "Name", "Value" : "Consul Data Volume 1" }],
                 "AvailabilityZone" : { "Fn::GetAtt" : [ "FirstDataMember", "AvailabilityZone" ]}
             }
         },
 
-        "MongoDataVolume1Mount" : {
+        "DataVolume1Mount" : {
             "Type" : "AWS::EC2::VolumeAttachment",
             "Properties" : {
                 "InstanceId" : { "Ref" : "FirstDataMember" },
-                "VolumeId" : { "Ref" : "MongoDataVolume1" },
+                "VolumeId" : { "Ref" : "DataVolume1" },
                 "Device" : "/dev/xvdb"
             }
         },
         "FirstDataMemberEni" : {
             "Type" : "AWS::EC2::NetworkInterface",
             "Properties" : {
-                "Tags": [{"Key":"Name","Value":"MongoDB Member 1"}],
-                "GroupSet": [{ "Ref" : "EnableInterMongoDB" }],
+                "Tags": [{"Key":"Name","Value":"Consul Member 1"}],
+                "GroupSet": [{ "Ref" : "EnableInterConsul" }],
                 "SubnetId": {"Ref":"Subnet1Id"}
             }
         },
@@ -176,10 +150,10 @@
         "FirstDataMember" : {
             "Type" : "AWS::EC2::Instance",
             "Properties" : {
-                "InstanceType" : { "Ref" : "DataNodeInstanceType" },
+                "InstanceType" : { "Ref" : "ServerInstanceType" },
                 "ImageId" : { "Ref":"DebianJsAmiId" },
                 "IamInstanceProfile" : {"Ref":"WebServersInstanceProfile"},
-                "Tags" : [{ "Key" : "Name", "Value" : "MongoDB Replica Set - First" }],
+                "Tags" : [{ "Key" : "Name", "Value" : "Consul Cluster - First" }],
                 "KeyName" : { "Ref" : "KeyName" },
                 "NetworkInterfaces" : [{
                     "NetworkInterfaceId" : {"Ref" : "FirstDataMemberEni"}, "DeviceIndex" : "0" }
@@ -197,39 +171,31 @@
 					"docker run -d --restart=always --name cwlcron ",
 						{"Ref":"CwlUbuntuAgentDocker"}," cron\n",
 
-					"MONGONAME=mongodb-data_$ECID\n",
-                    "docker run -p 27017:27017 ",
-                        "--name $MONGONAME --log-opt awslogs-stream=$MONGONAME ",
-                        "-d --restart=always ",
+					"CONSUL=consul_$ECID\n",
+                    "docker run -d --restart=always --net=host ",
+                        "--name $CONSUL --log-opt awslogs-stream=$CONSUL ",
                         {"Ref":"CwlLinuxParams"}," ",
-                        {"Ref":"MongoDbContainer"},
-                        " --replSet \"", {"Ref":"ReplicaSetName"}, "\" --bind_ip \"0.0.0.0\"\n",
-                    "sleep 20s\n",
-                    "docker exec -i $MONGONAME mongo --eval \"",
-                        "rs.initiate();sleep(1000);",
-                        "cfg = rs.conf();",
-                        "cfg.members[0].host = '", {"Fn::GetAtt" : ["FirstDataMemberEni","PrimaryPrivateIpAddress"]} ,"';",
-                        "rs.reconfig(cfg);",
-                        "rs.add('", {"Fn::GetAtt" : ["SecondDataMemberEni","PrimaryPrivateIpAddress"]} ,"');",
-                        "rs.addArb('", {"Fn::GetAtt" : ["ArbiterEni","PrimaryPrivateIpAddress"]} ,"');\""
+                        {"Ref":"ConsulContainer"}, " agent -server -node=$CONSUL ",
+                        "-client=0.0.0.0 -bind=0.0.0.0 -ui -bootstrap ",
+                        "-advertise=", {"Fn::GetAtt" : ["FirstDataMemberEni","PrimaryPrivateIpAddress"]}
                 ] ] } }
             }
         },
 
-        "MongoDataVolume2Mount" : {
+        "DataVolume2Mount" : {
             "Type" : "AWS::EC2::VolumeAttachment",
             "Properties" : {
                 "InstanceId" : { "Ref" : "SecondDataMember" },
-                "VolumeId" : { "Ref" : "MongoDataVolume2" },
+                "VolumeId" : { "Ref" : "DataVolume2" },
                 "Device" : "/dev/xvdb"
             }
         },
 
-        "MongoDataVolume2" : {
+        "DataVolume2" : {
             "Type" : "AWS::EC2::Volume",
             "Properties" : {
                 "Size" : { "Ref" : "VolumeSize" },
-                "Tags" : [{ "Key" : "Name", "Value" : "Mongo Data Volume 2" }],
+                "Tags" : [{ "Key" : "Name", "Value" : "Consul Data Volume 2" }],
                 "AvailabilityZone" : { "Fn::GetAtt" : [ "SecondDataMember", "AvailabilityZone" ]}
             }
         },
@@ -237,20 +203,20 @@
         "SecondDataMemberEni" : {
             "Type" : "AWS::EC2::NetworkInterface",
             "Properties" : {
-                "Tags": [{"Key":"Name","Value":"MongoDB Member 1"}],
-                "GroupSet": [{ "Ref" : "EnableInterMongoDB" }],
+                "Tags": [{"Key":"Name","Value":"Consul Member 1"}],
+                "GroupSet": [{ "Ref" : "EnableInterConsul" }],
                 "SubnetId": {"Ref":"Subnet2Id"}
             }
         },
 
         "SecondDataMember" : {
             "Type" : "AWS::EC2::Instance",
-            "DependsOn" : "FirstDataMember",
+
             "Properties" : {
-                "InstanceType" : { "Ref" : "DataNodeInstanceType" },
+                "InstanceType" : { "Ref" : "ServerInstanceType" },
                 "ImageId" : { "Ref":"DebianJsAmiId" },
                 "IamInstanceProfile" : {"Ref":"WebServersInstanceProfile"},
-                "Tags" : [{ "Key" : "Name", "Value" : "MongoDB Replica Set - Second" }],
+                "Tags" : [{ "Key" : "Name", "Value" : "Consul Cluster - Second" }],
                 "KeyName" : { "Ref" : "KeyName" },
                 "NetworkInterfaces" : [{
                     "NetworkInterfaceId" : {"Ref" : "SecondDataMemberEni"}, "DeviceIndex" : "0" }
@@ -268,40 +234,41 @@
 					"docker run -d --restart=always --name cwlcron ",
 						{"Ref":"CwlUbuntuAgentDocker"}," cron\n",
 
-					"MONGONAME=mongodb-data_$ECID\n",
-                    "docker run -p 27017:27017 ",
-                        "--name $MONGONAME --log-opt awslogs-stream=$MONGONAME ",
-                        "-d --restart=always ",
+					"CONSUL=consul_$ECID\n",
+                    "docker run -d --restart=always --net=host ",
+                        "--name $CONSUL --log-opt awslogs-stream=$CONSUL ",
                         {"Ref":"CwlLinuxParams"}," ",
-                        {"Ref":"MongoDbContainer"},
-                        " --replSet \"", {"Ref":"ReplicaSetName"}, "\" --bind_ip \"0.0.0.0\"\n"
+                        {"Ref":"ConsulContainer"}, " agent -server -node=$CONSUL ",
+                        "-client=0.0.0.0 -bind=0.0.0.0 -ui ",
+                        "-advertise=", {"Fn::GetAtt" : ["SecondDataMemberEni","PrimaryPrivateIpAddress"]}, " ",
+                        "-join=", {"Fn::GetAtt" : ["FirstDataMemberEni","PrimaryPrivateIpAddress"]}
                 ] ] } }
             }
         },
 
-        "MongoArbiterVolume" : {
+        "DataVolume3" : {
             "Type" : "AWS::EC2::Volume",
             "Properties" : {
                 "Size" : { "Ref" : "VolumeSize" },
-                "Tags" : [{ "Key" : "Name", "Value" : "Mongo Artiber Volume" }],
-                "AvailabilityZone" : { "Fn::GetAtt" : [ "Arbiter", "AvailabilityZone" ]}
+                "Tags" : [{ "Key" : "Name", "Value" : "Consul Data Volume 3" }],
+                "AvailabilityZone" : { "Fn::GetAtt" : [ "ThirdDataMember", "AvailabilityZone" ]}
             }
         },
 
 
-        "MongoArbiterVolumeMount" : {
+        "DataVolume3Mount" : {
             "Type" : "AWS::EC2::VolumeAttachment",
             "Properties" : {
-                "InstanceId" : { "Ref" : "Arbiter" },
-                "VolumeId" : { "Ref" : "MongoArbiterVolume" },
+                "InstanceId" : { "Ref" : "ThirdDataMember" },
+                "VolumeId" : { "Ref" : "DataVolume3" },
                 "Device" : "/dev/xvdb"
             }
         },
-        "ArbiterEni" : {
+        "ThirdDataMemberEni" : {
             "Type" : "AWS::EC2::NetworkInterface",
             "Properties" : {
-                "Tags": [{"Key":"Name","Value":"MongoDB Member 1"}],
-                "GroupSet": [{ "Ref" : "EnableInterMongoDB" }],
+                "Tags": [{"Key":"Name","Value":"Consul Member 1"}],
+                "GroupSet": [{ "Ref" : "EnableInterConsul" }],
                 "SubnetId": { "Fn::If" : ["IsThreeAz",
 					{"Ref":"Subnet3Id"},
 					{"Ref":"Subnet2Id"}]
@@ -309,16 +276,15 @@
             }
         },
 
-        "Arbiter" : {
+        "ThirdDataMember" : {
             "Type" : "AWS::EC2::Instance",
-            "DependsOn" : "FirstDataMember",
             "Properties" : {
-                "InstanceType" : { "Ref" : "ArbiterNodeInstanceType" },
+                "InstanceType" : { "Ref" : "ServerInstanceType" },
                 "ImageId" : { "Ref":"DebianJsAmiId" },
                 "IamInstanceProfile" : {"Ref":"WebServersInstanceProfile"},
-                "Tags" : [{ "Key" : "Name", "Value" : "MongoDB Replica Set - Arbiter" }],
+                "Tags" : [{ "Key" : "Name", "Value" : "Consul Cluster - Third" }],
                 "NetworkInterfaces" : [{
-                    "NetworkInterfaceId" : {"Ref" : "ArbiterEni"}, "DeviceIndex" : "0" }
+                    "NetworkInterfaceId" : {"Ref" : "ThirdDataMemberEni"}, "DeviceIndex" : "0" }
                 ],
                 "KeyName" : { "Ref" : "KeyName" },
                 "UserData" : { "Fn::Base64" : { "Fn::Join" : ["", [
@@ -334,13 +300,14 @@
 					"docker run -d --restart=always --name cwlcron ",
 						{"Ref":"CwlUbuntuAgentDocker"}," cron\n",
 
-					"MONGONAME=mongodb-arbiter_$ECID\n",
-                    "docker run -p 27017:27017 ",
-                        "--name $MONGONAME --log-opt awslogs-stream=$MONGONAME ",
-                        "-d --restart=always ",
+					"CONSUL=consul_$ECID\n",
+                    "docker run -d --restart=always --net=host ",
+                        "--name $CONSUL --log-opt awslogs-stream=$CONSUL ",
                         {"Ref":"CwlLinuxParams"}," ",
-                        {"Ref":"MongoDbContainer"},
-                        " --replSet \"", {"Ref":"ReplicaSetName"}, "\" --bind_ip \"0.0.0.0\"\n"
+                        {"Ref":"ConsulContainer"}, " agent -server -node=$CONSUL ",
+                        "-client=0.0.0.0 -bind=0.0.0.0 -ui ",
+                        "-advertise=", {"Fn::GetAtt" : ["ThirdDataMemberEni","PrimaryPrivateIpAddress"]}, " ",
+                        "-join=", {"Fn::GetAtt" : ["FirstDataMemberEni","PrimaryPrivateIpAddress"]}
                 ] ] } }
             }
         },
@@ -358,7 +325,7 @@
 						"Action": [ "sts:AssumeRole" ]
 					}]
 				},
-				"Path": "/datastore/mongodb/",
+				"Path": "/datastore/consul/",
 				"ManagedPolicyArns" : [
 					{"Ref":"CwlPolicy"}
 				]
@@ -367,17 +334,16 @@
 		"WebServersInstanceProfile" : {
 			"Type": "AWS::IAM::InstanceProfile",
 			"Properties": {
-				"Path": "/datastore/mongodb/",
+				"Path": "/datastore/consul/",
 				"Roles": [{"Ref" : "WebServersRole"}]
 			}
 		}
-
     },
 
     "Outputs" : {
         "ReplicaSetMemberName" : {
             "Value" : { "Fn::GetAtt" : [ "SecondDataMember", "PublicDnsName" ] },
-            "Description" : "public DNS name of the MongoDB Replica Set Member Instance"
+            "Description" : "public DNS name of the Consul Cluster Member Instance"
         }
     }
 }
