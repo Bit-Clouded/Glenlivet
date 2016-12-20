@@ -95,7 +95,7 @@
                         "Action": ["sts:AssumeRole"]
                     }]
                 },
-                "Path": "/platforms/ecs/",
+                "Path": "/",
                 "Policies": [{
                     "PolicyName": "ecs-service",
                     "PolicyDocument": {
@@ -152,49 +152,37 @@
             },
             "DeletionPolicy" : "Retain"
         },
-    "EcsServiceRole":{
-      "Type":"AWS::IAM::Role",
-      "Properties":{
-        "AssumeRolePolicyDocument":{
-          "Statement":[
-            {
-              "Effect":"Allow",
-              "Principal":{
-                "Service":[
-                  "ecs.amazonaws.com"
-                ]
-              },
-              "Action":[
-                "sts:AssumeRole"
-              ]
+        "EcsServiceRole":{
+            "Type":"AWS::IAM::Role",
+            "Properties":{
+                "AssumeRolePolicyDocument":{
+                    "Statement":[{
+                        "Effect":"Allow",
+                        "Principal":{"Service":["ecs.amazonaws.com"]},
+                        "Action":["sts:AssumeRole"]
+                    }]
+                },
+                "Path":"/",
+                "Policies":[{
+                    "PolicyName":"ecs-service",
+                    "PolicyDocument":{
+                        "Statement":[{
+                            "Effect":"Allow",
+                            "Action":[
+                                "elasticloadbalancing:DeregisterInstancesFromLoadBalancer",
+                                "elasticloadbalancing:DeregisterTargets",
+                                "elasticloadbalancing:Describe*",
+                                "elasticloadbalancing:RegisterInstancesWithLoadBalancer",
+                                "elasticloadbalancing:RegisterTargets",
+                                "ec2:Describe*",
+                                "ec2:AuthorizeSecurityGroupIngress"
+                            ],
+                            "Resource":"*"
+                        }]
+                    }
+                }]
             }
-          ]
         },
-        "Path":"/platforms/ecs/",
-        "Policies":[
-          {
-            "PolicyName":"ecs-service",
-            "PolicyDocument":{
-              "Statement":[
-                {
-                  "Effect":"Allow",
-                  "Action":[
-                    "elasticloadbalancing:DeregisterInstancesFromLoadBalancer",
-                    "elasticloadbalancing:DeregisterTargets",
-                    "elasticloadbalancing:Describe*",
-                    "elasticloadbalancing:RegisterInstancesWithLoadBalancer",
-                    "elasticloadbalancing:RegisterTargets",
-                    "ec2:Describe*",
-                    "ec2:AuthorizeSecurityGroupIngress"
-                  ],
-                  "Resource":"*"
-                }
-              ]
-            }
-          }
-        ]
-      }
-    },
         "WebServerPolicy" : {
             "Type" : "AWS::IAM::ManagedPolicy",
             "Properties" : {

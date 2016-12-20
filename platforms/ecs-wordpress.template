@@ -53,7 +53,6 @@
         "HttpGateway":{
             "Type":"AWS::ElasticLoadBalancingV2::LoadBalancer",
             "Properties":{
-                "Name":"HttpGateway",
                 "Scheme":"internet-facing",
                 "LoadBalancerAttributes":[{
                     "Key":"idle_timeout.timeout_seconds",
@@ -129,7 +128,8 @@
                     "PortMappings": [
                         { "HostPort": 80, "ContainerPort": 80 }
                     ]
-                }]
+                }],
+                "TaskRoleArn": {"Ref":"TaskRole"}
             }
         },    
 
