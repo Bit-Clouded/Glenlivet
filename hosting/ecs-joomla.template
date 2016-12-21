@@ -1,0 +1,166 @@
+{
+    "AWSTemplateFormatVersion" : "2010-09-09",
+    "Parameters" : {
+        "VpcId": {
+            "Description" : "VPCid associated with the subnets. [elb-subnets.parameters.VpcId]",
+            "Type": "AWS::EC2::VPC::Id"
+        },
+        "EcsCluster": {
+            "Type": "String",
+            "Description": "[ecs-base.resources.EcsCluster]"
+        },
+        "ElbSg" : {
+            "Description": "Elb Security Group. [vpc.resources.ElbSecGroup]",
+            "Type": "String"
+        },
+        "HttpSg" : {
+            "Description": "Elb Target Security Group. [vpc.resources.HttpNsSecGroup]",
+            "Type": "String"
+        },
+        "ElbSubnets" : {
+            "Description" : "VPCid associated with the subnets. [ecs-base.parameters.ElbSubnets]",
+            "Type": "List<AWS::EC2::Subnet::Id>"
+        },
+        "TaskRole" : {
+            "Description": "[ecs-app-base.resources.TaskRole]",
+            "Type": "String"
+        },
+        "DbName" : {
+            "Description" : "MariaDB server username [ecs-app-base.parameters.DbName]",
+            "Type" : "String"
+        },
+        "DbUsername" : {
+            "Description" : "MariaDB server username [ecs-app-base.parameters.DbUsername]",
+            "Type" : "String"
+        },
+        "DbPassword" : {
+            "Description" : "MariaDB server password",
+            "Type" : "String",
+            "Default" : "Password1234",
+            "NoEcho" : "True"
+        },
+        "EcsServiceRole" : {
+			"Description": "[ecs-app-base.resources.EcsServiceRole]",
+            "Type": "String"
+        },
+        "DatabaseEndpointAddress" : {
+            "Description" : "[ecs-app-base.outputs.DatabaseEndpointAddress]",
+            "Type" : "String"
+        },
+        "ImageName" : {
+            "Description" : "",
+            "Type" : "String",
+            "Default" : "joomla:3.6.4-apache-php7"
+        }
+    },
+
+    "Resources" : {
+        "HttpGateway":{
+            "Type":"AWS::ElasticLoadBalancingV2::LoadBalancer",
+            "Properties":{
+                "Scheme":"internet-facing",
+                "LoadBalancerAttributes":[{
+                    "Key":"idle_timeout.timeout_seconds",
+                    "Value":"30"
+                }],
+                "Subnets": { "Ref" : "ElbSubnets" },
+                "SecurityGroups":[
+                    { "Ref": "ElbSg" },
+                    { "Ref": "HttpSg" }
+                ]
+            }
+        },
+        "AlbListener":{
+            "Type":"AWS::ElasticLoadBalancingV2::Listener",
+            "Properties":{
+                "DefaultActions":[{
+                    "Type":"forward",
+                    "TargetGroupArn":{ "Ref":"AlbTargetGroup" }
+                }],
+                "LoadBalancerArn":{ "Ref":"HttpGateway" },
+                "Port":"80",
+                "Protocol":"HTTP"
+            }
+        },
+        "AlbListenerRule":{
+            "Type":"AWS::ElasticLoadBalancingV2::ListenerRule",
+            "DependsOn":"AlbListener",
+            "Properties":{
+                "Actions":[{
+                    "Type":"forward",
+                    "TargetGroupArn":{ "Ref":"AlbTargetGroup" }
+                }],
+                "Conditions":[{
+                    "Field":"path-pattern",
+                    "Values":["/"]
+                }],
+                "ListenerArn":{ "Ref":"AlbListener" },
+                "Priority":1
+            }
+        },
+        "AlbTargetGroup":{
+            "Type":"AWS::ElasticLoadBalancingV2::TargetGroup",
+            "DependsOn":"HttpGateway",
+            "Properties":{
+                "HealthCheckIntervalSeconds":30,
+                "HealthCheckPath":"/",
+                "HealthCheckProtocol":"HTTP",
+                "HealthCheckTimeoutSeconds":5,
+                "HealthyThresholdCount":10,
+                "Port":80,
+                "Protocol":"HTTP",
+                "UnhealthyThresholdCount":10,
+                "VpcId" : {"Ref":"VpcId"}
+            }
+        },
+        "TaskDef": {
+            "Type": "AWS::ECS::TaskDefinition",
+            "Properties" : {
+                "ContainerDefinitions" : [{
+                    "Name": "joomla",
+                    "Cpu": "10",
+                    "Essential": "true",
+                    "Image":{"Ref":"ImageName"},
+                    "Memory":"300",
+                    "MountPoints": [],
+                    "Environment": [
+                        { "Name" : "JOOMLA_DB_HOST", "Value" : {"Ref":"DatabaseEndpointAddress"} },
+                        { "Name" : "JOOMLA_DB_USER", "Value" : {"Ref":"DbUsername"} },
+                        { "Name" : "JOOMLA_DB_PASSWORD", "Value" : {"Ref":"DbPassword"} },
+                        { "Name" : "JOOMLA_DB_NAME", "Value" : {"Ref":"DbName"} }
+                    ],
+                    "PortMappings": [
+                        { "HostPort": 80, "ContainerPort": 80 }
+                    ]
+                }],
+                "TaskRoleArn": {"Ref":"TaskRole"}
+            }
+        },    
+
+        "EcsService": {
+            "Type": "AWS::ECS::Service",
+            "DependsOn":"AlbListener",
+            "Properties" : {
+                "Cluster": {"Ref": "EcsCluster"},
+                "DesiredCount": "1",
+                "Role" : {"Ref":"EcsServiceRole"},
+                "LoadBalancers": [{
+                    "ContainerName": "joomla",
+                    "ContainerPort": "80",
+                    "TargetGroupArn":{ "Ref":"AlbTargetGroup" }
+                }],
+                "TaskDefinition" : {"Ref":"TaskDef"}
+            }
+        }
+    },
+
+    "Outputs" : {
+        "Service": {
+            "Value": { "Fn::Join": ["", [
+                "https://", { "Ref": "AWS::Region"}, ".console.aws.amazon.com/ecs/home?region=",
+                    { "Ref": "AWS::Region"}, "#/clusters/", { "Ref": "EcsCluster"},
+                    "/services/", { "Fn::GetAtt": ["EcsService", "Name"] }, "/tasks"
+            ]] }
+        }
+    }
+}
