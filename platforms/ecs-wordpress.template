@@ -46,6 +46,11 @@
         "DatabaseEndpointAddress" : {
             "Description" : "[ecs-app-base.outputs.DatabaseEndpointAddress]",
             "Type" : "String"
+        },
+        "ImageName" : {
+            "Description" : "",
+            "Type" : "String",
+            "Default" : "wordpress:4.7.0-php7.0-apache"
         }
     },
 
@@ -102,7 +107,6 @@
                 "HealthCheckProtocol":"HTTP",
                 "HealthCheckTimeoutSeconds":5,
                 "HealthyThresholdCount":10,
-                "Name":"AlbTargetGroup",
                 "Port":80,
                 "Protocol":"HTTP",
                 "UnhealthyThresholdCount":10,
@@ -113,10 +117,10 @@
             "Type": "AWS::ECS::TaskDefinition",
             "Properties" : {
                 "ContainerDefinitions" : [{
-                    "Name": "wordpress",
+                    "name":"wordpress",
                     "Cpu": "10",
                     "Essential": "true",
-                    "Image":"wordpress:4.7.0-php7.0-apache",
+                    "Image":{"Ref":"ImageName"},
                     "Memory":"300",
                     "MountPoints": [],
                     "Environment": [
