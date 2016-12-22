@@ -7,28 +7,12 @@
 		"DefaultName" : "LogStore"
 	},
 	
-	"Parameters": {
-		"BucketPrefix" : {
-			"Description" : "Bucket name for raw logs from elastic load balancer and cloud trail.",
-			"Type" : "String",
-			"Default" : "bc"
-		},
-		"BucketSuffix" : {
-			"Description" : "Bucket name for raw logs from s3 bucket and cloud front.",
-			"Type" : "String",
-			"Default" : ""
-		}
-	},
-
 	"Resources" : {
 		"AccessS3Log" : {
 			"Type" : "AWS::S3::Bucket",
 			"DependsOn": "AccessS3LogBucketSnsPolicy",
 			"Properties" : {
 				"AccessControl" : "LogDeliveryWrite",
-				"BucketName" : {"Fn::Join": ["",[
-					{"Ref":"BucketPrefix"}, "-access-s3-log", {"Ref":"BucketSuffix"}
-				]]},
 				"VersioningConfiguration" : {
 					"Status": "Enabled"
 				},
@@ -60,13 +44,10 @@
 			"DependsOn": "AccessCfLogBucketSnsPolicy",
 			"Properties" : {
 				"AccessControl" : "LogDeliveryWrite",
-				"BucketName" : {"Fn::Join": ["",[
-					{"Ref":"BucketPrefix"}, "-access-cf-log", {"Ref":"BucketSuffix"}
-				]]},
 				"LoggingConfiguration": {
 					"DestinationBucketName" : { "Ref": "AccessS3Log"},
 					"LogFilePrefix" : {"Fn::Join": ["",[
-						{"Ref":"BucketPrefix"}, "-access-cf-log", {"Ref":"BucketSuffix"}, "/"
+						"AccessCfLog"
 					]]}
 				},
 				"VersioningConfiguration" : {
@@ -100,13 +81,10 @@
 			"DependsOn": "RawBucketSnsPolicy",
 			"Properties" : {
 				"AccessControl" : "Private",
-				"BucketName" : {"Fn::Join": ["",[
-					{"Ref":"BucketPrefix"}, "-raw-log", {"Ref":"BucketSuffix"}
-				]]},
 				"LoggingConfiguration": {
 					"DestinationBucketName" : { "Ref": "AccessS3Log"},
 					"LogFilePrefix" : {"Fn::Join": ["",[
-						{"Ref":"BucketPrefix"}, "-raw-log", {"Ref":"BucketSuffix"}, "/"
+						"Raw"
 					]]}
 				},
 				"VersioningConfiguration" : {
@@ -186,10 +164,7 @@
 		"RawBucketNotification" : {
 			"Type" : "AWS::SNS::Topic",
 			"Properties" : {
-				"DisplayName" : "CloudTrail and ELB Bucket Event Notification",
-				"TopicName" : { "Fn::Join": ["", [
-					"s3-event-", {"Ref":"BucketPrefix"}, "-raw-log", {"Ref":"BucketSuffix"}
-				]]}
+				"DisplayName" : "CloudTrail and ELB Bucket Event Notification"
 			}
 		},
 		"RawBucketSnsPolicy" : {
@@ -213,7 +188,7 @@
 						"Condition": {
 							"ArnLike": {          
 								"aws:SourceArn": { "Fn::Join": ["", [
-									"arn:aws:s3:*:*:", {"Ref":"BucketPrefix"}, "-raw-log", {"Ref":"BucketSuffix"}
+									"arn:aws:s3:*:*:*"
 								]]}
 							}
 						}
@@ -228,10 +203,7 @@
 		"AccessS3LogBucketNotification" : {
 			"Type" : "AWS::SNS::Topic",
 			"Properties" : {
-				"DisplayName" : "S3 and CloudFront Access Log Bucket Event Notification",
-				"TopicName" : { "Fn::Join": ["", [
-					"s3-event-", {"Ref":"BucketPrefix"}, "-access-s3-log", {"Ref":"BucketSuffix"}
-				]]}
+				"DisplayName" : "S3 and CloudFront Access Log Bucket Event Notification"
 			}
 		},
 		"AccessS3LogBucketSnsPolicy" : {
@@ -256,7 +228,7 @@
 						"Condition": {
 							"ArnLike": {          
 								"aws:SourceArn": { "Fn::Join": ["", [
-									"arn:aws:s3:*:*:", {"Ref":"BucketPrefix"}, "-access-s3-log", {"Ref":"BucketSuffix"}
+									"arn:aws:s3:*:*:*"
 								]]}
 							}
 						}
@@ -270,10 +242,7 @@
 		"AccessCfLogBucketNotification" : {
 			"Type" : "AWS::SNS::Topic",
 			"Properties" : {
-				"DisplayName" : "S3 and CloudFront Access Log Bucket Event Notification",
-				"TopicName" : { "Fn::Join": ["", [
-					"s3-event-", {"Ref":"BucketPrefix"}, "-access-cf-log", {"Ref":"BucketSuffix"}
-				]]}
+				"DisplayName" : "S3 and CloudFront Access Log Bucket Event Notification"
 			}
 		},
 		"AccessCfLogBucketSnsPolicy" : {
@@ -298,7 +267,7 @@
 						"Condition": {
 							"ArnLike": {          
 								"aws:SourceArn": { "Fn::Join": ["", [
-									"arn:aws:s3:*:*:", {"Ref":"BucketPrefix"}, "-access-cf-log", {"Ref":"BucketSuffix"}
+									"arn:aws:s3:*:*:*"
 								]]}
 							}
 						}
