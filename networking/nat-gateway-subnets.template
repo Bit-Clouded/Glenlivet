@@ -4,7 +4,28 @@
     "Description" : "Subnets that has outbound internet access and accepts no inbound connections. This is mainly used for servers that need direct access to the WAN; NAT, proxy. Other use cases include services that require massive bandwidth and are potentially hindered by NAT or Proxy. For instance EMR and RedShift when used in combination with taking in data from S3.",
 
     "Metadata" : {
-        "DefaultName" : "NatGateway"
+        "DefaultName" : "NatGateway",
+        "Dependencies": [
+            {
+                "TemplatePath": "networking/vpc.template",
+                "Resources": {
+                    "VpcId": "Vpc"
+                },
+                "Parameters": {
+                    "VpcPrefix": "VpcPrefix"
+                },
+                "Outputs": {
+                    "AzCount": "AzCount"
+                }
+            },
+            {
+                "TemplatePath": "networking/public-out-subnets.template",
+                "Resources": {
+                    "PublicRouteTable": "RouteTable"
+                },
+                "NestedDependency": "networking/vpc.template"
+            }
+        ]
     },
 
     "Parameters" : {

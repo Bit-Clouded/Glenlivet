@@ -4,7 +4,31 @@
     "Description" : "MongoDB Replica Set",
 
     "Metadata" : {
-        "DefaultName" : "MongoDb"
+        "DefaultName" : "MongoDb",
+        "Dependencies": [
+            {
+                "TemplatePath": "networking/nat-subnets.template",
+                "Parameters": {
+                    "VpcId": "VpcId"
+                },
+                "Resources": {
+                    "Subnet1Id": "Subnet1",
+                    "Subnet2Id": "Subnet2",
+                    "Subnet3Id": "Subnet3"
+                },
+                "NestedDependency": "networking/vpc.template"
+            },
+            {
+                "TemplatePath": "analytics/logs-store.template",
+                "Resources": {
+                    "CwlPolicy": "LinuxLogPolicy"
+                },
+                "Outputs": {
+                    "CwlLinuxParams": "LxDockerLogParams",
+                    "CwlDockerParams": "DockerCwlParams"
+                }
+            }
+        ]
     },
 
     "Parameters" : {

@@ -4,7 +4,30 @@
     "Description" : "General purpose subnets twith a route table having the public route mapped through a NAT.",
 
     "Metadata" : {
-        "DefaultName" : "NatSubnets"
+        "DefaultName" : "NatSubnets",
+        "Dependencies": [
+            {
+                "TemplatePath": "networking/vpc.template",
+                "Resources": {
+                    "VpcId": "Vpc"
+                },
+                "Parameters": {
+                    "VpcPrefix": "VpcPrefix"
+                },
+                "Outputs": {
+                    "AzCount": "AzCount"
+                }
+            },
+            {
+                "TemplatePath": "networking/nat-gateway-subnets.template",
+                "Resources": {
+                    "NatServerSubnet1": "Subnet1",
+                    "NatServerSubnet2": "Subnet2",
+                    "NatServerSubnet3": "Subnet3"
+                },
+                "NestedDependency": "networking/vpc.template"
+            }
+        ]
     },
 
     "Parameters" : {
@@ -18,7 +41,8 @@
         },
         "NatServerSubnet3" : {
             "Description" : "Subnet suffix to be concatenated with the VPC prefix. [nat-gateway-subnets.resources.Subnet3]",
-            "Type" : "String"
+            "Type" : "String",
+            "Default" : ""
         },
 
         "Subnet1Suffix" : {

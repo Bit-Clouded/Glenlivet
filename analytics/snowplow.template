@@ -1,5 +1,46 @@
 {
     "AWSTemplateFormatVersion": "2010-09-09",
+    "Metadata" : {
+        "DefaultName" : "Snowplow",
+        "Dependencies": [
+            {
+                "TemplatePath": "networking/vpc.template",
+                "Resources": {
+                    "ElbSg": "ElbSecGroup",
+                    "ElbTargetSg": "ElbTargetSecGroup",
+                    "HttpSg": "HttpNsSecGroup"
+                }
+            },
+            {
+                "TemplatePath": "networking/elb-subnets.template",
+                "Parameters": {
+                    "VpcId": "VpcId"
+                },
+                "Outputs": {
+                    "ElbSubnets": "ElbSubnets",
+                    "WebServerSubnets": "WebServerSubnets"
+                },
+                "NestedDependency": "networking/vpc.template"
+            },
+            {
+                "TemplatePath": "analytics/logs-store.template",
+                "Resources": {
+                    "AccessLogBucket": "Raw",
+                    "CwlPolicy": "LinuxLogPolicy"
+                },
+                "Outputs": {
+                    "CwlLinuxParams": "LxDockerLogParams",
+                    "CwlDockerParams": "DockerCwlParams"
+                }
+            },
+            {
+                "TemplatePath": "datastore/elasticsearch.template",
+                "Resources": {
+                    "EsHost": "EsElb"
+                }
+            }
+        ]
+    },
     "Parameters": {
         "KeyPairName": {
             "Description": "Name of an existing EC2 KeyPair to enable SSH access to the instances",

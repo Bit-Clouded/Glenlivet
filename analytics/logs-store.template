@@ -156,6 +156,41 @@
 								"arn:aws:iam::113285607260:root"
 							]
 						}
+					},
+					{
+						"Action":["s3:GetBucketAcl"],
+						"Effect":"Allow",
+						"Resource": { "Fn::Join" : ["", ["arn:aws:s3:::", { "Ref" : "Raw" } ]]},
+						"Principal":{"Service": "cloudtrail.amazonaws.com"}
+					},
+					{
+						"Action":["s3:PutObject"],
+						"Effect":"Allow",
+						"Resource": { "Fn::Join" : ["", ["arn:aws:s3:::", { "Ref" : "Raw" } , "/AWSLogs/*" ]]},
+						"Principal":{"Service": "cloudtrail.amazonaws.com"}
+					},
+					{
+						"Action":["s3:PutObject"],
+						"Effect":"Allow",
+						"Resource": { "Fn::Join" : ["", ["arn:aws:s3:::", { "Ref" : "Raw" } , "/AWSLogs/*" ]]},
+						"Principal":{
+							"AWS": [
+								"127311923021",
+								"033677994240",
+								"027434742980",
+								"797873946194",
+								"985666609251",
+								"156460612806",
+								"054676820928",
+								"652711504416",
+								"582318560864",
+								"600734575887",
+								"114774131450",
+								"783225319266",
+								"718504428378",
+								"507241528517"
+							]
+						}
 					}]
 				}
 			}
@@ -287,6 +322,7 @@
         },
         "GlobalCloudTrail" : {
             "Type" : "AWS::CloudTrail::Trail",
+			"DependsOn" : "RawBucketPolicy",
             "Properties" : {
                 "CloudWatchLogsLogGroupArn" : { "Fn::GetAtt" : [ "GlobalCloudTrailLog", "Arn" ]},
                 "CloudWatchLogsRoleArn" : {"Fn::GetAtt" : ["GlobalCloudTrailLogRole", "Arn"] },
@@ -584,7 +620,6 @@
 		"FlowLogRoleArn" : {
 			"Value" : 
 			{ "Fn::GetAtt" : [ "VpcTrafficLogRole", "Arn" ]}
-			
 		}
 	}
 }

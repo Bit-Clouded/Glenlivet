@@ -4,7 +4,21 @@
     "Description" : "Subnets thave have no access outbound access whatsoever.",
 
     "Metadata" : {
-        "DefaultName" : "Private Subnets"
+        "DefaultName" : "Private Subnets",
+        "Dependencies": [
+            {
+                "TemplatePath": "networking/vpc.template",
+                "Resources": {
+                    "VpcId": "Vpc"
+                },
+                "Parameters": {
+                    "VpcPrefix": "VpcPrefix"
+                },
+                "Outputs": {
+                    "AzCount": "AzCount"
+                }
+            }
+        ]
     },
 
 

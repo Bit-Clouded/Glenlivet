@@ -4,7 +4,37 @@
     "Description" : "A set of subnets for advanced ELB/Web server hosting topology. Normal use cases include trio of ELB/ASG/LC for hosting websites. Advanced deployment caters to deployments such as ElastiSearch and ??Zookeeper??.",
 
     "Metadata" : {
-        "DefaultName" : "ElbSubnets"
+        "DefaultName" : "ElbSubnets",
+        "Dependencies": [
+            {
+                "TemplatePath": "networking/vpc.template",
+                "Resources": {
+                    "VpcId": "Vpc"
+                },
+                "Parameters": {
+                    "VpcPrefix": "VpcPrefix"
+                },
+                "Outputs": {
+                    "AzCount": "AzCount"
+                }
+            },
+            {
+                "TemplatePath": "networking/public-out-subnets.template",
+                "Resources": {
+                    "PublicRouteTable": "RouteTable"
+                },
+                "NestedDependency": "networking/vpc.template"
+            },
+            {
+                "TemplatePath": "networking/nat-subnets.template",
+                "Resources": {
+                    "NatEnabledRouteTable1": "RouteTable1",
+                    "NatEnabledRouteTable2": "RouteTable2",
+                    "NatEnabledRouteTable3": "RouteTable3"
+                },
+                "NestedDependency": "networking/vpc.template"
+            }
+        ]
     },
 
     "Parameters" : {
@@ -69,7 +99,8 @@
         },
         "NatEnabledRouteTable3" : {
             "Description" : "VPC id [nat-subnets.resources.RouteTable3]",
-            "Type" : "String"
+            "Type" : "String",
+            "Default" : ""
         },
 
         "AzCount" : {

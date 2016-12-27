@@ -4,7 +4,29 @@
     "Description": "A template to launch elasticsearch cluster.",
 
     "Metadata" : {
-        "DefaultName" : "Elasticsearch"
+        "DefaultName" : "Elasticsearch",
+        "Dependencies": [
+            {
+                "TemplatePath": "networking/elb-subnets.template",
+                "Parameters": {
+                    "VpcId": "VpcId"
+                },
+                "Outputs": {
+                    "ElbSubnets": "ElbSubnets",
+                    "ServerSubnets": "WebServerSubnets"
+                }
+            },
+            {
+                "TemplatePath": "analytics/logs-store.template",
+                "Resources": {
+                    "CwlPolicy": "LinuxLogPolicy"
+                },
+                "Outputs": {
+                    "CwlLinuxParams": "LxDockerLogParams",
+                    "CwlDockerParams": "DockerCwlParams"
+                }
+            }
+        ]
     },
 
     "Parameters": {

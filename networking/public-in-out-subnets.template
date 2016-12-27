@@ -4,7 +4,28 @@
     "Description" : "A simple empty subnet",
 
     "Metadata" : {
-        "DefaultName" : "WebServerSubnets"
+        "DefaultName" : "WebServerSubnets",
+        "Dependencies": [
+            {
+                "TemplatePath": "networking/vpc.template",
+                "Resources": {
+                    "VpcId": "Vpc"
+                },
+                "Parameters": {
+                    "VpcPrefix": "VpcPrefix"
+                },
+                "Outputs": {
+                    "AzCount": "AzCount"
+                }
+            },
+            {
+                "TemplatePath": "networking/public-out-subnets.template",
+                "Resources": {
+                    "RouteTable": "RouteTable"
+                },
+                "NestedDependency": "networking/vpc.template"
+            }
+        ]
     },
 
     "Parameters" : {
