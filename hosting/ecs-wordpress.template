@@ -117,7 +117,7 @@
             "Type": "AWS::ECS::TaskDefinition",
             "Properties" : {
                 "ContainerDefinitions" : [{
-                    "name":"wordpress",
+                    "Name":"wordpress",
                     "Cpu": "10",
                     "Essential": "true",
                     "Image":{"Ref":"ImageName"},
