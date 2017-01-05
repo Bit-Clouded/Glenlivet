@@ -1,4 +1,8 @@
-﻿function SuperRemove-S3Bucket {
+﻿param(
+    $TempStackPrefix = "Temp-"
+)
+
+function SuperRemove-S3Bucket {
     param($bucketName)
     $region = (Get-S3BucketLocation -BucketName $bucketName).Value
     Remove-S3BucketPolicy -BucketName $bucketName -Force -Region $region
@@ -15,14 +19,14 @@ Function CleanUp {
     Set-DefaultAWSRegion $region
 
     Get-CFNStack | ? {
-        $_.StackName.StartsWith("Bev-")
+        $_.StackName.StartsWith($TempStackPrefix)
     } | % {
         Remove-CFNStack $_.StackId -Force
     }
 }
 
 Get-S3Bucket | ? {
-    $_.BucketName.StartsWith("dev-elast")
+    $_.BucketName.StartsWith($TempStackPrefix.ToLower())
 } | % {
     SuperRemove-S3Bucket -bucketName $_.BucketName
 }
@@ -34,7 +38,7 @@ CleanUp us-west-2
 CleanUp eu-west-1
 CleanUp eu-central-1
 CleanUp sa-east-1
-CleanUp ap-northeast-1 #<- no tag. bugging out.
+CleanUp ap-northeast-1
 CleanUp ap-northeast-2
 CleanUp ap-southeast-1
 CleanUp ap-southeast-2
