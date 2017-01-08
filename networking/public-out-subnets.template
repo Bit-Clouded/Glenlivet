@@ -7,7 +7,7 @@
         "DefaultName": "PublicOutboundSubnets",
         "Dependencies": [
             {
-                "TemplatePath": "networking/vpc.template",
+                "TemplatePath": "networking/vpc",
                 "Resources": {
                     "VpcId": "Vpc",
                     "InternetGateway": "InternetGateway"

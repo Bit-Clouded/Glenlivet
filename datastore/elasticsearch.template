@@ -7,7 +7,7 @@
         "DefaultName" : "Elasticsearch",
         "Dependencies": [
             {
-                "TemplatePath": "networking/elb-subnets.template",
+                "TemplatePath": "networking/elb-subnets",
                 "Parameters": {
                     "VpcId": "VpcId"
                 },
@@ -17,7 +17,7 @@
                 }
             },
             {
-                "TemplatePath": "analytics/logs-store.template",
+                "TemplatePath": "analytics/logs-store",
                 "Resources": {
                     "CwlPolicy": "LinuxLogPolicy"
                 },

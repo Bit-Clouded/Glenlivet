@@ -7,7 +7,7 @@
         "DefaultName" : "NatSubnets",
         "Dependencies": [
             {
-                "TemplatePath": "networking/vpc.template",
+                "TemplatePath": "networking/vpc",
                 "Resources": {
                     "VpcId": "Vpc"
                 },
@@ -19,7 +19,7 @@
                 }
             },
             {
-                "TemplatePath": "networking/nat-gateway-subnets.template",
+                "TemplatePath": "networking/nat-gateway-subnets",
                 "Resources": {
                     "NatServerSubnet1": "Subnet1",
                     "NatServerSubnet2": "Subnet2",

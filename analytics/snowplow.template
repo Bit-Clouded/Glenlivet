@@ -4,7 +4,7 @@
         "DefaultName" : "Snowplow",
         "Dependencies": [
             {
-                "TemplatePath": "networking/vpc.template",
+                "TemplatePath": "networking/vpc",
                 "Resources": {
                     "ElbSg": "ElbSecGroup",
                     "ElbTargetSg": "ElbTargetSecGroup",
@@ -12,7 +12,7 @@
                 }
             },
             {
-                "TemplatePath": "networking/elb-subnets.template",
+                "TemplatePath": "networking/elb-subnets",
                 "Parameters": {
                     "VpcId": "VpcId"
                 },
@@ -23,7 +23,7 @@
                 "NestedDependency": "networking/vpc.template"
             },
             {
-                "TemplatePath": "analytics/logs-store.template",
+                "TemplatePath": "analytics/logs-store",
                 "Resources": {
                     "AccessLogBucket": "Raw",
                     "CwlPolicy": "LinuxLogPolicy"
@@ -34,7 +34,7 @@
                 }
             },
             {
-                "TemplatePath": "datastore/elasticsearch.template",
+                "TemplatePath": "datastore/elasticsearch",
                 "Resources": {
                     "EsHost": "EsElb"
                 }

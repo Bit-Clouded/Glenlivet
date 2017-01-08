@@ -7,7 +7,7 @@
         "DefaultName" : "MongoDb",
         "Dependencies": [
             {
-                "TemplatePath": "networking/nat-subnets.template",
+                "TemplatePath": "networking/nat-subnets",
                 "Parameters": {
                     "VpcId": "VpcId"
                 },
@@ -19,7 +19,7 @@
                 "NestedDependency": "networking/vpc.template"
             },
             {
-                "TemplatePath": "analytics/logs-store.template",
+                "TemplatePath": "analytics/logs-store",
                 "Resources": {
                     "CwlPolicy": "LinuxLogPolicy"
                 },

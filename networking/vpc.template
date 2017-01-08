@@ -7,7 +7,7 @@
         "DefaultName": "Vpc",
         "Dependencies": [
             {
-                "TemplatePath": "analytics/logs-store.template",
+                "TemplatePath": "analytics/logs-store",
                 "Resources": {
                     "FlowLogGroup": "VpcTrafficLog"
                 },

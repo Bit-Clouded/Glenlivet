@@ -7,7 +7,7 @@
         "DefaultName" : "ElbSubnets",
         "Dependencies": [
             {
-                "TemplatePath": "networking/vpc.template",
+                "TemplatePath": "networking/vpc",
                 "Resources": {
                     "VpcId": "Vpc"
                 },
@@ -19,14 +19,14 @@
                 }
             },
             {
-                "TemplatePath": "networking/public-out-subnets.template",
+                "TemplatePath": "networking/public-out-subnets",
                 "Resources": {
                     "PublicRouteTable": "RouteTable"
                 },
                 "NestedDependency": "networking/vpc.template"
             },
             {
-                "TemplatePath": "networking/nat-subnets.template",
+                "TemplatePath": "networking/nat-subnets",
                 "Resources": {
                     "NatEnabledRouteTable1": "RouteTable1",
                     "NatEnabledRouteTable2": "RouteTable2",

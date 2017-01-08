@@ -7,7 +7,7 @@
         "DefaultName" : "NatGateway",
         "Dependencies": [
             {
-                "TemplatePath": "networking/vpc.template",
+                "TemplatePath": "networking/vpc",
                 "Resources": {
                     "VpcId": "Vpc"
                 },
@@ -19,7 +19,7 @@
                 }
             },
             {
-                "TemplatePath": "networking/public-out-subnets.template",
+                "TemplatePath": "networking/public-out-subnets",
                 "Resources": {
                     "PublicRouteTable": "RouteTable"
                 },
