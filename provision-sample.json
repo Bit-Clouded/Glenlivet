@@ -1,55 +1,54 @@
 {
-    "Email": "string",
     "Tags": {},
     "Stacks": [
         {
             "StackName": "Temp-NatSubnets",
-            "TemplateUrl": "https://s3-ap-southeast-2.amazonaws.com/local-glenfiddichbase-publicbucket-1mmtghaeejx68/glenlivet/test/networking/nat-subnets.template"
+            "TemplatePath": "networking/nat-subnets"
         },
         {
             "StackName": "Temp-PublicSubnets",
-            "TemplateUrl": "https://s3-ap-southeast-2.amazonaws.com/local-glenfiddichbase-publicbucket-1mmtghaeejx68/glenlivet/test/networking/public-out-subnets.template"
+            "TemplatePath": "networking/public-out-subnets"
         },
         {
             "StackName": "Temp-Vpc",
-            "TemplateUrl": "https://s3-ap-southeast-2.amazonaws.com/local-glenfiddichbase-publicbucket-1mmtghaeejx68/glenlivet/test/networking/vpc.template"
+            "TemplatePath": "networking/vpc"
         },
         {
             "StackName": "Temp-NatGateway",
-            "TemplateUrl": "https://s3-ap-southeast-2.amazonaws.com/local-glenfiddichbase-publicbucket-1mmtghaeejx68/glenlivet/test/networking/nat-gateway-subnets.template"
+            "TemplatePath": "networking/nat-gateway-subnets"
         },
         {
             "StackName": "Temp-LogStore",
-            "TemplateUrl": "https://s3-ap-southeast-2.amazonaws.com/local-glenfiddichbase-publicbucket-1mmtghaeejx68/glenlivet/test/analytics/logs-store.template"
+            "TemplatePath": "analytics/logs-store"
         },
         {
             "StackName": "Temp-ElbSubnets",
-            "TemplateUrl": "https://s3-ap-southeast-2.amazonaws.com/local-glenfiddichbase-publicbucket-1mmtghaeejx68/glenlivet/test/networking/elb-subnets.template"
+            "TemplatePath": "networking/elb-subnets"
         },
         {
             "StackName": "Temp-PrivateSubnets",
-            "TemplateUrl": "https://s3-ap-southeast-2.amazonaws.com/local-glenfiddichbase-publicbucket-1mmtghaeejx68/glenlivet/test/networking/private-subnets.template"
+            "TemplatePath": "networking/private-subnets"
         },
         {
             "StackName": "Temp-WebServerSubnets",
-            "TemplateUrl": "https://s3-ap-southeast-2.amazonaws.com/local-glenfiddichbase-publicbucket-1mmtghaeejx68/glenlivet/test/networking/public-in-out-subnets.template"
+            "TemplatePath": "networking/public-in-out-subnets"
         },
         {
             "StackName": "Temp-MongoDB",
             "Parameters" : {"KeyName":"none-prod"},
-            "TemplateUrl": "https://s3-ap-southeast-2.amazonaws.com/local-glenfiddichbase-publicbucket-1mmtghaeejx68/glenlivet/test/datastore/mongodb.template"
+            "TemplatePath": "datastore/mongodb"
         },
         {
             "StackName": "Temp-Elasticsearch",
             "Parameters" : {"KeyPairName":"none-prod"},
-            "TemplateUrl": "https://s3-ap-southeast-2.amazonaws.com/local-glenfiddichbase-publicbucket-1mmtghaeejx68/glenlivet/test/datastore/elasticsearch.template"
+            "TemplatePath": "datastore/elasticsearch"
         },
         {
             "StackName": "Temp-Snowplow",
             "Parameters" : {"KeyPairName":"none-prod"},
-            "TemplateUrl": "https://s3-ap-southeast-2.amazonaws.com/local-glenfiddichbase-publicbucket-1mmtghaeejx68/glenlivet/test/analytics/snowplow.template"
+            "TemplatePath": "analytics/snowplow"
         }
     ],
-    "RootTemplateUrl": "https://s3-ap-southeast-2.amazonaws.com/local-glenfiddichbase-publicbucket-1mmtghaeejx68/glenlivet/test/networking/elb-subnets.template",
+    "RootTemplatePath": "networking/elb-subnets",
     "Region": "ap-northeast-2"
 }
