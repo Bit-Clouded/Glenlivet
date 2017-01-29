@@ -1,5 +1,30 @@
 {
     "AWSTemplateFormatVersion": "2010-09-09",
+    "Metadata" : {
+        "DefaultName" : "Mesosphere",
+        "Dependencies": [
+            {
+                "TemplatePath": "networking/private-subnets",
+                "Resources": {
+                    "DbSubnetGroup": "RdsSubnetGroup"
+                }
+            },
+            {
+                "TemplatePath": "networking/vpc"
+            },
+            {
+                "TemplatePath": "networking/elb-subnets",
+                "Parameters": {
+                    "VpcId": "VpcId"
+                },
+                "Outputs": {
+                    "ElbSubnets": "ElbSubnets",
+                    "WebServerSubnets": "WebServerSubnets"
+                },
+                "NestedDependency": "networking/vpc"
+            }
+        ]
+    },
     "Parameters": {
         "KeyPairName": {
             "Description": "Name of an existing EC2 KeyPair to enable SSH access to the instances",

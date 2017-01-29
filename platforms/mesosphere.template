@@ -1,38 +1,61 @@
 {
   "AWSTemplateFormatVersion": "2010-09-09",
+    "Metadata" : {
+        "DefaultName" : "Mesosphere",
+        "Dependencies": [
+            {
+                "TemplatePath": "networking/vpc",
+                "Resources": {
+                    "ElbSg": "ElbSecGroup",
+                    "ElbTargetSg": "ElbTargetSecGroup",
+                    "HttpSg": "HttpNsSecGroup"
+                }
+            },
+            {
+                "TemplatePath": "networking/elb-subnets",
+                "Parameters": {
+                    "VpcId": "VpcId"
+                },
+                "Outputs": {
+                    "ElbSubnets": "ElbSubnets",
+                    "WebServerSubnets": "WebServerSubnets"
+                },
+                "NestedDependency": "networking/vpc.template"
+            },
+            {
+                "TemplatePath": "analytics/logs-store",
+                "Resources": {
+                    "AccessLogBucket": "Raw",
+                    "CwlPolicy": "LinuxLogPolicy"
+                },
+                "Outputs": {
+                    "CwlLinuxParams": "LxDockerLogParams",
+                    "CwlDockerParams": "DockerCwlParams"
+                }
+            },
+            {
+                "TemplatePath": "datastore/elasticsearch",
+                "Resources": {
+                    "EsHost": "EsElb"
+                }
+            }
+        ]
+    },
   "Parameters": {
     "VpcId": {
         "Description" : "VPCid associated with the subnets. [elb-subnets.parameters.VpcId]",
         "Type": "AWS::EC2::VPC::Id"
     },
 
-    "ServerSubnet1Id": {
-        "Description" : "Subnet to run HA web cluster on. [elb-subnets.resources.PvtWebSubnet1]",
-        "Type": "AWS::EC2::Subnet::Id"
+    "ElbSubnets": {
+        "Description" : "Subnet to run HA web cluster on. [elb-subnets.outputs.ElbSubnets]",
+        "Type": "List<AWS::EC2::Subnet::Id>"
     },
-    "ServerSubnet2Id": {
-        "Description" : "Subnet to run HA web cluster on. [elb-subnets.resources.PvtWebSubnet2]",
-        "Type": "AWS::EC2::Subnet::Id"
-    },
-    "ServerSubnet3Id": {
-        "Description" : "Subnet to run HA web cluster on. [elb-subnets.resources.PvtWebSubnet3]",
-        "Type": "String",
-        "Default": ""
+    "WebServerSubnets": {
+        "Description" : "Subnet to run HA web cluster on. [elb-subnets.outputs.WebServerSubnets]",
+        "Type": "List<AWS::EC2::Subnet::Id>"
     },
 
-    "ElbSubnet1Id": {
-        "Description" : "Subnet to run HA web cluster on. [elb-subnets.resources.ElbSubnet1]",
-        "Type": "AWS::EC2::Subnet::Id"
-    },
-    "ElbSubnet2Id": {
-        "Description" : "Subnet to run HA web cluster on. [elb-subnets.resources.ElbSubnet2]",
-        "Type": "AWS::EC2::Subnet::Id"
-    },
-    "ElbSubnet3Id": {
-        "Description" : "Subnet to run HA web cluster on. [elb-subnets.resources.ElbSubnet3]",
-        "Type": "String",
-        "Default": ""
-    },
     "SlaveInstanceCount": {
       "Description": "Required: Specify the number of private agent nodes or accept the default.",
       "Default": "2",
@@ -155,10 +178,7 @@
             "InstanceProtocol": "TCP"
           }
         ],
-        "Subnets": [
-          { "Ref": "ElbSubnet1Id" },
-          { "Ref": "ElbSubnet2Id" }
-        ]
+        "Subnets": { "Ref": "ElbSubnets" }
       }
     },
     "ExhibitorS3Bucket": {
@@ -231,10 +251,7 @@
             "InstanceProtocol": "HTTP"
           }
         ],
-        "Subnets": [
-          { "Ref": "ElbSubnet1Id" },
-          { "Ref": "ElbSubnet2Id" }
-        ]
+        "Subnets": { "Ref": "ElbSubnets" }
       }
     },
     "LbSecurityGroup": {
@@ -809,10 +826,7 @@
             "Ref": "InternalMasterLoadBalancer"
           }
         ],
-        "VPCZoneIdentifier": [
-          { "Ref": "ServerSubnet1Id" },
-          { "Ref": "ServerSubnet2Id" }
-        ],
+        "VPCZoneIdentifier": { "Ref": "WebServerSubnets" },
         "MinSize": 3
       },
       "CreationPolicy": {
@@ -1327,10 +1341,7 @@
             "InstanceProtocol": "TCP"
           }
         ],
-        "Subnets": [
-          { "Ref": "ElbSubnet1Id" },
-          { "Ref": "ElbSubnet2Id" }
-        ]
+        "Subnets": { "Ref": "ElbSubnets" }
       }
     },
     "PublicSlaveSecurityGroup": {
@@ -1366,10 +1377,7 @@
             "Ref": "PublicSlaveLoadBalancer"
           }
         ],
-        "VPCZoneIdentifier": [
-          { "Ref": "ServerSubnet1Id" },
-          { "Ref": "ServerSubnet2Id" }
-        ],
+        "VPCZoneIdentifier": { "Ref": "WebServerSubnets" },
         "MinSize": {
           "Ref": "PublicSlaveInstanceCount"
         }
@@ -1901,10 +1909,7 @@
             "Value": "mesos-slave"
           }
         ],
-        "VPCZoneIdentifier": [
-          { "Ref": "ServerSubnet1Id" },
-          { "Ref": "ServerSubnet2Id" }
-        ],
+        "VPCZoneIdentifier": { "Ref": "WebServerSubnets" },
         "MinSize": {
           "Ref": "SlaveInstanceCount"
         }

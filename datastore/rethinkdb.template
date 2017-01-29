@@ -4,7 +4,31 @@
     "Description" : "RethinkDB Cluster",
 
     "Metadata" : {
-        "DefaultName" : "RethinkDb"
+        "DefaultName" : "RethinkDb",
+        "Dependencies": [
+            {
+                "TemplatePath": "networking/nat-subnets",
+                "Parameters": {
+                    "VpcId": "VpcId"
+                },
+                "Resources": {
+                    "Subnet1Id": "Subnet1",
+                    "Subnet2Id": "Subnet2",
+                    "Subnet3Id": "Subnet3"
+                },
+                "NestedDependency": "networking/vpc.template"
+            },
+            {
+                "TemplatePath": "analytics/logs-store",
+                "Resources": {
+                    "CwlPolicy": "LinuxLogPolicy"
+                },
+                "Outputs": {
+                    "CwlLinuxParams": "LxDockerLogParams",
+                    "CwlDockerParams": "DockerCwlParams"
+                }
+            }
+        ]
     },
 
     "Parameters" : {

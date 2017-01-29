@@ -4,8 +4,48 @@
     "Description": "Kong CloudFormation template.Template creates load balanced Kong instances with Postgres RDS instance in a new VPC",
 
     "Metadata" : {
-        "DefaultName" : "Kong"
+        "DefaultName" : "Kong",
+        "Dependencies": [
+            {
+                "TemplatePath": "networking/private-subnets",
+                "Resources": {
+                    "DbSubnetGroup": "RdsSubnetGroup"
+                },
+                "NestedDependency": "networking/vpc.template"
+            },
+            {
+                "TemplatePath": "networking/vpc",
+                "Resources": {
+                    "ElbSg": "ElbSecGroup",
+                    "ElbTargetSg": "ElbTargetSecGroup",
+                    "HttpSg": "HttpNsSecGroup"
+                }
+            },
+            {
+                "TemplatePath": "networking/elb-subnets",
+                "Parameters": {
+                    "VpcId": "VpcId"
+                },
+                "Outputs": {
+                    "ElbSubnets": "ElbSubnets",
+                    "WebServerSubnets": "WebServerSubnets"
+                },
+                "NestedDependency": "networking/vpc.template"
+            },
+            {
+                "TemplatePath": "analytics/logs-store",
+                "Resources": {
+                    "AccessLogBucket": "Raw",
+                    "CwlPolicy": "LinuxLogPolicy"
+                },
+                "Outputs": {
+                    "CwlLinuxParams": "LxDockerLogParams",
+                    "CwlDockerParams": "DockerCwlParams"
+                }
+            }
+        ]
     },
+
 
     "Parameters": {
 		"DebianJsAmiId": {

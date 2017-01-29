@@ -1,5 +1,47 @@
 {
     "AWSTemplateFormatVersion" : "2010-09-09",
+    "Metadata" : {
+        "DefaultName" : "JoomlaOnEcs",
+        "Dependencies": [
+            {
+                "TemplatePath": "networking/vpc",
+                "Resources": {
+                    "ElbSg": "ElbSecGroup",
+                    "HttpSg": "HttpNsSecGroup"
+                }
+            },
+            {
+                "TemplatePath": "networking/elb-subnets",
+                "Parameters": {
+                    "VpcId": "VpcId"
+                },
+                "Outputs": {
+                    "ElbSubnets": "ElbSubnets"
+                },
+                "NestedDependency": "networking/vpc.template"
+            },
+            {
+                "TemplatePath": "platforms/ecs-app-base",
+                "Parameters": {
+                    "DbName": "DbName",
+                    "DbUsername": "DbUsername"
+                },
+                "Resources": {
+                    "TaskRole": "TaskRole",
+                    "EcsServiceRole": "EcsServiceRole"
+                },
+                "Outputs": {
+                    "DatabaseEndpointAddress": "DatabaseEndpointAddress"
+                }
+            },
+            {
+                "TemplatePath": "platforms/ecs-base",
+                "Resources": {
+                    "EcsCluster": "EcsCluster"
+                }
+            }
+        ]
+    },
     "Parameters" : {
         "VpcId": {
             "Description" : "VPCid associated with the subnets. [elb-subnets.parameters.VpcId]",
@@ -18,7 +60,7 @@
             "Type": "String"
         },
         "ElbSubnets" : {
-            "Description" : "VPCid associated with the subnets. [ecs-base.parameters.ElbSubnets]",
+            "Description" : "VPCid associated with the subnets. [elb-subnets.outputs.ElbSubnets]",
             "Type": "List<AWS::EC2::Subnet::Id>"
         },
         "TaskRole" : {

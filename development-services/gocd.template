@@ -4,7 +4,37 @@
 	"Description": "A template to launch GoCD build servers.",
 
 	"Metadata" : {
-        "DefaultName" : "GoCD"
+        "DefaultName" : "GoCD",
+        "Dependencies": [
+            {
+                "TemplatePath": "networking/vpc",
+                "Resources": {
+                    "ElbSg": "ElbSecGroup",
+                    "ElbTargetSg": "ElbTargetSecGroup",
+                    "HttpSg": "HttpNsSecGroup"
+                }
+            },
+            {
+                "TemplatePath": "networking/elb-subnets",
+                "Resources": {
+                    "VpcId": "VpcId",
+                    "ElbSubnets": "ElbSubnets",
+                    "ServerSubnets": "WebServerSubnets"
+                },
+                "NestedDependency": "networking/vpc"
+            },
+            {
+                "TemplatePath": "analytics/logs-store",
+                "Resources": {
+                    "CwlPolicy": "LinuxLogPolicy",
+                    "RawLogBucket": "Raw"
+                },
+                "Outputs": {
+                    "CwlLinuxParams": "LxDockerLogParams",
+                    "CwlDockerParams": "DockerCwlParams"
+                }
+            }
+        ]
     },
 
 	"Parameters": {

@@ -1,17 +1,34 @@
 {
     "AWSTemplateFormatVersion" : "2010-09-09",
+    "Metadata" : {
+        "DefaultName" : "EcsAppBase",
+        "Dependencies": [
+            {
+                "TemplatePath": "networking/private-subnets",
+                "Resources": {
+                    "DbSubnetGroup": "RdsSubnetGroup"
+                },
+                "NestedDependency": "networking/vpc"
+            },
+            {
+                "TemplatePath": "platforms/ecs-base",
+                "Resources": {
+                    "Ec2Role": "Ec2Role",
+                    "ElbSubnets": "ElbSubnets",
+                    "DatabaseSg": "DatabaseSg",
+                    "EcsCluster": "EcsCluster"
+                },
+                "NestedDependency": "networking/vpc"
+            },
+            {
+                "TemplatePath": "networking/vpc"
+            }
+        ]
+    },
     "Parameters" : {
         "EcsCluster": {
             "Type": "String",
             "Description": "[ecs-base.resources.EcsCluster]"
-        },
-        "ElbSg" : {
-            "Description": "Elb Security Group. [vpc.resources.ElbSecGroup]",
-            "Type": "String"
-        },
-        "HttpSg" : {
-            "Description": "Elb Target Security Group. [vpc.resources.HttpNsSecGroup]",
-            "Type": "String"
         },
         "ElbSubnets" : {
             "Description" : "VPCid associated with the subnets. [ecs-base.parameters.ElbSubnets]",
@@ -198,8 +215,15 @@
                         ]]}]
                     }]
                 },
-                "Roles" : [{ "Ref" : "Ec2Role" }]
+                "Roles" : [{ "Ref" : "TaskRole" }],
+                "Users" : [{"Ref":"WpUserServiceAccount"}]
             }
+        },
+        "WpUserServiceAccount" : {
+            "Type" : "AWS::IAM::User",
+			"Properties" : {
+				"Path" : "/platforms/ecs-app-abase/"
+			}
         }
     },
     "Outputs" : {

@@ -1,5 +1,27 @@
 {
     "AWSTemplateFormatVersion" : "2010-09-09",
+    "Metadata" : {
+        "DefaultName" : "EcsClusterBase",
+        "Dependencies": [
+            {
+                "TemplatePath": "networking/vpc",
+                "Resources": {
+                    "ElbTargetSg": "ElbTargetSecGroup"
+                }
+            },
+            {
+                "TemplatePath": "networking/elb-subnets",
+                "Parameters": {
+                    "VpcId": "VpcId"
+                },
+                "Outputs": {
+                    "ElbSubnets": "ElbSubnets",
+                    "WebServerSubnets": "WebServerSubnets"
+                },
+                "NestedDependency": "networking/vpc.template"
+            }
+        ]
+    },
     "Parameters" : {
         "KeyPairName": {
             "Type": "AWS::EC2::KeyPair::KeyName",
