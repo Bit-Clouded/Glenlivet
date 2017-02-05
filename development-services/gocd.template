@@ -16,8 +16,10 @@
             },
             {
                 "TemplatePath": "networking/elb-subnets",
-                "Resources": {
-                    "VpcId": "VpcId",
+				"Parameters" : {
+                    "VpcId": "VpcId"
+				},
+                "Outputs": {
                     "ElbSubnets": "ElbSubnets",
                     "ServerSubnets": "WebServerSubnets"
                 },
@@ -96,7 +98,7 @@
 			"ConstraintDescription" : "must be a valid EC2 instance type."
 		},
 
-		"WindowsAgentAmi": {
+		"WindowsContainerAmiId": {
 			"Description": "AMI to use for windows build agent.",
 			"Type": "String"
 		},
@@ -328,7 +330,7 @@
 			"Type" : "AWS::AutoScaling::LaunchConfiguration",
 			"Properties": {
 				"InstanceType" : { "Ref" : "AgentInstanceType" },
-				"ImageId" : { "Ref" : "WindowsAgentAmi" },
+				"ImageId" : { "Ref" : "WindowsContainerAmiId" },
 				"IamInstanceProfile" : {"Ref":"WebServersInstanceProfile"},
 				"KeyName" : { "Ref" : "KeyPairName" },
 				"SecurityGroups": [

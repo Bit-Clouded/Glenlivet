@@ -7,12 +7,7 @@
         "DefaultName" : "AwsLogstash",
         "Dependencies": [
             {
-                "TemplatePath": "networking/vpc",
-                "Resources": {
-                    "ElbSg": "ElbSecGroup",
-                    "ElbTargetSg": "ElbTargetSecGroup",
-                    "HttpSg": "HttpNsSecGroup"
-                }
+                "TemplatePath": "networking/vpc"
             },
             {
                 "TemplatePath": "networking/nat-subnets",
@@ -28,11 +23,11 @@
                 "TemplatePath": "analytics/logs-store",
                 "Resources": {
                     "LogStream": "LogStream",
-                    "VpcTrafficLogGroupName": "VpcTrafficLogGroupName",
-                    "CloudTrailLogGroupName": "CloudTrailLogGroupName",
-                    "LinuxDockerLogGroupName": "LinuxDockerLogGroupName",
-                    "LinuxSysLogGroupName": "LinuxSysLogGroupName",
-                    "LinuxAuthLogGroupName": "LinuxAuthLogGroupName",
+                    "VpcTrafficLogGroupName": "VpcTrafficLog",
+                    "CloudTrailLogGroupName": "GlobalCloudTrailLog",
+                    "LinuxDockerLogGroupName": "LxDockerLog",
+                    "LinuxSysLogGroupName": "LxSysLog",
+                    "LinuxAuthLogGroupName": "LxAuthLog",
                     "RawLogBucketName": "Raw",
                     "RawLogSns": "RawBucketNotification",
                     "AccessS3LogBucketName": "AccessS3Log",

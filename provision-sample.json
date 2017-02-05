@@ -84,14 +84,24 @@
             "Parameters" : {"DbName":"joomla"},
             "TemplatePath": "hosting/ecs-joomla"
         },
+        // {
+        //     "StackName": "Temp-Phabricator",
+        //     "Parameters" : {
+        //         "KeyPairName":"none-prod",
+        //         "PhabMailAddress":"no-reply@bit-clouded.io",
+        //         "Hostname":"phabricator.bit-clouded.io"
+        //     },
+        //     "TemplatePath": "development-services/phabricator"
+        // },
         {
-            "StackName": "Temp-Phabricator",
-            "Parameters" : {
-                "KeyPairName":"none-prod",
-                "PhabMailAddress":"no-reply@bit-clouded.io",
-                "Hostname":"phabricator.bit-clouded.io"
-            },
-            "TemplatePath": "development-services/phabricator"
+            "StackName": "Temp-Jenkins",
+            "Parameters" : {"KeyPairName":"none-prod"},
+            "TemplatePath": "development-services/jenkins"
+        },
+        {
+            "StackName": "Temp-Gocd",
+            "Parameters" : {"KeyPairName":"none-prod"},
+            "TemplatePath": "development-services/gocd"
         },
         {
             "StackName": "Temp-Kong",

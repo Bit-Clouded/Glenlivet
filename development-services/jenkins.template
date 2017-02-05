@@ -16,10 +16,12 @@
             },
             {
                 "TemplatePath": "networking/elb-subnets",
+				"Parameters" : {
+                    "VpcId": "VpcId"
+				},
                 "Resources": {
-                    "VpcId": "VpcId",
-                    "ElbSubnets": "ElbSubnets",
-                    "ServerSubnets": "WebServerSubnets"
+                    "ElbSubnet1Id": "ElbSubnet1",
+                    "PvtSubnet1Id": "PvtWebSubnet1"
                 },
                 "NestedDependency": "networking/vpc"
             },
@@ -103,12 +105,8 @@
 			],
 			"ConstraintDescription" : "must be a valid EC2 instance type."
 		},
-		"WindowsAgentAmi": {
+		"WindowsContainerAmiId": {
 			"Description": "AMI to use for windows build agent.",
-			"Type": "String"
-		},
-		"LinuxAgentAmi": {
-			"Description": "AMI to use for linux build agent.",
 			"Type": "String"
 		},
 		
@@ -149,10 +147,6 @@
 		},
 		"PvtSubnet1Id": {
 			"Description" : "Subnet to run HA web cluster on. [elb-subnets.resources.PvtWebSubnet1]",
-			"Type": "String"
-		},
-		"TemplateBaseUrl": {
-			"Description" : "Additional resources are expected from this url; pom.xml",
 			"Type": "String"
 		},
 
@@ -385,7 +379,7 @@
 			"Type" : "AWS::AutoScaling::LaunchConfiguration",
 			"Properties": {
 				"InstanceType" : { "Ref" : "AgentInstanceType" },
-				"ImageId" : { "Ref" : "WindowsAgentAmi" },
+				"ImageId" : { "Ref" : "WindowsContainerAmiId" },
 				"IamInstanceProfile" : {"Ref":"WebServersInstanceProfile"},
 				"KeyName" : { "Ref" : "KeyPairName" },
 				"SecurityGroups": [
@@ -418,7 +412,7 @@
 			"Type" : "AWS::AutoScaling::LaunchConfiguration",
 			"Properties": {
 				"InstanceType" : { "Ref" : "AgentInstanceType" },
-				"ImageId" : { "Ref" : "LinuxAgentAmi" },
+				"ImageId" : { "Ref" : "DebianJsAmiId" },
 				"IamInstanceProfile" : {"Ref":"WebServersInstanceProfile"},
 				"KeyName" : { "Ref" : "KeyPairName" },
 				"SecurityGroups": [
