@@ -1,0 +1,344 @@
+{
+    "AWSTemplateFormatVersion": "2010-09-09",
+    "Metadata" : {
+        "DefaultName" : "JoomlaOnEcs",
+        "Dependencies": [
+            {
+                "TemplatePath": "networking/vpc",
+                "Resources": {
+                    "ElbSg": "ElbSecGroup",
+                    "HttpSg": "HttpNsSecGroup"
+                }
+            },
+            {
+                "TemplatePath": "networking/elb-subnets",
+                "Parameters": {
+                    "VpcId": "VpcId"
+                },
+                "Outputs": {
+                    "ElbSubnets": "ElbSubnets"
+                },
+                "NestedDependency": "networking/vpc"
+            },
+            {
+                "TemplatePath": "platforms/ecs-app-base",
+                "Parameters": {
+                    "DbName": "DbName",
+                    "DbUsername": "DbUsername"
+                },
+                "Resources": {
+                    "TaskRole": "TaskRole",
+                    "EcsServiceRole": "EcsServiceRole"
+                },
+                "Outputs": {
+                    "DatabaseEndpointAddress": "DatabaseEndpointAddress"
+                }
+            },
+            {
+                "TemplatePath": "platforms/ecs-base",
+                "Resources": {
+                    "EcsCluster": "EcsCluster"
+                }
+            },
+            {
+                "TemplatePath": "analytics/logs-store",
+                "Resources": {
+                    "LxDockerLog": "LxDockerLog"
+                }
+            }
+        ]
+    },
+    "Parameters" : {
+        "VpcId": {
+            "Description" : "VPCid associated with the subnets. [elb-subnets.parameters.VpcId]",
+            "Type": "AWS::EC2::VPC::Id"
+        },
+        "EcsCluster": {
+            "Type": "String",
+            "Description": "[ecs-base.resources.EcsCluster]"
+        },
+        "ElbSg" : {
+            "Description": "Elb Security Group. [vpc.resources.ElbSecGroup]",
+            "Type": "String"
+        },
+        "HttpSg" : {
+            "Description": "Elb Target Security Group. [vpc.resources.HttpNsSecGroup]",
+            "Type": "String"
+        },
+        "ElbSubnets" : {
+            "Description" : "VPCid associated with the subnets. [ecs-base.parameters.ElbSubnets]",
+            "Type": "List<AWS::EC2::Subnet::Id>"
+        }
+    },
+    "Resources": {
+        "taskdefinition": {
+            "Type": "AWS::ECS::TaskDefinition",
+            "Properties": {
+                "ContainerDefinitions": [
+                    {
+                        "Name": "windows_sample_app",
+                        "Cpu": "100",
+                        "Essential": "true",
+                        "Image": "microsoft/iis",
+                        "Memory": "500",
+                        "EntryPoint": [
+                            "powershell",
+                            "-Command"
+                        ],
+                        "Command": [
+                            "New-Item -Path C:\\inetpub\\wwwroot\\index.html -Type file -Value '<html> <head> <title>Amazon ECS Sample App</title> <style>body {margin-top: 40px; background-color: #333;} </style> </head><body> <div style=color:white;text-align:center> <h1>Amazon ECS Sample App</h1> <h2>Congratulations!</h2> <p>Your application is now running on a container in Amazon ECS.</p>'; C:\\ServiceMonitor.exe w3svc"
+                        ],
+                        "PortMappings": [
+                            {
+                                "ContainerPort": 80
+                            }
+                        ]
+                    }
+                ]
+            }
+        },
+        "ECSALB": {
+            "Type": "AWS::ElasticLoadBalancingV2::LoadBalancer",
+            "Properties": {
+                "Name": "ECSALB",
+                "Scheme": "internet-facing",
+                "LoadBalancerAttributes": [
+                    {
+                        "Key": "idle_timeout.timeout_seconds",
+                        "Value": "30"
+                    }
+                ],
+                "Subnets": { "Ref": "ElbSubnets" },
+                "SecurityGroups": [
+                    { "Ref": "ElbSg" },
+                    { "Ref": "HttpSg" }
+                ]
+            }
+        },
+        "ALBListener": {
+            "Type": "AWS::ElasticLoadBalancingV2::Listener",
+            "DependsOn": "ECSServiceRole",
+            "Properties": {
+                "DefaultActions": [
+                    {
+                        "Type": "forward",
+                        "TargetGroupArn": { "Ref": "ECSTargetGroup" }
+                    }
+                ],
+                "LoadBalancerArn": { "Ref": "ECSALB" },
+                "Port": "80",
+                "Protocol": "HTTP"
+            }
+        },
+        "ECSALBListenerRule": {
+            "Type": "AWS::ElasticLoadBalancingV2::ListenerRule",
+            "DependsOn": "ALBListener",
+            "Properties": {
+                "Actions": [
+                    {
+                        "Type": "forward",
+                        "TargetGroupArn": { "Ref": "ECSTargetGroup" }
+                    }
+                ],
+                "Conditions": [
+                    {
+                        "Field": "path-pattern",
+                        "Values": [
+                            "/"
+                        ]
+                    }
+                ],
+                "ListenerArn": { "Ref": "ALBListener" },
+                "Priority": 1
+            }
+        },
+        "ECSTargetGroup": {
+            "Type": "AWS::ElasticLoadBalancingV2::TargetGroup",
+            "DependsOn": "ECSALB",
+            "Properties": {
+                "HealthCheckIntervalSeconds": 10,
+                "HealthCheckPath": "/",
+                "HealthCheckProtocol": "HTTP",
+                "HealthCheckTimeoutSeconds": 5,
+                "HealthyThresholdCount": 2,
+                "Name": "ECSTargetGroup",
+                "Port": 80,
+                "Protocol": "HTTP",
+                "UnhealthyThresholdCount": 2,
+                "VpcId": { "Ref": "VpcId" }
+            }
+        },
+        "service": {
+            "Type": "AWS::ECS::Service",
+            "DependsOn": "ALBListener",
+            "Properties": {
+                "Cluster": { "Ref": "EcsCluster" },
+                "DesiredCount": "1",
+                "LoadBalancers": [
+                    {
+                        "ContainerName": "windows_sample_app",
+                        "ContainerPort": "80",
+                        "TargetGroupArn": { "Ref": "ECSTargetGroup" }
+                    }
+                ],
+                "Role": { "Ref": "ECSServiceRole" },
+                "TaskDefinition": { "Ref": "taskdefinition" }
+            }
+        },
+        "ECSServiceRole": {
+            "Type": "AWS::IAM::Role",
+            "Properties": {
+                "AssumeRolePolicyDocument": {
+                    "Statement": [
+                        {
+                            "Effect": "Allow",
+                            "Principal": {
+                                "Service": [
+                                    "ecs.amazonaws.com"
+                                ]
+                            },
+                            "Action": [
+                                "sts:AssumeRole"
+                            ]
+                        }
+                    ]
+                },
+                "Path": "/",
+                "Policies": [
+                    {
+                        "PolicyName": "ecs-service",
+                        "PolicyDocument": {
+                            "Statement": [
+                                {
+                                    "Effect": "Allow",
+                                    "Action": [
+                                        "elasticloadbalancing:DeregisterInstancesFromLoadBalancer",
+                                        "elasticloadbalancing:DeregisterTargets",
+                                        "elasticloadbalancing:Describe*",
+                                        "elasticloadbalancing:RegisterInstancesWithLoadBalancer",
+                                        "elasticloadbalancing:RegisterTargets",
+                                        "ec2:Describe*",
+                                        "ec2:AuthorizeSecurityGroupIngress"
+                                    ],
+                                    "Resource": "*"
+                                }
+                            ]
+                        }
+                    }
+                ]
+            }
+        },
+        "ServiceScalingTarget": {
+            "Type": "AWS::ApplicationAutoScaling::ScalableTarget",
+            "DependsOn": "service",
+            "Properties": {
+                "MaxCapacity": 2,
+                "MinCapacity": 1,
+                "ResourceId": {
+                    "Fn::Join": ["", [
+                            "service/",
+                            { "Ref": "EcsCluster" },
+                            "/",
+                            {
+                                "Fn::GetAtt": [
+                                    "service",
+                                    "Name"
+                                ]
+                            }
+                        ]
+                    ]
+                },
+                "RoleARN": {
+                    "Fn::GetAtt": [
+                        "AutoscalingRole",
+                        "Arn"
+                    ]
+                },
+                "ScalableDimension": "ecs:service:DesiredCount",
+                "ServiceNamespace": "ecs"
+            }
+        },
+        "ServiceScalingPolicy": {
+            "Type": "AWS::ApplicationAutoScaling::ScalingPolicy",
+            "Properties": {
+                "PolicyName": "AStepPolicy",
+                "PolicyType": "StepScaling",
+                "ScalingTargetId": { "Ref": "ServiceScalingTarget" },
+                "StepScalingPolicyConfiguration": {
+                    "AdjustmentType": "PercentChangeInCapacity",
+                    "Cooldown": 60,
+                    "MetricAggregationType": "Average",
+                    "StepAdjustments": [
+                        {
+                            "MetricIntervalLowerBound": 0,
+                            "ScalingAdjustment": 200
+                        }
+                    ]
+                }
+            }
+        },
+        "ALB500sAlarmScaleUp": {
+            "Type": "AWS::CloudWatch::Alarm",
+            "Properties": {
+                "EvaluationPeriods": "1",
+                "Statistic": "Average",
+                "Threshold": "10",
+                "AlarmDescription": "Alarm if our ALB generates too many HTTP 500s.",
+                "Period": "60",
+                "AlarmActions": [
+                    { "Ref": "ServiceScalingPolicy" }
+                ],
+                "Namespace": "AWS/ApplicationELB",
+                "Dimensions": [
+                    {
+                        "Name": "ECSService",
+                        "Value": { "Ref": "service" }
+                    }
+                ],
+                "ComparisonOperator": "GreaterThanThreshold",
+                "MetricName": "HTTPCode_ELB_5XX_Count"
+            }
+        },
+        "AutoscalingRole": {
+            "Type": "AWS::IAM::Role",
+            "Properties": {
+                "AssumeRolePolicyDocument": {
+                    "Statement": [
+                        {
+                            "Effect": "Allow",
+                            "Principal": {
+                                "Service": [
+                                    "application-autoscaling.amazonaws.com"
+                                ]
+                            },
+                            "Action": [
+                                "sts:AssumeRole"
+                            ]
+                        }
+                    ]
+                },
+                "Path": "/",
+                "Policies": [
+                    {
+                        "PolicyName": "service-autoscaling",
+                        "PolicyDocument": {
+                            "Statement": [
+                                {
+                                    "Effect": "Allow",
+                                    "Action": [
+                                        "application-autoscaling:*",
+                                        "cloudwatch:DescribeAlarms",
+                                        "cloudwatch:PutMetricAlarm",
+                                        "ecs:DescribeServices",
+                                        "ecs:UpdateService"
+                                    ],
+                                    "Resource": "*"
+                                }
+                            ]
+                        }
+                    }
+                ]
+            }
+        }
+    }
+}
