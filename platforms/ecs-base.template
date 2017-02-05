@@ -16,9 +16,15 @@
                 },
                 "Outputs": {
                     "ElbSubnets": "ElbSubnets",
-                    "WebServerSubnets": "WebServerSubnets"
+                    "ServerSubnets": "WebServerSubnets"
                 },
-                "NestedDependency": "networking/vpc.template"
+                "NestedDependency": "networking/vpc"
+            },
+            {
+                "TemplatePath": "analytics/logs-store",
+                "Resources": {
+                    "DiagnosticsMp": "LinuxLogPolicy"
+                }
             }
         ]
     },
@@ -63,6 +69,10 @@
         "EcsAmiId" : {
             "Description" : "ECS Optimised AMI.",
             "Type" : "AWS::EC2::Image::Id"
+        },
+        "DiagnosticsMp" : {
+            "Description" : "",
+            "Type" : "String"
         }
     },
 
@@ -192,14 +202,13 @@
                                 "ecs:Poll",
                                 "ecs:RegisterContainerInstance",
                                 "ecs:StartTelemetrySession",
-                                "ecs:Submit*",
-                                "logs:CreateLogStream",
-                                "logs:PutLogEvents"
+                                "ecs:Submit*"
                             ],
                             "Resource": "*"
                         }]
                     }
-                }]
+                }],
+                "ManagedPolicyArns": [{"Ref":"DiagnosticsMp"}]
             }
         },
         "Ec2InstanceProfile": {

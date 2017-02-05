@@ -19,7 +19,7 @@
                 },
                 "Outputs": {
                     "ElbSubnets": "ElbSubnets",
-                    "WebServerSubnets": "WebServerSubnets"
+                    "ServerSubnets": "WebServerSubnets"
                 },
                 "NestedDependency": "networking/vpc"
             }
@@ -71,6 +71,7 @@
         "DbPassword" : {
             "Description" : "MariaDB server password",
             "Type" : "String",
+            "Default" : "Password1234",
             "NoEcho" : "True"
         },
         "DbSnapshot" : {

@@ -145,7 +145,7 @@
             "DependsOn":"HttpGateway",
             "Properties":{
                 "HealthCheckIntervalSeconds":30,
-                "HealthCheckPath":"/",
+                "HealthCheckPath":"/media/jui/images/ajax-loader.gif",
                 "HealthCheckProtocol":"HTTP",
                 "HealthCheckTimeoutSeconds":5,
                 "HealthyThresholdCount":10,
@@ -172,7 +172,7 @@
                         { "Name" : "JOOMLA_DB_NAME", "Value" : {"Ref":"DbName"} }
                     ],
                     "PortMappings": [
-                        { "HostPort": 80, "ContainerPort": 80 }
+                        { "ContainerPort": 80 }
                     ]
                 }],
                 "TaskRoleArn": {"Ref":"TaskRole"}

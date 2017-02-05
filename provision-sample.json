@@ -47,8 +47,58 @@
             "StackName": "Temp-Snowplow",
             "Parameters" : {"KeyPairName":"none-prod"},
             "TemplatePath": "analytics/snowplow"
+        },
+        {
+            "StackName": "Temp-EcsBaseCluster",
+            "Parameters" : {
+                "KeyPairName":"none-prod"
+            },
+            "TemplatePath": "platforms/ecs-base"
+        },
+        {
+            "StackName": "Temp-EcsCmsBase",
+            "TemplatePath": "platforms/ecs-app-base"
+        },
+        {
+            "StackName": "Temp-Mesosphere",
+            "Parameters" : {"KeyName":"none-prod"},
+            "TemplatePath": "platforms/mesosphere"
+        },
+        {
+            "StackName": "Temp-Rancheros",
+            "Parameters" : {"KeyPairName":"none-prod"},
+            "TemplatePath": "platforms/rancheros"
+        },
+        {
+            "StackName": "Temp-AwsLogstash",
+            "Parameters" : {"KeyPairName":"none-prod"},
+            "TemplatePath": "analytics/aws-logstash"
+        },
+        {
+            "StackName": "Temp-EcsWordpress",
+            "Parameters" : {"DbName":"wordpress"},
+            "TemplatePath": "hosting/ecs-wordpress"
+        },
+        {
+            "StackName": "Temp-EcsJoomla",
+            "Parameters" : {"DbName":"joomla"},
+            "TemplatePath": "hosting/ecs-joomla"
+        },
+        {
+            "StackName": "Temp-Phabricator",
+            "Parameters" : {
+                "KeyPairName":"none-prod",
+                "PhabMailAddress":"no-reply@bit-clouded.io",
+                "Hostname":"phabricator.bit-clouded.io"
+            },
+            "TemplatePath": "development-services/phabricator"
+        },
+        {
+            "StackName": "Temp-Kong",
+            "Parameters" : {"KeyPairName":"none-prod"},
+            "TemplatePath": "middleware/kong"
         }
     ],
     "RootTemplatePath": "networking/elb-subnets",
-    "Region": "ap-northeast-2"
+    "Region": "ap-northeast-1"
 }

@@ -4,7 +4,55 @@
 	"Description": "A template to launch elasticsearch cluster.",
 
 	"Metadata" : {
-        "DefaultName" : "AwsLogstash"
+        "DefaultName" : "AwsLogstash",
+        "Dependencies": [
+            {
+                "TemplatePath": "networking/vpc",
+                "Resources": {
+                    "ElbSg": "ElbSecGroup",
+                    "ElbTargetSg": "ElbTargetSecGroup",
+                    "HttpSg": "HttpNsSecGroup"
+                }
+            },
+            {
+                "TemplatePath": "networking/nat-subnets",
+                "Parameters": {
+                    "VpcId": "VpcId"
+                },
+                "Outputs": {
+                    "Subnets": "Subnets"
+                },
+                "NestedDependency": "networking/vpc"
+            },
+            {
+                "TemplatePath": "analytics/logs-store",
+                "Resources": {
+                    "LogStream": "LogStream",
+                    "VpcTrafficLogGroupName": "VpcTrafficLogGroupName",
+                    "CloudTrailLogGroupName": "CloudTrailLogGroupName",
+                    "LinuxDockerLogGroupName": "LinuxDockerLogGroupName",
+                    "LinuxSysLogGroupName": "LinuxSysLogGroupName",
+                    "LinuxAuthLogGroupName": "LinuxAuthLogGroupName",
+                    "RawLogBucketName": "Raw",
+                    "RawLogSns": "RawBucketNotification",
+                    "AccessS3LogBucketName": "AccessS3Log",
+                    "AccessS3LogSns": "AccessS3LogBucketNotification",
+                    "AccessCfLogBucketName": "AccessCfLog",
+                    "AccessCfLogSns": "AccessCfLogBucketNotification",
+                    "CwlPolicy": "LinuxLogPolicy"
+                },
+                "Outputs": {
+                    "CwlLinuxParams": "LxDockerLogParams",
+                    "CwlDockerParams": "DockerCwlParams"
+                }
+            },
+            {
+                "TemplatePath": "datastore/elasticsearch",
+                "Resources": {
+                    "EsHost": "EsElb"
+                }
+            }
+        ]
     },
 
 	"Parameters": {
@@ -35,7 +83,6 @@
 		},
 		"DebianJsAmiId": {
 			"Description": "AMI to use",
-			"Default": "ami-fddabdc7",
 			"Type": "AWS::EC2::Image::Id"
 		},
 

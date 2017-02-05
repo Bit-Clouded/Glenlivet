@@ -20,16 +20,17 @@
             },
             {
                 "TemplatePath": "networking/public-in-out-subnets",
-                "Resources": {
-                    "PublicSubnet1Id": "Subnet1",
+				"Parameters" : {
                     "VpcId": "VpcId"
+				},
+                "Resources": {
+                    "PublicSubnet1Id": "Subnet1"
                 }
             },
             {
                 "TemplatePath": "analytics/logs-store",
                 "Resources": {
-                    "CwlPolicy": "LinuxLogPolicy",
-                    "RawLogBucket": "Raw"
+                    "CwlPolicy": "LinuxLogPolicy"
                 },
                 "Outputs": {
                     "CwlLinuxParams": "LxDockerLogParams",
@@ -90,7 +91,8 @@
 		"DbPassword" : {
 			"Description" : "MariaDB server password",
 			"Type" : "String",
-			"NoEcho" : "True"
+			"NoEcho" : "True",
+			"Default" : "Password1234"
 		},
 		"DbSnapshot" : {
 			"Description" : "MariaDB server snapshot",
@@ -137,7 +139,7 @@
 			"Description": "Phabricator mail address.",
 			"Type": "String"
 		},
-		"UbuntuAmi": {
+		"UbuntuTtAmiId": {
 			"Description": "AMI to use. Note Ubuntu is prefered.",
 			"Type": "AWS::EC2::Image::Id"
 		},
@@ -288,7 +290,7 @@
 				"IamInstanceProfile" : {"Ref":"WebServersInstanceProfile"},
 				"InstanceType" : { "Ref" : "WebInstanceTyp" },
 				"KeyName" : { "Ref" : "KeyPairName" },
-				"ImageId" : { "Ref" : "UbuntuAmi" },
+				"ImageId" : { "Ref" : "UbuntuTtAmiId" },
 				"NetworkInterfaces" : [
 				{
 					"AssociatePublicIpAddress" : { "Ref" : "IsPublic" },

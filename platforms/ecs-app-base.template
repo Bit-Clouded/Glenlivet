@@ -13,12 +13,17 @@
             {
                 "TemplatePath": "platforms/ecs-base",
                 "Resources": {
-                    "Ec2Role": "Ec2Role",
-                    "ElbSubnets": "ElbSubnets",
                     "DatabaseSg": "DatabaseSg",
                     "EcsCluster": "EcsCluster"
                 },
                 "NestedDependency": "networking/vpc"
+            },
+            {
+                "TemplatePath": "networking/elb-subnets",
+                "Outputs": {
+                    "ElbSubnets": "ElbSubnets"
+                },
+                "NestedDependency": "networking/vpc.template"
             },
             {
                 "TemplatePath": "networking/vpc"
@@ -87,10 +92,6 @@
         },
         "DbSubnetGroup" : {
             "Description" : "Subnet Group for hosting the MariaDB server. [private-subnets.resources.RdsSubnetGroup]",
-            "Type" : "String"
-        },
-        "Ec2Role" : {
-            "Description" : "[ecs-base.Resources.Ec2Role]",
             "Type" : "String"
         }
     },

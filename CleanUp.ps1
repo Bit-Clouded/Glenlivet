@@ -23,12 +23,15 @@ Function CleanUp {
     } | % {
         Remove-CFNStack $_.StackId -Force
     }
-}
 
-Get-S3Bucket | ? {
-    $_.BucketName.StartsWith($TempStackPrefix.ToLower())
-} | % {
-    SuperRemove-S3Bucket -bucketName $_.BucketName
+    Get-S3Bucket | ? {
+        $_.BucketName.StartsWith($TempStackPrefix.ToLower())
+    } | ? {
+        $bucketRegion = (Get-S3BucketLocation -BucketName $_.BucketName).Value
+        return ($region -eq $bucketRegion)
+    } | % {
+        SuperRemove-S3Bucket -bucketName $_.BucketName
+    }
 }
 
 CleanUp us-east-1

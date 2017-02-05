@@ -18,7 +18,7 @@
                 "Outputs": {
                     "ElbSubnets": "ElbSubnets"
                 },
-                "NestedDependency": "networking/vpc.template"
+                "NestedDependency": "networking/vpc"
             },
             {
                 "TemplatePath": "platforms/ecs-app-base",
@@ -38,6 +38,12 @@
                 "TemplatePath": "platforms/ecs-base",
                 "Resources": {
                     "EcsCluster": "EcsCluster"
+                }
+            },
+            {
+                "TemplatePath": "analytics/logs-store",
+                "Resources": {
+                    "LxDockerLog": "LxDockerLog"
                 }
             }
         ]
@@ -93,6 +99,10 @@
             "Description" : "",
             "Type" : "String",
             "Default" : "wordpress:4.7.0-php7.0-apache"
+        },
+        "LxDockerLog" : {
+            "Description" : "",
+            "Type" : "String"
         }
     },
 
@@ -145,7 +155,7 @@
             "DependsOn":"HttpGateway",
             "Properties":{
                 "HealthCheckIntervalSeconds":30,
-                "HealthCheckPath":"/",
+                "HealthCheckPath":"/favicon.ico",
                 "HealthCheckProtocol":"HTTP",
                 "HealthCheckTimeoutSeconds":5,
                 "HealthyThresholdCount":10,
@@ -172,8 +182,16 @@
                         { "Name" : "WORDPRESS_DB_NAME", "Value" : {"Ref":"DbName"} }
                     ],
                     "PortMappings": [
-                        { "HostPort": 80, "ContainerPort": 80 }
-                    ]
+                        { "ContainerPort": 80 }
+                    ],
+                    "LogConfiguration": {
+                        "LogDriver": "awslogs",
+                        "Options": {
+                            "awslogs-group": {"Ref":"LxDockerLog"},
+                            "awslogs-region": {"Ref":"AWS::Region"},
+                            "awslogs-stream-prefix": "apache"
+                        }
+                    }
                 }],
                 "TaskRoleArn": {"Ref":"TaskRole"}
             }

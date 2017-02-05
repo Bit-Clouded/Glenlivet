@@ -6,9 +6,6 @@
             {
                 "TemplatePath": "networking/vpc",
                 "Resources": {
-                    "ElbSg": "ElbSecGroup",
-                    "ElbTargetSg": "ElbTargetSecGroup",
-                    "HttpSg": "HttpNsSecGroup"
                 }
             },
             {
@@ -31,12 +28,6 @@
                 "Outputs": {
                     "CwlLinuxParams": "LxDockerLogParams",
                     "CwlDockerParams": "DockerCwlParams"
-                }
-            },
-            {
-                "TemplatePath": "datastore/elasticsearch",
-                "Resources": {
-                    "EsHost": "EsElb"
                 }
             }
         ]
@@ -91,7 +82,23 @@
       "Type": "String",
       "MinLength": "9",
       "MaxLength": "18"
-    }
+    },
+		"CwlLinuxParams" : {
+			"Description": "Environment variables for syslog and authlog cwl group names [logs-store.outputs.LxDockerLogParams]",
+			"Type": "String"
+		},
+		"CwlDockerParams" : {
+			"Description": "Docker log driver params [logs-store.outputs.DockerCwlParams]",
+			"Type": "String"
+		},
+		"CwlPolicy" : {
+			"Description": "Managed policy for linux logging. [logs-store.resources.LinuxLogPolicy]",
+			"Type": "String"
+		},
+        "AccessLogBucket": {
+            "Description": "Image id of the frontend [logs-store.resources.Raw]",
+            "Type": "String"
+        }
   },
   "Mappings": {
     "Parameters": {
