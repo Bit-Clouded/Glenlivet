@@ -66,7 +66,7 @@
 						"Action": [ "sts:AssumeRole" ]
 					}]
 				},
-				"Path": "/devservices/base/",
+				"Path": "/development-services/",
 				"ManagedPolicyArns" : [
 					{"Ref":"CwlPolicy"}
 				]
@@ -96,7 +96,7 @@
 						"Action": [ "sts:AssumeRole" ]
 					}]
 				},
-				"Path": "/devservices/",
+				"Path": "/development-services/",
 				"ManagedPolicyArns" : [
 					{"Ref":"CwlPolicy"},
 					{"Ref":"AgentBasePermissions"},
