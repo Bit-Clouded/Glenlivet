@@ -90,7 +90,7 @@
                 "AvailabilityZone": { "Fn::Select": [
                     "0", {"Fn::If" : [ "IsAzSupplied", {"Ref" : "AvailableAzs"}, { "Fn::GetAZs": "" } ]}
                 ]},
-                "Tags" : [],
+                "Tags" : [{ "Key" : "Name", "Value" : "Public Out Bound" }],
                 "MapPublicIpOnLaunch" : "True"
             }
         },
@@ -119,7 +119,7 @@
                 "AvailabilityZone": { "Fn::Select": [
                     "1", {"Fn::If" : [ "IsAzSupplied", {"Ref" : "AvailableAzs"}, { "Fn::GetAZs": "" } ]}
                 ]},
-                "Tags" : [],
+                "Tags" : [{ "Key" : "Name", "Value" : "Public Out Bound" }],
                 "MapPublicIpOnLaunch" : "True"
             }
         },
@@ -149,7 +149,7 @@
                 "AvailabilityZone": { "Fn::Select": [
                     "2", {"Fn::If" : [ "IsAzSupplied", {"Ref" : "AvailableAzs"}, { "Fn::GetAZs": "" } ]}
                 ]},
-                "Tags" : [],
+                "Tags" : [{ "Key" : "Name", "Value" : "Public Out Bound" }],
                 "MapPublicIpOnLaunch" : "True"
             }
         },

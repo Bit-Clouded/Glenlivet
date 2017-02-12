@@ -84,7 +84,7 @@
                 "AvailabilityZone": { "Fn::Select": [
                     "0", {"Fn::If" : [ "IsAzSupplied", {"Ref" : "AvailableAzs"}, { "Fn::GetAZs": "" } ]}
                 ]},
-                "Tags" : []
+                "Tags" : [{ "Key" : "Name", "Value" : "AWS Datastores" }]
             }
         },
         "RouteTableAssociation1" : {
@@ -112,7 +112,7 @@
                 "AvailabilityZone": { "Fn::Select": [
                     "1", {"Fn::If" : [ "IsAzSupplied", {"Ref" : "AvailableAzs"}, { "Fn::GetAZs": "" } ]}
                 ]},
-                "Tags" : []
+                "Tags" : [{ "Key" : "Name", "Value" : "AWS Datastores" }]
             }
         },
         "RouteTableAssociation2" : {
@@ -141,7 +141,7 @@
                 "AvailabilityZone": { "Fn::Select": [
                     "2", {"Fn::If" : [ "IsAzSupplied", {"Ref" : "AvailableAzs"}, { "Fn::GetAZs": "" } ]}
                 ]},
-                "Tags" : []
+                "Tags" : [{ "Key" : "Name", "Value" : "AWS Datastores" }]
             }
         },
         "RouteTableAssociation3" : {

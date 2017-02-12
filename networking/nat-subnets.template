@@ -104,7 +104,7 @@
                 "AvailabilityZone": { "Fn::Select": [
                     "0", {"Fn::If" : [ "IsAzSupplied", {"Ref" : "AvailableAzs"}, { "Fn::GetAZs": "" } ]}
                 ]},
-                "Tags" : []
+                "Tags" : [{ "Key" : "Name", "Value" : "Private" }]
             }
         },
         "Nat1" : {
@@ -160,7 +160,7 @@
                 "AvailabilityZone": { "Fn::Select": [
                     "1", {"Fn::If" : [ "IsAzSupplied", {"Ref" : "AvailableAzs"}, { "Fn::GetAZs": "" } ]}
                 ]},
-                "Tags" : []
+                "Tags" : [{ "Key" : "Name", "Value" : "Private" }]
             }
         },
         "Nat2" : {
@@ -217,7 +217,7 @@
                 "AvailabilityZone": { "Fn::Select": [
                     "2", {"Fn::If" : [ "IsAzSupplied", {"Ref" : "AvailableAzs"}, { "Fn::GetAZs": "" } ]}
                 ]},
-                "Tags" : []
+                "Tags" : [{ "Key" : "Name", "Value" : "Private" }]
             }
         },
         "Nat3" : {
