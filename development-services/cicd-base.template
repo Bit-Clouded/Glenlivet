@@ -60,7 +60,7 @@
 						"Principal": {
 							"Service": [
                                 "ec2.amazonaws.com",
-                                "ecs.amazonaws.com"
+                                "ecs-tasks.amazonaws.com"
                             ]
 						},
 						"Action": [ "sts:AssumeRole" ]
@@ -90,7 +90,7 @@
 						"Principal": {
 							"Service": [
                                 "ec2.amazonaws.com",
-                                "ecs.amazonaws.com"
+                                "ecs-tasks.amazonaws.com"
                             ]
 						},
 						"Action": [ "sts:AssumeRole" ]
@@ -134,7 +134,14 @@
                                 "s3:RestoreObject"
                             ],
                             "Effect": "Allow",
-                            "Resource": "*"
+                            "Resource": [
+								{ "Fn::Join" : ["", [
+                                    "arn:aws:s3:::", {"Ref":"Utility"}, "/*"
+                                ]]},
+                                { "Fn::Join" : ["", [
+                                    "arn:aws:s3:::", {"Ref":"Utility"}
+                                ]]}
+							]
                         },
                         {
                             "Sid": "CodeDeploy",
