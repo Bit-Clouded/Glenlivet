@@ -134,7 +134,14 @@
                                 "s3:RestoreObject"
                             ],
                             "Effect": "Allow",
-                            "Resource": "*"
+                            "Resource": [
+								{ "Fn::Join" : ["", [
+                                    "arn:aws:s3:::", {"Ref":"Utility"}, "/*"
+                                ]]},
+                                { "Fn::Join" : ["", [
+                                    "arn:aws:s3:::", {"Ref":"Utility"}
+                                ]]}
+							]
                         },
                         {
                             "Sid": "CodeDeploy",
