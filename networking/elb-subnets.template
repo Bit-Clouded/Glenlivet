@@ -323,7 +323,7 @@
                 "CidrBlock" : { "Fn::Join" : [ "", [
                     { "Ref" : "VpcPrefix" }, ".", { "Ref" : "PvtSubnet1Suffix" }, ".0/24"
                 ]]},
-                "PortRange" : { "From" : "0", "To" : "32768" }
+                "PortRange" : { "From" : "0", "To" : "65535" }
             }
         },
         "ElbAclEntryOutSubnet2Requests" : {
@@ -337,7 +337,7 @@
                 "CidrBlock" : { "Fn::Join" : [ "", [
                     { "Ref" : "VpcPrefix" }, ".", { "Ref" : "PvtSubnet2Suffix" }, ".0/24"
                 ]]},
-                "PortRange" : { "From" : "0", "To" : "32768" }
+                "PortRange" : { "From" : "0", "To" : "65535" }
             }
         },
         "ElbAclEntryOutSubnet3Requests" : {
@@ -351,7 +351,7 @@
                 "CidrBlock" : { "Fn::Join" : [ "", [
                     { "Ref" : "VpcPrefix" }, ".", { "Ref" : "PvtSubnet3Suffix" }, ".0/24"
                 ]]},
-                "PortRange" : { "From" : "0", "To" : "32768" }
+                "PortRange" : { "From" : "0", "To" : "65535" }
             }
         },
 
@@ -475,7 +475,7 @@
                 "CidrBlock" : { "Fn::Join" : [ "", [
                     { "Ref" : "VpcPrefix" }, ".", { "Ref" : "ElbSubnet1Suffix" }, ".0/24"
                 ]]},
-                "PortRange" : { "From" : "0", "To" : "32768" }
+                "PortRange" : { "From" : "0", "To" : "65535" }
             }
         },
         "PvtAclEntryInSubnet2Requests" : {
@@ -489,7 +489,7 @@
                 "CidrBlock" : { "Fn::Join" : [ "", [
                     { "Ref" : "VpcPrefix" }, ".", { "Ref" : "ElbSubnet2Suffix" }, ".0/24"
                 ]]},
-                "PortRange" : { "From" : "0", "To" : "32768" }
+                "PortRange" : { "From" : "0", "To" : "65535" }
             }
         },
         "PvtAclEntryInSubnet3Requests" : {
@@ -503,7 +503,7 @@
                 "CidrBlock" : { "Fn::Join" : [ "", [
                     { "Ref" : "VpcPrefix" }, ".", { "Ref" : "ElbSubnet3Suffix" }, ".0/24"
                 ]]},
-                "PortRange" : { "From" : "0", "To" : "32768" }
+                "PortRange" : { "From" : "0", "To" : "65535" }
             }
         },
         "PvtAclEntryInInterSubnet1" : {
