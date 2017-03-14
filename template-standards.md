@@ -12,7 +12,7 @@ IAM Paths : /\<foldername>/\<template or component name>/
 S3 Buckets
   - Names : Should always be empty
   - Deletion Policy : Should always be retain
-  - All must ship access log
+  - All must ship access log with prefix <stack name>-<bucket logical name>
   - ?Allow conditional creation if bucket already exist and specified.
 
 Load Balancers
