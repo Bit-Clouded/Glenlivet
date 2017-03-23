@@ -1,0 +1,237 @@
+{
+    "AWSTemplateFormatVersion" : "2010-09-09",
+    "Metadata" : {
+        "DefaultName" : "EcsClusterBase",
+        "Dependencies": [
+            {
+                "TemplatePath": "networking/vpc",
+                "Resources": {
+                    "ElbTargetSg": "ElbTargetSecGroup"
+                }
+            },
+            {
+                "TemplatePath": "networking/elb-subnets",
+                "Parameters": {
+                    "VpcId": "VpcId"
+                },
+                "Outputs": {
+                    "ElbSubnets": "ElbSubnets",
+                    "ServerSubnets": "WebServerSubnets"
+                },
+                "NestedDependency": "networking/vpc"
+            },
+            {
+                "TemplatePath": "analytics/logs-store",
+                "Resources": {
+                    "DiagnosticsMp": "LinuxLogPolicy"
+                }
+            }
+        ]
+    },
+    "Parameters" : {
+        "EcsCluster" : {
+            "Description": "",
+            "Type": "String"
+        },
+        "DomainRoot" : {
+            "Description": "",
+            "Type": "String"
+        },
+        "DomainSub" : {
+            "Description": "",
+            "Type": "String",
+            "Default": "traefik"
+        },
+
+        "ElbSubnets" : {
+            "Description" : "VPCid associated with the subnets. [elb-subnets.outputs.ElbSubnets]",
+            "Type": "List<AWS::EC2::Subnet::Id>"
+        },
+        "ElbTargetSg" : {
+            "Description": "Elb Target Security Group. [vpc.resources.ElbTargetSecGroup]",
+            "Type": "String"
+        },
+        "ElbSg" : {
+            "Description": "Elb Target Security Group. [vpc.resources.ElbTargetSecGroup]",
+            "Type": "String"
+        },
+
+        "TraefikContainer" : {
+            "Description" : "",
+            "Type" : "String",
+            "Default" : "traefik:1.2.0"
+        }
+    },
+
+    "Resources" : {
+        "TraefikHostname": {
+            "Type": "AWS::Route53::RecordSet",
+            "Properties": {
+                "HostedZoneName": {"Fn::Join":["",[
+                    {"Ref":"DomainRoot"}, "."
+                ]]},
+                "Comment": "Traefik Hostname",
+                "Name": {"Fn::Join":["",[
+                    {"Ref":"DomainSub"}, ".", {"Ref":"DomainRoot"}, "."
+                ]]},
+                "Type": "A",
+                "AliasTarget" : {
+                    "DNSName" : { "Fn::GetAtt": ["EcsElb", "DNSName"] },
+                    "HostedZoneId": { "Fn::GetAtt": ["EcsElb", "CanonicalHostedZoneNameID"] }
+                }
+            }
+        },
+        "TraefikWildcardName": {
+            "Type": "AWS::Route53::RecordSet",
+            "Properties": {
+                "HostedZoneName": {"Fn::Join":["",[
+                    {"Ref":"DomainRoot"}, "."
+                ]]},
+                "Comment": "Traefik Hostname",
+                "Name": {"Fn::Join":["",[
+                    "*.", {"Ref":"DomainSub"}, ".", {"Ref":"DomainRoot"}, "."
+                ]]},
+                "Type": "A",
+                "AliasTarget" : {
+                    "DNSName" : { "Fn::GetAtt": ["EcsElb", "DNSName"] },
+                    "HostedZoneId": { "Fn::GetAtt": ["EcsElb", "CanonicalHostedZoneNameID"] }
+                }
+            }
+        },
+
+        "EcsElb":{
+            "Type":"AWS::ElasticLoadBalancing::LoadBalancer",
+            "Properties":{
+                "Subnets": { "Ref":"ElbSubnets" },
+                "Listeners":[
+                    {
+                        "LoadBalancerPort":"80",
+                        "InstancePort":"88",
+                        "Protocol":"TCP"
+                    },
+                    {
+                        "LoadBalancerPort":"8080",
+                        "InstancePort":"888",
+                        "Protocol":"TCP"
+                    }
+                ],
+                "SecurityGroups":[
+                    {"Ref":"ElbSg"}
+                ],
+                "HealthCheck": {
+                    "Target":"HTTP:888/health",
+                    "HealthyThreshold":"2",
+                    "UnhealthyThreshold":"10",
+                    "Interval":"30",
+                    "Timeout":"5"
+                }
+            }
+        },
+        "TraefikService":{
+            "Type":"AWS::ECS::Service",
+            "Properties": {
+                "Cluster": { "Ref":"EcsCluster" },
+                "DesiredCount":"2",
+                "DeploymentConfiguration": {
+                    "MaximumPercent":"300",
+                    "MinimumHealthyPercent":"40"
+                },
+                "LoadBalancers": [
+                    {
+                        "ContainerName": "traefik-general",
+                        "ContainerPort": "80",
+                        "LoadBalancerName": { "Ref":"EcsElb" }
+                    }
+                ],
+                "Role": { "Ref":"EcsServiceRole" },
+                "TaskDefinition": { "Ref":"TraefikTaskDefinition" }
+            }
+        },
+        "TraefikTaskDefinition":{
+            "Type":"AWS::ECS::TaskDefinition",
+            "Properties":{
+                "ContainerDefinitions":[{
+                    "Name":"traefik-general",
+                    "Cpu":"500",
+                    "Essential":"true",
+                    "Image": { "Ref" : "TraefikContainer" },
+                    "Memory":"500",
+                    "PortMappings":[
+                        { "HostPort":88, "ContainerPort":80 },
+                        { "HostPort":888, "ContainerPort":8080 }
+                    ],
+                    "Command": [
+                        "--ecs=true",
+                        {"Fn::Join":["", ["--ecs.cluster=", {"Ref":"EcsCluster"}]]},
+                        {"Fn::Join":["", ["--ecs.domain=", {"Ref":"DomainSub"}, ".", {"Ref":"DomainRoot"}]]},
+                        "--web=true",
+                        "--web.address=:8080"
+                    ]
+                }],
+                "TaskRoleArn": {"Fn::GetAtt" : ["TaskRole", "Arn"] }
+            }
+        },
+        "TaskRole": {
+            "Type": "AWS::IAM::Role",
+            "Properties": {
+                "AssumeRolePolicyDocument": {
+                    "Statement": [{
+                        "Effect": "Allow",
+                        "Principal": { "Service": ["ecs-tasks.amazonaws.com"] },
+                        "Action": ["sts:AssumeRole"]
+                    }]
+                },
+                "Path": "/",
+                "Policies": [{
+                    "PolicyName": "ecs-service",
+                    "PolicyDocument": {
+                        "Statement": [{
+                            "Effect": "Allow",
+                            "Action": [
+                                "ecs:ListTasks",
+                                "ecs:DescribeTasks",
+                                "ecs:DescribeContainerInstances",
+                                "ecs:DescribeTaskDefinition",
+                                "ec2:DescribeInstances"
+                            ],
+                            "Resource": [
+                                "*"
+                            ]
+                        }]
+                    }
+                }]
+            }
+        },
+        "EcsServiceRole":{
+            "Type":"AWS::IAM::Role",
+            "Properties":{
+                "AssumeRolePolicyDocument":{
+                    "Statement":[{
+                        "Effect":"Allow",
+                        "Principal":{"Service":["ecs.amazonaws.com"]},
+                        "Action":["sts:AssumeRole"]
+                    }]
+                },
+                "Path":"/",
+                "Policies":[{
+                    "PolicyName":"ecs-service",
+                    "PolicyDocument":{
+                        "Statement":[{
+                            "Effect":"Allow",
+                            "Action":[
+                                "elasticloadbalancing:DeregisterInstancesFromLoadBalancer",
+                                "elasticloadbalancing:DeregisterTargets",
+                                "elasticloadbalancing:Describe*",
+                                "elasticloadbalancing:RegisterInstancesWithLoadBalancer",
+                                "elasticloadbalancing:RegisterTargets",
+                                "ec2:Describe*",
+                                "ec2:AuthorizeSecurityGroupIngress"
+                            ],
+                            "Resource":"*"
+                        }]
+                    }
+                }]
+            }
+        }
+    }
+}
