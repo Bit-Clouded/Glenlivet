@@ -102,21 +102,21 @@
     "Resources" : {
         "EcsCluster": {
             "Type": "AWS::ECS::Cluster"
-        },    
+        },
         "WindowsAgentGroups" : {
             "Type" : "AWS::AutoScaling::AutoScalingGroup",
             "Properties" : {
                 "VPCZoneIdentifier" : { "Ref" : "ServerSubnets" },
                 "LaunchConfigurationName" : { "Ref" : "WindowsAgentLc" },
                 "MinSize" : "0",
-                "MaxSize" : "100"
-            },
-            "Tags" : [
-                { "Key" : "Name", "Value" : {"Fn::Join": ["", [
-                    {"Ref":"AWS::StackName"}, " Windows Agent"
-                ]]}, "PropagateAtLaunch" : "true" }
-            ]
-        },    
+                "MaxSize" : "100",
+                "Tags" : [
+                    { "Key" : "Name", "Value" : {"Fn::Join": ["", [
+                        {"Ref":"AWS::StackName"}, " Windows Agent"
+                    ]]}, "PropagateAtLaunch" : "true" }
+                ]
+            }
+        },   
         "WindowsAgentLc": {
             "Type": "AWS::AutoScaling::LaunchConfiguration",
             "Metadata": {
@@ -225,16 +225,16 @@
                 "VPCZoneIdentifier" : { "Ref" : "ServerSubnets" },
                 "LaunchConfigurationName" : { "Ref" : "ContainerInstances" },
                 "MinSize" : "2",
-                "MaxSize" : "100"
+                "MaxSize" : "100",
+                "Tags" : [
+                    { "Key" : "Name", "Value" : {"Fn::Join": ["", [
+                        {"Ref":"AWS::StackName"}, " Linux Agent"
+                    ]]}, "PropagateAtLaunch" : "true" }
+                ]
             },
             "CreationPolicy" : {
                 "ResourceSignal" : { "Timeout" : "PT15M" }
-            },
-            "Tags" : [
-                { "Key" : "Name", "Value" : {"Fn::Join": ["", [
-                    {"Ref":"AWS::StackName"}, " Linux Agent"
-                ]]}, "PropagateAtLaunch" : "true" }
-            ]
+            }
         },    
         "ContainerInstances": {
             "Type": "AWS::AutoScaling::LaunchConfiguration",
@@ -385,6 +385,14 @@
                 ],
                 "VpcId": { "Ref": "VpcId" },
                 "GroupDescription": "Security group for database security to allow ingress from."
+            }
+        },
+        "ClusterSelfIngress": {
+            "Type": "AWS::EC2::SecurityGroupIngress",
+            "Properties": {
+                "GroupId": { "Ref": "DbTargetClusterSg" },
+                "IpProtocol": "-1",
+                "SourceSecurityGroupId": { "Ref": "DbTargetClusterSg" }
             }
         }
     },
