@@ -7,6 +7,9 @@
                 "TemplatePath": "networking/vpc",
                 "Resources": {
                     "ElbTargetSg": "ElbTargetSecGroup"
+                },
+                "Outputs": {
+                    "AzCount": "AzCount"
                 }
             },
             {
@@ -25,6 +28,12 @@
                 "Resources": {
                     "DiagnosticsMp": "LinuxLogPolicy"
                 }
+            },
+            {
+                "TemplatePath": "analytics/logs-store",
+                "Resources": {
+                    "DiagnosticsMp": "LinuxLogPolicy"
+                }
             }
         ]
     },
@@ -36,6 +45,10 @@
         "VpcId": {
             "Description" : "VPCid associated with the subnets. [elb-subnets.parameters.VpcId]",
             "Type": "AWS::EC2::VPC::Id"
+        },
+        "AzCount" : {
+            "Description" : "Number of AZ. Third subnet will only be created if number is 3 [vpc.outputs.AzCount]",
+            "Type" : "String"
         },
         "ElbSubnets" : {
             "Description" : "VPCid associated with the subnets. [elb-subnets.outputs.ElbSubnets]",
@@ -98,8 +111,57 @@
             "Default" : "100"
         }
     },
+    "Conditions" : {
+        "IsThreeAz" : { "Fn::Equals" : [{"Ref" : "AzCount"}, "3"]}
+    },
 
     "Resources" : {
+        "SharedDiskGp": {
+            "Type": "AWS::EFS::FileSystem",
+            "Properties": {
+                "FileSystemTags": [
+                    { "Key": "Name", "Value": { "Ref": "AWS::StackName" } }
+                ]
+            }
+        },
+        "MountTarget1": {
+            "Type": "AWS::EFS::MountTarget",
+            "Properties": {
+                "FileSystemId": {
+                    "Ref": "SharedDiskGp"
+                },
+                "SubnetId": { "Fn::Select": ["0", {"Ref":"ServerSubnets"}]},
+                "SecurityGroups": [
+                    { "Ref": "DatabaseSg" }
+                ]
+            }
+        },
+        "MountTarget2": {
+            "Type": "AWS::EFS::MountTarget",
+            "Properties": {
+                "FileSystemId": {
+                    "Ref": "SharedDiskGp"
+                },
+                "SubnetId": { "Fn::Select": ["1", {"Ref":"ServerSubnets"}]},
+                "SecurityGroups": [
+                    { "Ref": "DatabaseSg" }
+                ]
+            }
+        },
+        "MountTarget3": {
+            "Type": "AWS::EFS::MountTarget",
+            "Condition" : "IsThreeAz",
+            "Properties": {
+                "FileSystemId": {
+                    "Ref": "SharedDiskGp"
+                },
+                "SubnetId": { "Fn::Select": ["2", {"Ref":"ServerSubnets"}]},
+                "SecurityGroups": [
+                    { "Ref": "DatabaseSg" }
+                ]
+            }
+        },
+
         "EcsCluster": {
             "Type": "AWS::ECS::Cluster"
         },
@@ -238,6 +300,10 @@
         },    
         "ContainerInstances": {
             "Type": "AWS::AutoScaling::LaunchConfiguration",
+            "DependsOn": [
+                "MountTarget1",
+                "MountTarget2"
+            ],
             "Metadata" : {
                 "AWS::CloudFormation::Init" : {
                     "config" : {
@@ -301,6 +367,33 @@
                 ],
                 "UserData" : { "Fn::Base64" : { "Fn::Join" : ["", [
                     "#!/bin/bash -xe\n",
+
+                    "yum update -y && yum -y install nfs-utils\n",
+                    "EC2_AVAIL_ZONE=`curl -s http://169.254.169.254/latest/meta-data/placement/availability-zone`\n",
+                    "EC2_REGION=",
+                    {
+                        "Ref": "AWS::Region"
+                    },
+                    "\n",
+                    "mkdir /mnt/efs\n",
+                    "EFS_FILE_SYSTEM_ID=",
+                    {
+                        "Ref": "SharedDiskGp"
+                    },
+                    "\n",
+                    "DIR_SRC=$EC2_AVAIL_ZONE.$EFS_FILE_SYSTEM_ID.efs.$EC2_REGION.amazonaws.com\n",
+                    "DIR_TGT=/mnt/efs\n",
+                    "touch /home/ec2-user/echo.res\n",
+                    "echo $EFS_FILE_SYSTEM_ID >> /home/ec2-user/echo.res\n",
+                    "echo $EC2_AVAIL_ZONE >> /home/ec2-user/echo.res\n",
+                    "echo $EC2_REGION >> /home/ec2-user/echo.res\n",
+                    "echo $DIR_SRC >> /home/ec2-user/echo.res\n",
+                    "echo $DIR_TGT >> /home/ec2-user/echo.res\n",
+                    "mount -t nfs4 $DIR_SRC:/ $DIR_TGT >> /home/ec2-user/echo.res\n",
+                    "cp -p /etc/fstab /etc/fstab.back-$(date +%F)\n",
+                    "echo -e \"$DIR_SRC:/ \t\t $DIR_TGT \t\t nfs \t\t defaults \t\t 0 \t\t 0\" | tee -a /etc/fstab\n",
+                    "mount -a\n",
+
                     "yum install -y aws-cfn-bootstrap\n",
 
                     "/opt/aws/bin/cfn-init -v ",
