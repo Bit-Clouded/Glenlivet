@@ -237,6 +237,7 @@
 
 		"AccessS3LogBucketNotification" : {
 			"Type" : "AWS::SNS::Topic",
+			"DependsOn" : "LogStreamRolePolicy",
 			"Properties" : {
 				"DisplayName" : "S3 and CloudFront Access Log Bucket Event Notification"
 			}
@@ -315,7 +316,7 @@
 		},
 
         "GlobalCloudTrailLog" : {
-			"DependsOn" : ["LogStream", "LogStreamRole", "LogStreamRolePolicy"],
+			"DependsOn" : ["LogStream", "LogStreamRole", "LogStreamRolePolicy", "AccessS3LogBucketPolicy"],
             "Type" : "AWS::Logs::LogGroup",
             "Properties" : {
             }
@@ -423,7 +424,7 @@
 		},
 
 		"VpcTrafficLog" : {
-			"DependsOn" : ["LogStream", "LogStreamRole", "LogStreamRolePolicy"],
+			"DependsOn" : ["LogStream", "LogStreamRole", "LogStreamRolePolicy", "AccessS3LogBucketPolicy"],
             "Type" : "AWS::Logs::LogGroup",
             "Properties" : {
             }
@@ -472,7 +473,7 @@
         },
 		
         "LxSysLog" : {
-			"DependsOn" : ["LogStream", "LogStreamRole", "LogStreamRolePolicy"],
+			"DependsOn" : ["LogStream", "LogStreamRole", "LogStreamRolePolicy", "AccessS3LogBucketPolicy"],
             "Type" : "AWS::Logs::LogGroup",
             "Properties" : {
             }
@@ -489,7 +490,7 @@
 		},
 
 		"LxAuthLog" : {
-			"DependsOn" : ["LogStream", "LogStreamRole", "LogStreamRolePolicy"],
+			"DependsOn" : ["LogStream", "LogStreamRole", "LogStreamRolePolicy", "AccessS3LogBucketPolicy"],
             "Type" : "AWS::Logs::LogGroup",
             "Properties" : {
             }
@@ -506,7 +507,7 @@
 		},
 
 		"LxDockerLog" : {
-			"DependsOn" : ["LogStream", "LogStreamRole", "LogStreamRolePolicy"],
+			"DependsOn" : ["LogStream", "LogStreamRole", "LogStreamRolePolicy", "AccessS3LogBucketPolicy"],
             "Type" : "AWS::Logs::LogGroup",
             "Properties" : {
             }
