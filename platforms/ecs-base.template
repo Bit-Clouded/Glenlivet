@@ -6,7 +6,9 @@
             {
                 "TemplatePath": "networking/vpc",
                 "Resources": {
-                    "ElbTargetSg": "ElbTargetSecGroup"
+                    "ElbTargetSg": "ElbTargetSecGroup",
+                    "ElbSg": "ElbSecGroup",
+                    "HttpSg": "HttpNsSecGroup"
                 },
                 "Outputs": {
                     "AzCount": "AzCount"
@@ -57,6 +59,14 @@
         "ServerSubnets" : {
             "Description" : "VPCid associated with the subnets. [elb-subnets.outputs.WebServerSubnets]",
             "Type": "List<AWS::EC2::Subnet::Id>"
+        },
+        "ElbSg" : {
+            "Description": "Elb Security Group. [vpc.resources.ElbSecGroup]",
+            "Type": "String"
+        },
+        "HttpSg" : {
+            "Description": "Elb Target Security Group. [vpc.resources.HttpNsSecGroup]",
+            "Type": "String"
         },
         "ElbTargetSg" : {
             "Description": "Elb Target Security Group. [vpc.resources.ElbTargetSecGroup]",
@@ -493,7 +503,38 @@
                 "IpProtocol": "-1",
                 "SourceSecurityGroupId": { "Ref": "DbTargetClusterSg" }
             }
+        },
+        "PublicHttpGateway":{
+            "Type":"AWS::ElasticLoadBalancingV2::LoadBalancer",
+            "Properties":{
+                "Scheme":"internet-facing",
+                "LoadBalancerAttributes":[{
+                    "Key":"idle_timeout.timeout_seconds",
+                    "Value":"30"
+                }],
+                "Subnets": { "Ref" : "ElbSubnets" },
+                "SecurityGroups":[
+                    { "Ref": "ElbSg" },
+                    { "Ref": "HttpSg" }
+                ]
+            }
+        },
+        "PrivateHttpGateway":{
+            "Type":"AWS::ElasticLoadBalancingV2::LoadBalancer",
+            "Properties":{
+                "Scheme":"internal",
+                "LoadBalancerAttributes":[{
+                    "Key":"idle_timeout.timeout_seconds",
+                    "Value":"30"
+                }],
+                "Subnets": { "Ref" : "ElbSubnets" },
+                "SecurityGroups":[
+                    { "Ref": "ElbSg" },
+                    { "Ref": "HttpSg" }
+                ]
+            }
         }
+
     },
 
     "Outputs" : {
