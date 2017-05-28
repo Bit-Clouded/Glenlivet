@@ -30,12 +30,6 @@
                 "Resources": {
                     "DiagnosticsMp": "LinuxLogPolicy"
                 }
-            },
-            {
-                "TemplatePath": "analytics/logs-store",
-                "Resources": {
-                    "DiagnosticsMp": "LinuxLogPolicy"
-                }
             }
         ]
     },
