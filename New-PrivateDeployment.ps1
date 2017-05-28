@@ -1,16 +1,20 @@
 ﻿param(
-    #$bucketname = "local-glenfiddichbase-publicbucket-1mmtghaeejx68",
-    $bucketname = "dev-glenfiddichbase-publicbucket-s2lgz460omgc",
-    $projectname = "glenlivet",
-    $version = "test"
+    $plcbucket = "local-glenfiddichbase-publicbucket-1mmtghaeejx68",
+    $pvtbucket = "local-glenfiddichbase-privatebucket-1tw3hnwrqrrem",
+    $region = "eu-west-1",
+    $version = 'prod',
+    $projectname = 'glenlivet'
 )
 
-#Set-DefaultAWSRegion ap-southeast-2
-Set-DefaultAWSRegion eu-west-1
+Set-DefaultAWSRegion $region
+
+cd $PSScriptRoot
 .".\Deployment.ps1"
-$prefix = New-Deployment -bucketname $bucketname -projectname $projectname -version $version -deployroot ".\"
+Get-S3Object -BucketName $pvtbucket -KeyPrefix "$projectname/$version/cache" | % {
+    Remove-S3Object -BucketName $pvtbucket -Key $_.Key -Force
+}
+$prefix = New-Deployment -bucketname $plcbucket -projectname $projectname -version $version -deployroot ".\"
 
 Write-Host "Deployment s3 prefix: $prefix"
 
 return $prefix
-
