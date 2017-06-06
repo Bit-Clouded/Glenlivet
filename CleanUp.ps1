@@ -1,5 +1,5 @@
 ﻿param(
-    $TempStackPrefix = "Temp-"
+    $TempStackPrefix = "Test-"
 )
 
 function SuperRemove-S3Bucket {
