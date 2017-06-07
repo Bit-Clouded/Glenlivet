@@ -23,7 +23,6 @@
             {
                 "TemplatePath": "platforms/ecs-app-base",
                 "Parameters": {
-                    "DbName": "DbName",
                     "DbUsername": "DbUsername"
                 },
                 "Resources": {
@@ -74,8 +73,9 @@
             "Type": "String"
         },
         "DbName" : {
-            "Description" : "MariaDB server username [ecs-app-base.parameters.DbName]",
-            "Type" : "String"
+            "Description" : "Name of the database in the database server. Can be changed to facilitate a different instance of the installation.",
+            "Type" : "String",
+            "Default" : ""
         },
         "DbUsername" : {
             "Description" : "MariaDB server username [ecs-app-base.parameters.DbUsername]",
@@ -103,7 +103,17 @@
         "LxDockerLog" : {
             "Description" : "",
             "Type" : "String"
+        },
+        "EfsPath" : {
+            "Description" : "EFS disk path segment. It has a /mnt/efs/ prefix followed by the guid of the CloudFormation stack id when left blank.",
+            "Type" : "String",
+            "Default" : ""
         }
+    },
+
+    "Conditions" : {
+        "HasNoEfsPath" : { "Fn::Equals": [{"Ref" : "EfsPath"}, ""] },
+        "HasNoDbName" : { "Fn::Equals": [{"Ref" : "EfsPath"}, ""] }
     },
 
     "Resources" : {
@@ -174,12 +184,24 @@
                     "Essential": "true",
                     "Image":{"Ref":"ImageName"},
                     "Memory":"300",
-                    "MountPoints": [],
                     "Environment": [
                         { "Name" : "WORDPRESS_DB_HOST", "Value" : {"Ref":"DatabaseEndpointAddress"} },
                         { "Name" : "WORDPRESS_DB_USER", "Value" : {"Ref":"DbUsername"} },
                         { "Name" : "WORDPRESS_DB_PASSWORD", "Value" : {"Ref":"DbPassword"} },
-                        { "Name" : "WORDPRESS_DB_NAME", "Value" : {"Ref":"DbName"} }
+                        { "Name" : "WORDPRESS_DB_NAME", "Value" : {"Fn::If": [
+                            "HasNoDbName",
+                            { "Fn::Select" : [ "2", { "Fn::Split": ["/", {"Ref":"AWS::StackId"}]}] },
+                            {"Ref":"DbName"}
+                        ]}},
+
+                        { "Name" : "WORDPRESS_AUTH_KEY", "Value" : {"Ref":"DbPassword"} },
+                        { "Name" : "WORDPRESS_SECURE_AUTH_KEY", "Value" : {"Ref":"DbPassword"} },
+                        { "Name" : "WORDPRESS_LOGGED_IN_KEY", "Value" : {"Ref":"DbPassword"} },
+                        { "Name" : "WORDPRESS_NONCE_KEY", "Value" : {"Ref":"DbPassword"} },
+                        { "Name" : "WORDPRESS_AUTH_SALT", "Value" : {"Ref":"DbPassword"} },
+                        { "Name" : "WORDPRESS_SECURE_AUTH_SALT", "Value" : {"Ref":"DbPassword"} },
+                        { "Name" : "WORDPRESS_LOGGED_IN_SALT", "Value" : {"Ref":"DbPassword"} },
+                        { "Name" : "WORDPRESS_NONCE_SALT", "Value" : {"Ref":"DbPassword"} }
                     ],
                     "PortMappings": [
                         { "ContainerPort": 80 }
@@ -191,9 +213,25 @@
                             "awslogs-region": {"Ref":"AWS::Region"},
                             "awslogs-stream-prefix": "apache"
                         }
-                    }
+                    },
+                    "MountPoints": [{
+                        "SourceVolume": "efs",
+                        "ContainerPath": "/var/www/html",
+                        "ReadOnly": false
+                    }]
                 }],
-                "TaskRoleArn": {"Ref":"TaskRole"}
+                "TaskRoleArn": {"Ref":"TaskRole"},
+                "Volumes": [{
+                    "Name": "efs",
+                    "Host": { "SourcePath": {"Fn::Join": ["", [
+                        "/mnt/efs/",
+                        {"Fn::If": [
+                            "HasNoEfsPath",
+                            { "Fn::Select" : [ "2", { "Fn::Split": ["/", {"Ref":"AWS::StackId"}]}] },
+                            {"Ref":"EfsPath"}
+                        ]}
+                    ]]}}
+                }]
             }
         },    
 
@@ -220,7 +258,16 @@
                 "https://", { "Ref": "AWS::Region"}, ".console.aws.amazon.com/ecs/home?region=",
                     { "Ref": "AWS::Region"}, "#/clusters/", { "Ref": "EcsCluster"},
                     "/services/", { "Fn::GetAtt": ["EcsService", "Name"] }, "/tasks"
-            ]] }
+            ]] },
+            "Description": "ECS service that manages the containers running wordpress."
+        },
+        "BackofficeUrl": {
+            "Value": "",
+            "Description": "Url to the admin page."
+        },
+        "PublicUrl": {
+            "Value": "",
+            "Description": "Url to the public facing site."
         }
     }
 }

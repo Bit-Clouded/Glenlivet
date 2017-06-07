@@ -233,7 +233,7 @@
                 ],
                 "InstanceType": { "Ref": "InstanceType" },
                 "IamInstanceProfile": { "Ref": "Ec2InstanceProfile" },
-                "KeyName": { "Ref": "KeyPairName" },
+                "KeyName" : { "Ref": "KeyPairName" },
                 "BlockDeviceMappings" : [{
                     "DeviceName" : "/dev/sda1",
                     "Ebs" : { "VolumeSize" : {"Ref":"DiskSize"}, "VolumeType" : "gp2" }
@@ -370,7 +370,7 @@
                 "ImageId" : { "Ref" : "EcsAmiId" },
                 "InstanceType" : { "Ref" : "InstanceType" },
                 "IamInstanceProfile": { "Ref": "Ec2InstanceProfile" },
-                "KeyName" : { "Ref" : "KeyPairName" },
+                "KeyName" : { "Ref": "KeyPairName" },
                 "SecurityGroups" : [
                     { "Ref": "ElbTargetSg" },
                     { "Ref": "DbTargetClusterSg" }
@@ -414,7 +414,8 @@
                     "/opt/aws/bin/cfn-signal -e $? ",
                     "         --stack ", { "Ref" : "AWS::StackName" },
                     "         --resource EcsAutoScalingGroup ",
-                    "         --region ", { "Ref" : "AWS::Region" }, "\n"
+                    "         --region ", { "Ref" : "AWS::Region" }, "\n",
+                    "reboot now\n"
                 ]]}},
                 "BlockDeviceMappings" : [{
                     "DeviceName" : "/dev/xvda",
