@@ -39,3 +39,6 @@ KMS
 
 another kinesis stream for all lambda functions
 all lambda functions log must be subscribed to the kinesis stream
+ebs should all be encrypted with overridable key
+rds should all be encrypted with overridable key
+rds CopyTagsToSnapshot should be true
