@@ -97,7 +97,7 @@
         "ImageName" : {
             "Description" : "",
             "Type" : "String",
-            "Default" : "bitnami/joomla:3.7.2-r1"
+            "Default" : "bitnami/redmine:3.3.3-r2"
         },
         "EfsPath" : {
             "Description" : "EFS disk path segment. It has a /mnt/efs/ prefix followed by the guid of the CloudFormation stack id when left blank.",
@@ -173,18 +173,18 @@
             "Type": "AWS::ECS::TaskDefinition",
             "Properties" : {
                 "ContainerDefinitions" : [{
-                    "Name": "joomla",
+                    "Name": "redmine",
                     "Cpu": "10",
                     "Essential": "true",
                     "Image":{"Ref":"ImageName"},
                     "Memory":"300",
                     "Environment": [
-                        { "Name" : "MARIADB_HOST", "Value" : {"Ref":"DatabaseEndpointAddress"} },
-                        { "Name" : "MARIADB_USER", "Value" : {"Ref":"DbUsername"} },
-                        { "Name" : "MARIADB_PASSWORD", "Value" : {"Ref":"DbPassword"} }
+                        { "Name" : "REDMINE_DB_MYSQL", "Value" : {"Ref":"DatabaseEndpointAddress"} },
+                        { "Name" : "REDMINE_DB_USERNAME", "Value" : {"Ref":"DbUsername"} },
+                        { "Name" : "REDMINE_DB_PASSWORD", "Value" : {"Ref":"DbPassword"} }
                     ],
                     "PortMappings": [
-                        { "ContainerPort": 80 }
+                        { "ContainerPort": 3000 }
                     ],
                     "LogConfiguration": {
                         "LogDriver": "awslogs",
@@ -194,63 +194,24 @@
                             "awslogs-stream-prefix": "apache"
                         }
                     },
-                    "MountPoints": [
-                        {
-                            "SourceVolume": "joomla",
-                            "ContainerPath": "/bitnami/joomla",
-                            "ReadOnly": false
-                        },
-                        {
-                            "SourceVolume": "apache",
-                            "ContainerPath": "/bitnami/apache",
-                            "ReadOnly": false
-                        },
-                        {
-                            "SourceVolume": "php",
-                            "ContainerPath": "/bitnami/php",
-                            "ReadOnly": false
-                        }
-                    ]
+                    "MountPoints": [{
+                        "SourceVolume": "efs",
+                        "ContainerPath": "/bitnami/redmine",
+                        "ReadOnly": false
+                    }]
                 }],
                 "TaskRoleArn": {"Ref":"TaskRole"},
-                "Volumes": [
-                    {
-                        "Name": "joomla",
-                        "Host": { "SourcePath": {"Fn::Join": ["", [
-                            "/mnt/efs/",
-                            {"Fn::If": [
-                                "HasNoEfsPath",
-                                { "Fn::Select" : [ "2", { "Fn::Split": ["/", {"Ref":"AWS::StackId"}]}] },
-                                {"Ref":"EfsPath"}
-                            ]},
-                            "/joomla"
-                        ]]}}
-                    },
-                    {
-                        "Name": "apache",
-                        "Host": { "SourcePath": {"Fn::Join": ["", [
-                            "/mnt/efs/",
-                            {"Fn::If": [
-                                "HasNoEfsPath",
-                                { "Fn::Select" : [ "2", { "Fn::Split": ["/", {"Ref":"AWS::StackId"}]}] },
-                                {"Ref":"EfsPath"}
-                            ]},
-                            "/apache"
-                        ]]}}
-                    },
-                    {
-                        "Name": "php",
-                        "Host": { "SourcePath": {"Fn::Join": ["", [
-                            "/mnt/efs/",
-                            {"Fn::If": [
-                                "HasNoEfsPath",
-                                { "Fn::Select" : [ "2", { "Fn::Split": ["/", {"Ref":"AWS::StackId"}]}] },
-                                {"Ref":"EfsPath"}
-                            ]},
-                            "/php"
-                        ]]}}
-                    }
-                ]
+                "Volumes": [{
+                    "Name": "efs",
+                    "Host": { "SourcePath": {"Fn::Join": ["", [
+                        "/mnt/efs/",
+                        {"Fn::If": [
+                            "HasNoEfsPath",
+                            { "Fn::Select" : [ "2", { "Fn::Split": ["/", {"Ref":"AWS::StackId"}]}] },
+                            {"Ref":"EfsPath"}
+                        ]}
+                    ]]}}
+                }]
             }
         },    
 
@@ -262,8 +223,8 @@
                 "DesiredCount": "1",
                 "Role" : {"Ref":"EcsServiceRole"},
                 "LoadBalancers": [{
-                    "ContainerName": "joomla",
-                    "ContainerPort": "80",
+                    "ContainerName": "redmine",
+                    "ContainerPort": "3000",
                     "TargetGroupArn":{ "Ref":"AlbTargetGroup" }
                 }],
                 "TaskDefinition" : {"Ref":"TaskDef"}
