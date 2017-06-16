@@ -35,8 +35,9 @@
     },
     "Parameters" : {
         "KeyPairName": {
-            "Type": "AWS::EC2::KeyPair::KeyName",
-            "Description": "Name of an existing EC2 KeyPair to enable SSH access to the ECS instances."
+            "Type": "String",
+            "Description": "Name of an existing EC2 KeyPair to enable SSH access to the ECS instances.",
+            "Default": ""
         },
         "VpcId": {
             "Description" : "VPCid associated with the subnets. [elb-subnets.parameters.VpcId]",
@@ -115,8 +116,10 @@
             "Default" : "100"
         }
     },
+
     "Conditions" : {
-        "IsThreeAz" : { "Fn::Equals" : [{"Ref" : "AzCount"}, "3"]}
+        "IsThreeAz" : { "Fn::Equals" : [{"Ref" : "AzCount"}, "3"]},
+        "HasNoKeypair" : { "Fn::Equals" : [{"Ref" : "KeyPairName"}, ""]}
     },
 
     "Resources" : {
@@ -233,7 +236,11 @@
                 ],
                 "InstanceType": { "Ref": "InstanceType" },
                 "IamInstanceProfile": { "Ref": "Ec2InstanceProfile" },
-                "KeyName" : { "Ref": "KeyPairName" },
+                "KeyName": {"Fn::If": [
+                    "HasNoKeypair",
+                    { "Ref": "AWS::NoValue" },
+                    { "Ref": "KeyPairName" }
+                ]},
                 "BlockDeviceMappings" : [{
                     "DeviceName" : "/dev/sda1",
                     "Ebs" : { "VolumeSize" : {"Ref":"DiskSize"}, "VolumeType" : "gp2" }
@@ -370,7 +377,11 @@
                 "ImageId" : { "Ref" : "EcsAmiId" },
                 "InstanceType" : { "Ref" : "InstanceType" },
                 "IamInstanceProfile": { "Ref": "Ec2InstanceProfile" },
-                "KeyName" : { "Ref": "KeyPairName" },
+                "KeyName" : {"Fn::If": [
+                    "HasNoKeypair",
+                    { "Ref": "AWS::NoValue" },
+                    { "Ref": "KeyPairName" }
+                ]},
                 "SecurityGroups" : [
                     { "Ref": "ElbTargetSg" },
                     { "Ref": "DbTargetClusterSg" }

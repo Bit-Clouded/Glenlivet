@@ -210,7 +210,8 @@
     "Conditions" : {
         "IsVersionFive" : { "Fn::Equals": [
             {"Ref":"EsVersion"}, "5"
-        ]}
+        ]},
+        "HasNoKeypair" : { "Fn::Equals" : [{"Ref" : "KeyPairName"}, ""]}
     },
 
     "Mappings" : {
@@ -237,7 +238,11 @@
             "Properties": {
                 "InstanceType" : { "Ref" : "DataNodeInstanceType" },
                 "ImageId" : { "Ref" : "DebianJsAmiId" },
-                "KeyName" : { "Ref" : "KeyPairName" },
+                "KeyName" : {"Fn::If": [
+                    "HasNoKeypair",
+                    { "Ref": "AWS::NoValue" },
+                    { "Ref": "KeyPairName" }
+                ]},
                 "AssociatePublicIpAddress": "false",
                 "SecurityGroups": [
                     { "Ref" : "EsClusterNodeSg" }
@@ -330,7 +335,11 @@
             "Properties": {
                 "InstanceType" : { "Ref" : "DataNodeInstanceType" },
                 "ImageId" : { "Ref" : "DebianJsAmiId" },
-                "KeyName" : { "Ref" : "KeyPairName" },
+                "KeyName" : {"Fn::If": [
+                    "HasNoKeypair",
+                    { "Ref": "AWS::NoValue" },
+                    { "Ref": "KeyPairName" }
+                ]},
                 "AssociatePublicIpAddress": "false",
                 "SecurityGroups": [
                     { "Ref" : "EsClusterNodeSg" }
@@ -426,7 +435,11 @@
             "Properties": {
                 "InstanceType" : { "Ref" : "MasterNodeInstanceType" },
                 "ImageId" : { "Ref" : "DebianJsAmiId" },
-                "KeyName" : { "Ref" : "KeyPairName" },
+                "KeyName" : {"Fn::If": [
+                    "HasNoKeypair",
+                    { "Ref": "AWS::NoValue" },
+                    { "Ref": "KeyPairName" }
+                ]},
                 "AssociatePublicIpAddress": "false",
                 "SecurityGroups": [
                     { "Ref" : "EsClusterNodeSg" }
@@ -505,7 +518,11 @@
             "Properties": {
                 "InstanceType" : { "Ref" : "GatewayNodeInstanceType" },
                 "ImageId" : { "Ref" : "DebianJsAmiId" },
-                "KeyName" : { "Ref" : "KeyPairName" },
+                "KeyName" : {"Fn::If": [
+                    "HasNoKeypair",
+                    { "Ref": "AWS::NoValue" },
+                    { "Ref": "KeyPairName" }
+                ]},
                 "AssociatePublicIpAddress": "false",
                 "SecurityGroups": [
                     { "Ref" : "EsClusterNodeSg" },
@@ -627,7 +644,11 @@
             "Properties": {
                 "InstanceType" : { "Ref" : "KibanaInstanceType" },
                 "ImageId" : { "Ref" : "DebianJsAmiId" },
-                "KeyName" : { "Ref" : "KeyPairName" },
+                "KeyName" : {"Fn::If": [
+                    "HasNoKeypair",
+                    { "Ref": "AWS::NoValue" },
+                    { "Ref": "KeyPairName" }
+                ]},
                 "AssociatePublicIpAddress": "false",
                 "SecurityGroups": [
                     { "Ref" : "EsClusterNodeSg" },

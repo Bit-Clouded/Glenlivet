@@ -45,7 +45,8 @@
     "Parameters": {
         "KeyPairName": {
             "Description": "Name of an existing EC2 KeyPair to enable SSH access to the instances",
-            "Type": "AWS::EC2::KeyPair::KeyName"
+            "Type": "String",
+            "Default": ""
         },
         "SslCertId": {
             "Description": "Id of the SSL certificate to use.",
@@ -156,7 +157,8 @@
 		]}]},
 		"HasEsHost" : {"Fn::Not": [{"Fn::Equals": [
 			{"Ref": "EsHost"}, ""
-		]}]}
+		]}]},
+        "HasNoKeypair" : { "Fn::Equals" : [{"Ref" : "KeyPairName"}, ""]}
 	},
 
     "Resources": {
@@ -376,7 +378,11 @@
         "EventCollectionLc": {
             "Type": "AWS::AutoScaling::LaunchConfiguration",
             "Properties": {
-                "KeyName": { "Ref" : "KeyPairName" },
+                "KeyName": {"Fn::If": [
+                    "HasNoKeypair",
+                    { "Ref": "AWS::NoValue" },
+                    { "Ref": "KeyPairName" }
+                ]},
                 "ImageId": { "Ref" : "DebianJsAmiId" },
                 "IamInstanceProfile": { "Ref" : "EventCollectionIp" },
                 "InstanceType": { "Ref" : "InstanceType" },
@@ -476,7 +482,11 @@
         "EnrichStreamLc": {
             "Type": "AWS::AutoScaling::LaunchConfiguration",
             "Properties": {
-                "KeyName": { "Ref" : "KeyPairName" },
+                "KeyName": {"Fn::If": [
+                    "HasNoKeypair",
+                    { "Ref": "AWS::NoValue" },
+                    { "Ref": "KeyPairName" }
+                ]},
                 "ImageId": { "Ref" : "DebianJsAmiId" },
                 "InstanceType": { "Ref" : "InstanceType" },
                 "IamInstanceProfile": { "Ref" : "EnrichStreamIp" },
@@ -546,7 +556,11 @@
         "EnrichedStreamLc": {
             "Type": "AWS::AutoScaling::LaunchConfiguration",
             "Properties": {
-                "KeyName": { "Ref" : "KeyPairName" },
+                "KeyName": {"Fn::If": [
+                    "HasNoKeypair",
+                    { "Ref": "AWS::NoValue" },
+                    { "Ref": "KeyPairName" }
+                ]},
                 "IamInstanceProfile": { "Ref" : "EnrichedStreamIp" },
                 "ImageId": { "Ref" : "DebianJsAmiId" },
                 "InstanceType": { "Ref" : "InstanceType" },
