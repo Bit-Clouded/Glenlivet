@@ -26,7 +26,8 @@
                 "TemplatePath": "analytics/logs-store",
                 "Resources": {
                     "AccessLogBucket": "Raw",
-                    "CwlPolicy": "LinuxLogPolicy"
+                    "CwlPolicy": "LinuxLogPolicy",
+                    "AccessS3Log": "AccessS3Log"
                 },
                 "Outputs": {
                     "CwlLinuxParams": "LxDockerLogParams",
@@ -64,7 +65,7 @@
         "ContainerSks": {
             "Description": "Container image for s3 sink",
             "Type": "String",
-            "Default": "bitclouded/snowplow-stream-s3-sink:3-1"
+            "Default": "bitclouded/snowplow-stream-s3-sink:4-1"
         },
         "ContainerSess": {
             "Description": "Container image for elasticsearch sink",
@@ -137,6 +138,10 @@
 			"Description": "Managed policy for linux logging. [logs-store.resources.LinuxLogPolicy]",
 			"Type": "String"
 		},
+        "AccessS3Log": {
+			"Description": "Bucket for holding s3 access logs",
+			"Type": "String"
+        },
 
         "EsHost" : {
 			"Description": "Hostname of Elasticsearch [elasticsearch.outputs.EsElb]",
@@ -629,9 +634,49 @@
         
         "RawDataStore": {
             "Type" : "AWS::S3::Bucket",
+			"DependsOn": "NewObjectNotificationPolicy",
             "Properties" : {
+                "AccessControl" : "Private",
+				"LoggingConfiguration": {
+					"DestinationBucketName" : { "Ref": "AccessS3Log"},
+					"LogFilePrefix" : {"Fn::Join": ["",[
+						{"Ref":"AWS::StackName"}, "-RawDataStore"
+					]]}
+				},
+				"VersioningConfiguration" : {
+					"Status": "Enabled"
+				},
+				"NotificationConfiguration" : {
+					"TopicConfigurations" : [{
+						"Topic": {"Ref":"NewObjectNotification"},
+						"Event": "s3:ObjectCreated:*"
+					}]
+				}
             },
             "DeletionPolicy" : "Retain"
+        },
+
+        "NewObjectNotification": {
+            "Type": "AWS::SNS::Topic"
+        },
+        "NewObjectNotificationPolicy": {
+            "Type": "AWS::SNS::TopicPolicy",
+            "Properties": {
+                "PolicyDocument":{
+                    "Version": "2008-10-17",
+                    "Statement": {
+                        "Sid": "log-file-created-sns",
+                        "Effect": "Allow",
+                        "Principal": {"AWS": "*"},
+                        "Action": ["SNS:Publish"],
+                        "Resource": {"Ref":"NewObjectNotification"},
+                        "Condition": {"ArnLike":{"aws:SourceArn":{"Fn::Join":["",[
+                            "arn:aws:s3:*:*:*"
+                        ]]}}}
+                    }
+                },
+                "Topics": [{"Ref":"NewObjectNotification"}]
+            }
         }
     }
 }
