@@ -50,9 +50,10 @@
 			"Default": ""
 		},
 
-        "KeyName" : {
+        "KeyPairName" : {
             "Description" : "Name of an existing EC2 KeyPair to enable SSH access",
-            "Type" : "String"
+            "Type" : "String",
+            "Default": ""
         },
 		"DebianJsAmiId": {
 			"Description": "AMI to use. Note Ubuntu is prefered.",
@@ -138,7 +139,8 @@
     },
 
     "Conditions" : {
-		"IsThreeAz" : { "Fn::Not" : [{ "Fn::Equals" : [{"Ref" : "Subnet3Id"}, ""]}]}
+		"IsThreeAz" : { "Fn::Not" : [{ "Fn::Equals" : [{"Ref" : "Subnet3Id"}, ""]}]},
+        "HasNoKeypair" : { "Fn::Equals" : [{"Ref" : "KeyPairName"}, ""]}
     },
 
     "Resources" : {
@@ -204,7 +206,11 @@
                 "ImageId" : { "Ref":"DebianJsAmiId" },
                 "IamInstanceProfile" : {"Ref":"WebServersInstanceProfile"},
                 "Tags" : [{ "Key" : "Name", "Value" : "MongoDB Replica Set - First" }],
-                "KeyName" : { "Ref" : "KeyName" },
+                "KeyName" : {"Fn::If": [
+                    "HasNoKeypair",
+                    { "Ref": "AWS::NoValue" },
+                    { "Ref": "KeyPairName" }
+                ]},
                 "NetworkInterfaces" : [{
                     "NetworkInterfaceId" : {"Ref" : "FirstDataMemberEni"}, "DeviceIndex" : "0" }
                 ],
@@ -275,7 +281,11 @@
                 "ImageId" : { "Ref":"DebianJsAmiId" },
                 "IamInstanceProfile" : {"Ref":"WebServersInstanceProfile"},
                 "Tags" : [{ "Key" : "Name", "Value" : "MongoDB Replica Set - Second" }],
-                "KeyName" : { "Ref" : "KeyName" },
+                "KeyName" : {"Fn::If": [
+                    "HasNoKeypair",
+                    { "Ref": "AWS::NoValue" },
+                    { "Ref": "KeyPairName" }
+                ]},
                 "NetworkInterfaces" : [{
                     "NetworkInterfaceId" : {"Ref" : "SecondDataMemberEni"}, "DeviceIndex" : "0" }
                 ],
@@ -344,7 +354,11 @@
                 "NetworkInterfaces" : [{
                     "NetworkInterfaceId" : {"Ref" : "ArbiterEni"}, "DeviceIndex" : "0" }
                 ],
-                "KeyName" : { "Ref" : "KeyName" },
+                "KeyName" : {"Fn::If": [
+                    "HasNoKeypair",
+                    { "Ref": "AWS::NoValue" },
+                    { "Ref": "KeyPairName" }
+                ]},
                 "UserData" : { "Fn::Base64" : { "Fn::Join" : ["", [
                     "#!/bin/bash\n",
 					"ECID=$(curl http://instance-data/latest/meta-data/instance-id)\n",

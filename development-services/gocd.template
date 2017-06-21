@@ -42,7 +42,8 @@
 	"Parameters": {
 		"KeyPairName": {
 			"Description": "Name of an existing EC2 KeyPair",
-			"Type": "String"
+			"Type": "String",
+			"Default": ""
 		},
 		"ServerInstanceType" : {
 			"Description" : "GoCDmaster server EC2 instance type",
@@ -184,7 +185,8 @@
 		]}]},
 		"HasSsl" : {"Fn::Not": [{"Fn::Equals": [
 			{"Ref": "SslCertId"}, ""
-		]}]}
+		]}]},
+		"HasNoKeypair" : { "Fn::Equals" : [{"Ref" : "KeyPairName"}, ""]}
 	},
 
 	"Resources" : {
@@ -252,7 +254,11 @@
 				"IamInstanceProfile" : {"Ref":"WebServersInstanceProfile"},
 				"InstanceType" : { "Ref" : "ServerInstanceType" },
 				"ImageId" : { "Ref" : "DebianJsAmiId" },
-				"KeyName" : { "Ref" : "KeyPairName" },
+				"KeyName" : {"Fn::If": [
+                    "HasNoKeypair",
+                    { "Ref": "AWS::NoValue" },
+                    { "Ref": "KeyPairName" }
+                ]},
 				"SecurityGroupIds": [
 					{ "Ref" : "ServerSg" },
 					{ "Ref" : "ElbTargetSg" }
@@ -332,7 +338,11 @@
 				"InstanceType" : { "Ref" : "AgentInstanceType" },
 				"ImageId" : { "Ref" : "WindowsContainerAmiId" },
 				"IamInstanceProfile" : {"Ref":"WebServersInstanceProfile"},
-				"KeyName" : { "Ref" : "KeyPairName" },
+				"KeyName" : {"Fn::If": [
+                    "HasNoKeypair",
+                    { "Ref": "AWS::NoValue" },
+                    { "Ref": "KeyPairName" }
+                ]},
 				"SecurityGroups": [
 					{ "Ref" : "AgentSg" }
 				],
@@ -393,7 +403,11 @@
 				"InstanceType" : { "Ref" : "AgentInstanceType" },
 				"ImageId" : { "Ref" : "DebianJsAmiId" },
 				"IamInstanceProfile" : {"Ref":"WebServersInstanceProfile"},
-				"KeyName" : { "Ref" : "KeyPairName" },
+				"KeyName" : {"Fn::If": [
+                    "HasNoKeypair",
+                    { "Ref": "AWS::NoValue" },
+                    { "Ref": "KeyPairName" }
+                ]},
 				"SecurityGroups": [
 					{ "Ref" : "AgentSg" }
 				],

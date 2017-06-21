@@ -28,7 +28,8 @@
     "Parameters": {
         "KeyPairName": {
             "Description": "Name of an existing EC2 KeyPair to enable SSH access to the instances",
-            "Type": "AWS::EC2::KeyPair::KeyName"
+            "Type": "String",
+            "Default": ""
         },
 
         "AdminElbScheme": {
@@ -120,7 +121,8 @@
     "Conditions" : {
         "HasDbSnapshot" : {"Fn::Not": [{"Fn::Equals": [
             {"Ref": "DbSnapshot"}, ""
-        ]}]}
+        ]}]},
+        "HasNoKeypair" : { "Fn::Equals" : [{"Ref" : "KeyPairName"}, ""]}
     },
 
     "Resources": {
@@ -145,7 +147,11 @@
         "AdminServerLc": {
             "Type": "AWS::AutoScaling::LaunchConfiguration",
             "Properties": {
-                "KeyName": { "Ref": "KeyPairName" },
+                "KeyName": {"Fn::If": [
+                    "HasNoKeypair",
+                    { "Ref": "AWS::NoValue" },
+                    { "Ref": "KeyPairName" }
+                ]},
                 "SecurityGroups": [
                     { "Ref": "WebServerSg" }
                 ],
@@ -186,7 +192,11 @@
         "WorkerLc": {
             "Type": "AWS::AutoScaling::LaunchConfiguration",
             "Properties": {
-                "KeyName": { "Ref": "KeyPairName" },
+                "KeyName": {"Fn::If": [
+                    "HasNoKeypair",
+                    { "Ref": "AWS::NoValue" },
+                    { "Ref": "KeyPairName" }
+                ]},
                 "SecurityGroups": [
                     { "Ref": "WebServerSg" }
                 ],

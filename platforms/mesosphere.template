@@ -32,6 +32,9 @@
             }
         ]
     },
+    "Conditions" : {
+        "HasNoKeypair" : { "Fn::Equals" : [{"Ref" : "KeyPairName"}, ""]}
+    },
   "Parameters": {
     "VpcId": {
         "Description" : "VPCid associated with the subnets. [elb-subnets.parameters.VpcId]",
@@ -52,7 +55,7 @@
       "Default": "2",
       "Type": "Number"
     },
-    "KeyName": {
+    "KeyPairName": {
       "Description": "Required: Specify your AWS EC2 Key Pair.",
       "Type": "AWS::EC2::KeyPair::KeyName"
     },
@@ -306,9 +309,11 @@
             "default"
           ]
         },
-        "KeyName": {
-          "Ref": "KeyName"
-        },
+        "KeyName": {"Fn::If": [
+                    "HasNoKeypair",
+                    { "Ref": "AWS::NoValue" },
+                    { "Ref": "KeyPairName" }
+                ]},
         "UserData": {
           "Fn::Base64": {
             "Fn::Join": [
@@ -985,9 +990,11 @@
             "default"
           ]
         },
-        "KeyName": {
-          "Ref": "KeyName"
-        },
+        "KeyName": {"Fn::If": [
+                    "HasNoKeypair",
+                    { "Ref": "AWS::NoValue" },
+                    { "Ref": "KeyPairName" }
+                ]},
         "UserData": {
           "Fn::Base64": {
             "Fn::Join": [
@@ -1479,9 +1486,11 @@
             "default"
           ]
         },
-        "KeyName": {
-          "Ref": "KeyName"
-        },
+        "KeyName": {"Fn::If": [
+                    "HasNoKeypair",
+                    { "Ref": "AWS::NoValue" },
+                    { "Ref": "KeyPairName" }
+                ]},
         "UserData": {
           "Fn::Base64": {
             "Fn::Join": [

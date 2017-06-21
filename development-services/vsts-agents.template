@@ -10,7 +10,8 @@
 	"Parameters": {
 		"KeyPairName": {
 			"Description": "Name of an existing EC2 KeyPair",
-			"Type": "String"
+			"Type": "String",
+			"Default": ""
 		},
 		"AgentInstanceType" : {
 			"Description" : "Agent EC2 instance type",
@@ -71,6 +72,10 @@
         }
 	},
 
+    "Conditions" : {
+        "HasNoKeypair" : { "Fn::Equals" : [{"Ref" : "KeyPairName"}, ""]}
+    },
+
 	"Resources" : {
 
 		"WebServersRole" : {
@@ -105,7 +110,11 @@
 				"InstanceType" : { "Ref" : "AgentInstanceType" },
 				"ImageId" : { "Ref" : "WindowsAgentAmi" },
 				"IamInstanceProfile" : {"Ref":"WebServersInstanceProfile"},
-				"KeyName" : { "Ref" : "KeyPairName" },
+				"KeyName" : {"Fn::If": [
+                    "HasNoKeypair",
+                    { "Ref": "AWS::NoValue" },
+                    { "Ref": "KeyPairName" }
+                ]},
 				"SecurityGroups": [
 					{ "Ref" : "AgentSg" }
 				],
