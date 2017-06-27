@@ -1,5 +1,8 @@
 {
     "AWSTemplateFormatVersion": "2010-09-09",
+
+    "Description": "HA Rancher Cluster",
+
     "Metadata" : {
         "DefaultName" : "Rancher",
         "Dependencies": [
@@ -10,7 +13,12 @@
                 }
             },
             {
-                "TemplatePath": "networking/vpc"
+                "TemplatePath": "networking/vpc",
+                "Resources": {
+                    "ElbSg": "ElbSecGroup",
+                    "ElbTargetSg": "ElbTargetSecGroup",
+                    "HttpSg": "HttpNsSecGroup"
+                }
             },
             {
                 "TemplatePath": "networking/elb-subnets",
@@ -81,10 +89,10 @@
             "Default" : ""
         },
         "DbSubnetGroup" : {
-            "Description" : "Subnet Group for hosting the MariaDB server. [private-subnets.resources.RdsSubnetGroup]",
+            "Description" : "Subnet Group for hosting the MariaDB server.",
             "Type" : "String"
         },
-        "WebInstanceTyp" : {
+        "WebInstanceType" : {
             "Description" : "Phabricator server instance type",
             "Type" : "String",
             "Default" : "t2.medium",
@@ -101,19 +109,40 @@
             "ConstraintDescription" : "must be a valid EC2 instance type."
         },
         "RancherAmiId": {
-            "Type": "String",
-            "Default": "ami-67172604"
+            "Type": "String"
         },
         "VpcId": {
-            "Description" : "VPCid associated with the subnets. [elb-subnets.parameters.VpcId]",
+            "Description" : "VPCid associated with the subnets.",
             "Type": "AWS::EC2::VPC::Id"
         },
+        "HostedZoneName": {
+            "Description": "Hosted Zone for the url (Without '.'). You need to fill in Subdomain as well for custom domain to work.",
+            "Type": "String",
+            "Default": ""
+        },
+        "Subdomain": {
+            "Description": "Subdomain (Without '.'). You need to fill in HostedZoneName as well for custom domain to work.",
+            "Type": "String",
+            "Default": ""
+        },
+		"ElbSg" : {
+			"Description": "Elb Security Group.",
+            "Type": "String"
+		},
+		"ElbTargetSg" : {
+			"Description": "Elb Target Security Group.",
+            "Type": "String"
+		},
+		"HttpSg" : {
+			"Description": "Elb Target Security Group.",
+            "Type": "String"
+		},
         "ElbSubnets" : {
-            "Description" : "VPCid associated with the subnets. [elb-subnets.outputs.ElbSubnets]",
+            "Description" : "VPCid associated with the subnets.",
             "Type": "List<AWS::EC2::Subnet::Id>"
         },
         "ServerSubnets" : {
-            "Description" : "VPCid associated with the subnets. [elb-subnets.outputs.WebServerSubnets]",
+            "Description" : "VPCid associated with the subnets.",
             "Type": "List<AWS::EC2::Subnet::Id>"
         }
     },
@@ -122,10 +151,32 @@
         "HasDbSnapshot" : {"Fn::Not": [{"Fn::Equals": [
             {"Ref": "DbSnapshot"}, ""
         ]}]},
+        "HasHostname" : { "Fn::And": [
+            {"Fn::Not" : [{"Fn::Equals": [{"Ref":"Subdomain"}, ""]}]},
+            {"Fn::Not" : [{"Fn::Equals": [{"Ref":"HostedZoneName"}, ""]}]}
+        ]},
         "HasNoKeypair" : { "Fn::Equals" : [{"Ref" : "KeyPairName"}, ""]}
     },
 
     "Resources": {
+        "Route53": {
+            "Type": "AWS::Route53::RecordSet",
+            "Condition": "HasHostname",
+            "Properties": {
+                "HostedZoneName": {"Fn::Join": [".", [
+                    {"Ref" : "HostedZoneName"}, ""
+                ]]},
+                "Comment": "Hostname",
+                "Name": {"Fn::Join": [".", [
+                    {"Ref" : "Subdomain"}, {"Ref" : "HostedZoneName"}, ""
+                ]]},
+                "Type": "A",
+                "AliasTarget" : {
+                    "DNSName" : { "Fn::GetAtt": ["AdminGateway", "DNSName"] },
+                    "HostedZoneId": { "Fn::GetAtt": ["AdminGateway", "CanonicalHostedZoneNameID"] }
+                }
+            }
+        },
         "AdminAsg": {
             "Type": "AWS::AutoScaling::AutoScalingGroup",
             "Properties": {
@@ -138,7 +189,7 @@
                 "LoadBalancerNames": [
                     { "Ref": "AdminGateway" }
                 ],
-                "MinSize": 1,
+                "MinSize": 3,
                 "MaxSize": 5,
                 "LaunchConfigurationName": { "Ref": "AdminServerLc" }
             },
@@ -153,9 +204,10 @@
                     { "Ref": "KeyPairName" }
                 ]},
                 "SecurityGroups": [
-                    { "Ref": "WebServerSg" }
+                    { "Ref": "WebServerSg" },
+                    { "Ref": "ElbTargetSg" }
                 ],
-                "InstanceType": { "Ref": "WebInstanceTyp" },
+                "InstanceType": { "Ref": "WebInstanceType" },
                 "ImageId": { "Ref": "RancherAmiId" },
                 "UserData": { "Fn::Base64": { "Fn::Join": ["", [
                     "#cloud-config\n",
@@ -165,13 +217,14 @@
                     "      image: rancher/server\n",
                     "      ports:\n",
                     "      - 8080:8080\n",
+                    "      - 9345:9345\n",
                     "      restart: always\n",
-                    "      environment:\n",
-                    "        - CATTLE_DB_CATTLE_MYSQL_HOST=", { "Fn::GetAtt": ["Database", "Endpoint.Address"] }, "\n",
-                    "        - CATTLE_DB_CATTLE_MYSQL_PORT=", { "Fn::GetAtt": ["Database", "Endpoint.Port"] }, "\n",
-                    "        - CATTLE_DB_CATTLE_MYSQL_NAME=rancher\n",
-                    "        - CATTLE_DB_CATTLE_USERNAME=", { "Ref": "DbUsername" }, "\n",
-                    "        - CATTLE_DB_CATTLE_PASSWORD=", { "Ref": "DbPassword" }, "\n"
+                    "      command: --db-name rancher",
+                    " --advertise-address $private_ipv4",
+                    " --db-host ", { "Fn::GetAtt": ["Database", "Endpoint.Address"] },
+                    " --db-port ", { "Fn::GetAtt": ["Database", "Endpoint.Port"] },
+                    " --db-user ", { "Ref": "DbUsername" },
+                    " --db-pass ", { "Ref": "DbPassword" }, "\n"
                 ]]}}
             }
         },
@@ -200,7 +253,7 @@
                 "SecurityGroups": [
                     { "Ref": "WebServerSg" }
                 ],
-                "InstanceType": { "Ref": "WebInstanceTyp" },
+                "InstanceType": { "Ref": "WebInstanceType" },
                 "ImageId": { "Ref": "RancherAmiId" },
                 "UserData": { "Fn::Base64": { "Fn::Join": ["", [
                     "#cloud-config\n",
@@ -217,50 +270,22 @@
             },
             "DependsOn": "AdminAsg"
         },
-        "AdminGatewaySg": {
-            "Type": "AWS::EC2::SecurityGroup",
-            "Properties": {
-                "SecurityGroupIngress": [{
-                    "ToPort": 80,
-                    "IpProtocol": "tcp",
-                    "FromPort": 80,
-                    "CidrIp": "0.0.0.0/0"
-                }],
-                "VpcId": { "Ref": "VpcId" },
-                "GroupDescription": "Security group for the Admin Gateway"
-            }
-        },
         "WebServerSg": {
             "Type": "AWS::EC2::SecurityGroup",
             "Properties": {
-                "SecurityGroupIngress": [
-                    {
-                        "FromPort": 8080,
-                        "ToPort": 8080,
-                        "IpProtocol": "tcp",
-                        "SourceSecurityGroupId": { "Ref": "AdminGatewaySg" }
-                    },
-                    {
-                        "FromPort": 4500,
-                        "ToPort": 4500,
-                        "IpProtocol": "udp",
-                        "CidrIp": "0.0.0.0/0"
-                    },
-                    {
-                        "FromPort": 22,
-                        "ToPort": 22,
-                        "IpProtocol": "tcp",
-                        "CidrIp": "0.0.0.0/0"
-                    },
-                    {
-                        "FromPort": 500,
-                        "ToPort": 500,
-                        "IpProtocol": "udp",
-                        "CidrIp": "0.0.0.0/0"
-                    }
-                ],
+                "SecurityGroupIngress": [],
                 "VpcId": { "Ref": "VpcId" },
                 "GroupDescription": "Security group for the RancherOS admin web servers"
+            }
+        },
+        "WebServerSgSelfIngress": {
+            "Type": "AWS::EC2::SecurityGroupIngress",
+            "Properties": {
+                "GroupId": { "Ref": "WebServerSg" },
+                "IpProtocol" : "tcp",
+                "ToPort" : "9345",
+                "FromPort" : "9345",
+                "SourceSecurityGroupId": { "Ref": "WebServerSg" }
             }
         },
         "AdminGateway": {
@@ -275,7 +300,8 @@
                     "InstanceProtocol": "tcp"
                 }],
                 "SecurityGroups": [
-                    { "Ref": "AdminGatewaySg" }
+                    { "Ref": "ElbSg" },
+                    { "Ref": "HttpSg" }
                 ],
                 "Policies": [{
                     "PolicyName": "EnableProxyProtocol",
