@@ -57,7 +57,8 @@
     },
     "KeyPairName": {
       "Description": "Required: Specify your AWS EC2 Key Pair.",
-      "Type": "AWS::EC2::KeyPair::KeyName"
+      "Type": "String",
+      "Default": ""
     },
     "CoreOsAmiId" : {
       "Description": "AMI Id for CoreOS",
