@@ -201,7 +201,7 @@
                                     "Fn::Join": ["", [
                                             "[cfn-auto-reloader-hook]\n",
                                             "triggers=post.update\n",
-                                            "path=Resources.ContainerInstances.Metadata.AWS::CloudFormation::Init\n",
+                                            "path=Resources.WindowsAgentLc.Metadata.AWS::CloudFormation::Init\n",
                                             "action=cfn-init.exe -v -s ", { "Ref": "AWS::StackId" },
                                                 " -r SharePointFoundation",
                                                 " --region ", { "Ref": "AWS::Region" }, "\n"
@@ -281,7 +281,7 @@
                     "echo $options >> c:\\windows\\temp\\log1.txt;",
                     "# end of script\n",
                     " cfn-init.exe -v -s ", { "Ref": "AWS::StackId" },
-                    " -r ContainerInstances",
+                    " -r WindowsAgentLc",
                     " --region ", { "Ref": "AWS::Region" }, "\n",
                     " cfn-signal.exe -e $lastexitcode --stack ", { "Ref": "AWS::StackName" },
                     "     --resource ECSAutoScalingGroup ",
