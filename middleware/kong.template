@@ -163,7 +163,8 @@
 		},
         "KeyPairName": {
             "Description": "Required- Name of an existing EC2 KeyPair to enable SSH access to the instances for Kong",
-            "Type": "AWS::EC2::KeyPair::KeyName"
+            "Type": "String",
+            "Default": ""
         },
         "KongFleetMaxSize": {
             "Description": "Max Number of Kong instances",
@@ -284,7 +285,8 @@
         },
 		"HasSsl" : {"Fn::Not": [{"Fn::Equals": [
 			{"Ref": "SslCertId"}, ""
-		]}]}
+		]}]},
+        "HasNoKeypair" : { "Fn::Equals" : [{"Ref" : "KeyPairName"}, ""]}
     },
     "Resources": {
     	"HttpGateway": {
@@ -367,9 +369,11 @@
                 "InstanceType": {
                     "Ref": "InstanceType"
                 },
-                "KeyName": {
-                    "Ref": "KeyPairName"
-                },
+                "KeyName": {"Fn::If": [
+                    "HasNoKeypair",
+                    { "Ref": "AWS::NoValue" },
+                    { "Ref": "KeyPairName" }
+                ]},
                 "SecurityGroups": [
                     {
                         "Ref": "KongSecurityGroup"

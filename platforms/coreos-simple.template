@@ -37,7 +37,8 @@
         },
         "KeyPairName" : {
             "Description" : "The name of an EC2 Key Pair to allow SSH access to the instance.",
-            "Type" : "String"
+            "Type" : "String",
+            "Default": ""
         },
         "CoreOsAmiId" : {
             "Description": "AMI Id for CoreOs",
@@ -61,6 +62,9 @@
             "Description" : "VPCid associated with the subnets. [elb-subnets.outputs.WebServerSubnets]",
             "Type": "List<AWS::EC2::Subnet::Id>"
         }
+    },
+    "Conditions" : {
+        "HasNoKeypair" : { "Fn::Equals" : [{"Ref" : "KeyPairName"}, ""]}
     },
     "Resources": {
         "SshGateway": {
@@ -165,7 +169,11 @@
             "Properties": {
                 "ImageId" : { "Ref": "CoreOsAmiId" },
                 "InstanceType": {"Ref": "InstanceType"},
-                "KeyName": {"Ref": "KeyPairName"},
+                "KeyName": {"Fn::If": [
+                    "HasNoKeypair",
+                    { "Ref": "AWS::NoValue" },
+                    { "Ref": "KeyPairName" }
+                ]},
                 "SecurityGroups": [{"Ref": "CoreOsSecurityGroup"}],
                 "UserData" : { "Fn::Base64": { "Fn::Join": ["", [
                     "#cloud-config\n\n",

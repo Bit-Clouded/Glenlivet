@@ -43,7 +43,8 @@
 	"Parameters": {
 		"KeyPairName": {
 			"Description": "Name of an existing EC2 KeyPair to enable SSH access to the instances",
-			"Type": "AWS::EC2::KeyPair::KeyName"
+			"Type": "String",
+			"Default": ""
 		},
 
 		"IsPublic": {
@@ -198,7 +199,8 @@
 		]}]},
 		"IsPublicCond" : {"Fn::Equals": [
 			{"Ref": "IsPublic"}, "true"
-		]}
+		]},
+        "HasNoKeypair" : { "Fn::Equals" : [{"Ref" : "KeyPairName"}, ""]}
 	},
 
 	"Resources" : {
@@ -289,7 +291,11 @@
 			"Properties": {
 				"IamInstanceProfile" : {"Ref":"WebServersInstanceProfile"},
 				"InstanceType" : { "Ref" : "WebInstanceTyp" },
-				"KeyName" : { "Ref" : "KeyPairName" },
+				"KeyName" : {"Fn::If": [
+                    "HasNoKeypair",
+                    { "Ref": "AWS::NoValue" },
+                    { "Ref": "KeyPairName" }
+                ]},
 				"ImageId" : { "Ref" : "UbuntuTtAmiId" },
 				"NetworkInterfaces" : [
 				{
