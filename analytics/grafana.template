@@ -35,8 +35,7 @@
                 "TemplatePath": "analytics/logs-store",
                 "Resources": {
                     "AccessLogBucket": "Raw",
-                    "CwlPolicy": "LinuxLogPolicy",
-                    "AccessS3Log": "AccessS3Log"
+                    "CwlPolicy": "LinuxLogPolicy"
                 },
                 "Outputs": {
                     "CwlLinuxParams": "LxDockerLogParams",
@@ -175,18 +174,21 @@
             "Type" : "String",
             "Default" : "geldim/https-redirect"
         },
-
+        "AccessLogBucket": {
+            "Description": "S3 bucket for ELB access log.",
+            "Type": "String"
+        },
 		"CwlUbuntuAgentDocker": {
 			"Description": "Name of cluster. This is used for discovery.",
 			"Type": "String",
 			"Default": "bitclouded/aws-cwl-agent:4.1"
 		},
 		"CwlLinuxParams" : {
-			"Description": "Environment variables for syslog and authlog cwl group names [logs-store.outputs.LxDockerLogParams]",
+			"Description": "Environment variables for syslog and authlog cwl group names",
 			"Type": "String"
 		},
 		"CwlDockerParams" : {
-			"Description": "Docker log driver params [logs-store.outputs.DockerCwlParams]",
+			"Description": "Docker log driver params",
 			"Type": "String"
 		},
         "CertificateArn": {
@@ -195,7 +197,7 @@
             "Default": ""
         },
 		"CwlPolicy" : {
-			"Description": "Managed policy for linux logging. [logs-store.resources.LinuxLogPolicy]",
+			"Description": "Managed policy for linux logging.",
 			"Type": "String"
 		}
     },
@@ -365,6 +367,11 @@
                     },
                     {"Ref":"AWS::NoValue"}
                 ]}],
+                "AccessLoggingPolicy": {
+                    "EmitInterval": "5",
+                    "Enabled": "true",
+                    "S3BucketName": { "Ref" : "AccessLogBucket" }
+                },
                 "SecurityGroups": [
                     { "Ref": "ElbSg" },
                     { "Ref": "HttpSg" }
