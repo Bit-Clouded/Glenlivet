@@ -326,6 +326,11 @@
                     "UnhealthyThreshold": "5",
                     "Interval" : "90",
                     "Timeout" : "60"
+                },
+                "AccessLoggingPolicy" : {
+                    "EmitInterval": "5",
+                    "Enabled": "true",
+                    "S3BucketName": {"Ref": "AccessLogBucket"}
                 }
             }
         },

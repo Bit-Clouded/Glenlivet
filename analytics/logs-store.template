@@ -3,11 +3,83 @@
 
 	"Description": "Buckets to hold aws logs.",
 
+    "Parameters": {
+        "ConfigDeliveryFrequency": {
+            "Description": "",
+            "Default": "Three_Hours",
+            "Type": "String",
+            "AllowedValues": [
+                "One_Hour",
+                "Three_Hours",
+                "Six_Hours",
+                "Twelve_Hours",
+                "TwentyFour_Hours"
+            ]
+        }
+    },
+
 	"Metadata" : {
 		"DefaultName" : "LogStore"
 	},
 	
 	"Resources" : {
+        "ConfigRecorder": {
+            "Type": "AWS::Config::ConfigurationRecorder",
+            "Properties": {
+                "RecordingGroup": {
+                    "AllSupported" : "True",
+                    "IncludeGlobalResourceTypes" : "True"
+                },
+                "RoleARN": {"Fn::GetAtt": ["ConfigRecorderRole", "Arn"]}
+            }
+        },
+        "ConfigDeliveryChannel": {
+            "Type" : "AWS::Config::DeliveryChannel",
+            "DependsOn": "RawBucketPolicy",
+            "Properties" : {
+                "ConfigSnapshotDeliveryProperties" : {
+                    "DeliveryFrequency" : {"Ref":"ConfigDeliveryFrequency"}
+                },
+                "S3BucketName" : {"Ref":"Raw"}
+            }
+        },
+
+        "ConfigRecorderRole": {
+            "Type": "AWS::IAM::Role",
+            "Properties": {
+                "AssumeRolePolicyDocument": {
+                    "Version": "2012-10-17",
+                    "Statement": [{
+                        "Effect": "Allow",
+                        "Principal": {
+                            "Service": "config.amazonaws.com"
+                        },
+                        "Action": "sts:AssumeRole"
+                    }]
+                },
+                "Path": "/bit-clouded/analytics/",
+                "Policies": [{
+                    "PolicyName": "default",
+                    "PolicyDocument": {
+                        "Version": "2012-10-17",
+                        "Statement": [{
+                            "Effect": "Allow",
+                            "Action": ["s3:PutObject"],
+                            "Resource": [{ "Fn::Join" : ["", ["arn:aws:s3:::", { "Ref" : "Raw" } , "/AWSLogs/*" ]]}],
+                            "Condition":
+                            { "StringLike": { "s3:x-amz-acl": "bucket-owner-full-control" }}
+                        },
+                        {
+                            "Effect": "Allow",
+                            "Action": ["s3:GetBucketAcl"],
+                            "Resource": { "Fn::Join" : ["", ["arn:aws:s3:::", { "Ref" : "Raw" } , "/" ]]}
+                        }]
+                    }
+                }],
+                "ManagedPolicyArns":["arn:aws:iam::aws:policy/service-role/AWSConfigRole"]
+            }
+        },
+
 		"AccessS3Log" : {
 			"Type" : "AWS::S3::Bucket",
 			"DependsOn": "AccessS3LogBucketSnsPolicy",
@@ -47,7 +119,7 @@
 				"LoggingConfiguration": {
 					"DestinationBucketName" : { "Ref": "AccessS3Log"},
 					"LogFilePrefix" : {"Fn::Join": ["",[
-						"AccessCfLog"
+						{"Ref":"AWS::StackName"}, "-AccessCfLog/"
 					]]}
 				},
 				"VersioningConfiguration" : {
@@ -84,7 +156,7 @@
 				"LoggingConfiguration": {
 					"DestinationBucketName" : { "Ref": "AccessS3Log"},
 					"LogFilePrefix" : {"Fn::Join": ["",[
-						"Raw"
+						{"Ref":"AWS::StackName"}, "-Raw/"
 					]]}
 				},
 				"VersioningConfiguration" : {
@@ -105,6 +177,21 @@
 				"Bucket" : {"Ref" : "Raw"},
 				"PolicyDocument": {
 					"Statement":[
+                    {
+                        "Sid": "AwsConfigBucketPermissionsCheck",
+                        "Effect": "Allow",
+                        "Principal": { "Service": ["config.amazonaws.com"] },
+                        "Action": "s3:GetBucketAcl",
+                        "Resource": { "Fn::Join" : ["", ["arn:aws:s3:::", { "Ref" : "Raw" } ]]}
+                    },
+                    {
+                        "Sid": "AWSConfigBucketDelivery",
+                        "Effect": "Allow",
+                        "Principal": { "Service": ["config.amazonaws.com"] },
+                        "Action": "s3:PutObject",
+                        "Resource": { "Fn::Join" : ["", ["arn:aws:s3:::", { "Ref" : "Raw" } , "/AWSLogs/*" ]]},
+                        "Condition": { "StringEquals": { "s3:x-amz-acl": "bucket-owner-full-control" }}
+                    },
 					{
 						"Action":["s3:DeleteObject","s3:DeleteObjectVersion"],
 						"Effect":"Deny",

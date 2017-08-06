@@ -42,6 +42,7 @@
             {
                 "TemplatePath": "analytics/logs-store",
                 "Resources": {
+                    "AccessLogBucket": "Raw",
                     "LxDockerLog": "LxDockerLog"
                 }
             }
@@ -104,6 +105,10 @@
             "Description" : "",
             "Type" : "String"
         },
+		"AccessLogBucket" : {
+			"Description": "Elb Target Security Group.",
+            "Type": "String"
+		},
         "EfsPath" : {
             "Description" : "EFS disk path segment. It has a /mnt/efs/ prefix followed by the guid of the CloudFormation stack id when left blank.",
             "Type" : "String",
@@ -124,6 +129,12 @@
                 "LoadBalancerAttributes":[{
                     "Key":"idle_timeout.timeout_seconds",
                     "Value":"30"
+                },{
+                    "Key":"access_logs.s3.enabled",
+                    "Value":"true"
+                },{
+                    "Key":"access_logs.s3.bucket",
+                    "Value":{"Ref":"AccessLogBucket"}
                 }],
                 "Subnets": { "Ref" : "ElbSubnets" },
                 "SecurityGroups":[

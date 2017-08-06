@@ -30,6 +30,12 @@
                     "ServerSubnets": "WebServerSubnets"
                 },
                 "NestedDependency": "networking/vpc"
+            },
+            {
+                "TemplatePath": "analytics/logs-store",
+                "Resources": {
+                    "RawLogBucket": "Raw"
+                }
             }
         ]
     },
@@ -144,6 +150,10 @@
         "ServerSubnets" : {
             "Description" : "VPCid associated with the subnets.",
             "Type": "List<AWS::EC2::Subnet::Id>"
+        },
+        "RawLogBucket" : {
+            "Description": "Elb Target Security Group. [logs-store.resources.Raw]",
+            "Type": "String"
         }
     },
 
@@ -322,6 +332,11 @@
                 "ConnectionDrainingPolicy": {
                     "Enabled": "true",
                     "Timeout": "60"
+                },
+                "AccessLoggingPolicy" : {
+                    "EmitInterval": "5",
+                    "Enabled": "true",
+                    "S3BucketName": {"Ref": "RawLogBucket"}
                 }
             }
         },
