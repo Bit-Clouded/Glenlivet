@@ -3,10 +3,6 @@
 
     "Description" : "S3 Hosting",
 
-    "Metadata" : {
-        "DefaultName" : "S3 Hosting"
-    },
-
     "Parameters": {
         "SubDomain" : {
             "Description" : "Site Subdomain",
@@ -17,37 +13,62 @@
             "Description" : "Site Domain",
             "Type" : "String"
         },
+        "AcmCertificateArn": {
+            "Type": "String",
+            "Default": ""
+        },
+        "CloudFrontLogBucketName": {
+            "Description" : "Name of bucket for aws cloudfront access logs.",
+            "Type": "String"
+        },
         "S3AccessLogBucketName" : {
-            "Description" : "Site hostname [logs-store.resources.AccessLogSss]",
+            "Description" : "Name of bucket for aws s3 access logs.",
             "Type" : "String"
         }
     },
 
-	"Mappings" : {
-		"RegionMap" : {
-			"us-east-1" : { "HostedZoneId" : "Z3AQBSTGFYJSTF " },
-			"us-west-1" : { "HostedZoneId" : "Z2F56UZL2M1ACD " },
-			"us-west-2" : { "HostedZoneId" : "Z3BJ6K6RIION7M" },
-			"eu-west-1" : { "HostedZoneId" : "Z1BKCTXD74EZPE" },
-			"eu-central-1" : { "HostedZoneId" : "Z21DNDUVLTQW6Q" },
-			"sa-east-1" : { "HostedZoneId" : "Z7KQH4QJS55SO" },
-			"ap-southeast-1" : { "HostedZoneId" : "Z3O0J2DXBE1FTB" },
-			"ap-southeast-2" : { "HostedZoneId" : "Z1WCIGYICN2BYD" },
-			"ap-northeast-1" : { "HostedZoneId" : "Z3W03O7B5YMIYP" }
-		}
-	},
+    "Metadata": {
+        "DefaultName": "S3WebHosting",
+        "Dependencies": [
+            {
+                "TemplatePath": "analytics/logs-store",
+                "Resources": {
+                    "CloudFrontLogBucketName": "AccessCfLog",
+                    "S3AccessLogBucketName": "AccessS3Log"
+                }
+            }
+        ]
+    },
+    "Conditions": {
+        "HasSsl": {
+            "Fn::Not": [
+                {
+                    "Fn::Equals": [
+                        {
+                            "Ref": "AcmCertificateArn"
+                        },
+                        ""
+                    ]
+                }
+            ]
+        }
+    },
+
     "Resources" : {
         "Website" : {
             "Type" : "AWS::S3::Bucket",
             "Properties" : {
-                "BucketName" : { "Fn::Join" : ["", [
-                    { "Ref": "SubDomain" }, ".", { "Ref": "Domain" }
-                ]]},
                 "AccessControl" : "PublicRead",
                 "WebsiteConfiguration" : {
                     "IndexDocument" : "index.html",
                     "ErrorDocument" : "error.html"
-                }
+                },
+				"LoggingConfiguration": {
+					"DestinationBucketName" : { "Ref": "S3AccessLogBucketName"},
+					"LogFilePrefix" : {"Fn::Join": ["",[
+						{"Ref":"AWS::StackName"}, "-Website/"
+					]]}
+				}
             }
         },
 		"BucketPolicy" : {
@@ -65,6 +86,85 @@
 				}
 			}
   		},
+        "WebsiteCloudfront": {
+            "Type": "AWS::CloudFront::Distribution",
+            "Properties": {
+                "DistributionConfig": {
+                    "Comment": "Cloudfront Distribution pointing to S3 bucket",
+                    "Origins": [
+                        {
+                            "DomainName": {
+                                "Fn::GetAtt": [
+                                    "Website",
+                                    "DomainName"
+                                ]
+                            },
+                            "Id": "S3Origin",
+                            "CustomOriginConfig": {
+                                "HTTPPort": "80",
+                                "HTTPSPort": "443",
+                                "OriginProtocolPolicy": "http-only"
+                            }
+                        }
+                    ],
+                    "Enabled": true,
+                    "HttpVersion": "http2",
+                    "DefaultRootObject": "index.html",
+                    "Aliases": [
+                        {
+                            "Fn::Join": [
+                                "",
+                                [
+                                    {
+                                        "Ref": "SubDomain"
+                                    },
+                                    ".",
+                                    {
+                                        "Ref": "Domain"
+                                    }
+                                ]
+                            ]
+                        }
+                    ],
+                    "DefaultCacheBehavior": {
+                        "AllowedMethods": [
+                            "GET",
+                            "HEAD"
+                        ],
+                        "Compress": true,
+                        "TargetOriginId": "S3Origin",
+                        "ForwardedValues": {
+                            "QueryString": true,
+                            "Cookies": {
+                                "Forward": "none"
+                            }
+                        },
+                        "ViewerProtocolPolicy": {
+                            "Fn::If": [
+                                "HasSsl",
+                                "redirect-to-https",
+                                "allow-all"
+                            ]
+                        }
+                    },
+                    "PriceClass": "PriceClass_All",
+                    "ViewerCertificate": {
+                        "Fn::If": [
+                            "HasSsl",
+                            {
+                                "AcmCertificateArn": {
+                                    "Ref": "AcmCertificateArn"
+                                },
+                                "SslSupportMethod": "sni-only"
+                            },
+                            {
+                                "Ref": "AWS::NoValue"
+                            }
+                        ]
+                    }
+                }
+            }
+        },
         "Route53": {
             "Type" : "AWS::Route53::RecordSet",
             "DependsOn" : "Website",
@@ -77,10 +177,13 @@
                 ]]},
                 "Type": "A",
                 "AliasTarget": {
-                    "DNSName" : { "Fn::Join" : [ "", [
-                        "s3-website-", { "Ref" : "AWS::Region" }, ".amazonaws.com."
-                    ]]},
-                    "HostedZoneId" : { "Fn::FindInMap" : [ "RegionMap", { "Ref" : "AWS::Region" }, "HostedZoneId" ]}
+                    "HostedZoneId": "Z2FDTNDATAQYW2",
+                            "DNSName": {
+                                "Fn::GetAtt": [
+                                    "WebsiteCloudfront",
+                                    "DomainName"
+                                ]
+                            }
                 }
             }
         }
@@ -91,7 +194,7 @@
             "Description" : "URL for website hosted on S3"
         },
         "S3BucketSecureURL" : {
-            "Value" : { "Fn::Join" : [ "", [ "https://", { "Fn::GetAtt" : [ "Website", "DomainName" ] } ] ] },
+            "Value" : { "Fn::Join" : [ "", [ "http://", { "Fn::GetAtt" : [ "Website", "DomainName" ] } ] ] },
             "Description" : "Name of S3 bucket to hold website content"
         }
     }
