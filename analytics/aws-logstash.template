@@ -83,71 +83,68 @@
 		},
 
 		"VpcId": {
-			"Description" : "VPCid associated with the subnets. [nat-subnets.parameters.VpcId]",
+			"Description" : "VPCid associated with the subnets.",
 			"Type": "AWS::EC2::VPC::Id"
 		},
 		"Subnets": {
-			"Description" : "Subnet to run HA web cluster on. [nat-subnets.outputs.Subnets]",
+			"Description" : "Subnet to run HA web cluster on.",
 			"Type": "List<AWS::EC2::Subnet::Id>"
 		},
 
 		"LogStream" : {
-			"Description": "Name of VPC traffic log group. [logs-store.resources.LogStream]",
+			"Description": "Name of VPC traffic log group.",
 			"Type": "String"
 		},
 
 		"VpcTrafficLogGroupName" : {
-			"Description": "Name of VPC traffic log group. [logs-store.resources.VpcTrafficLog]",
+			"Description": "Name of VPC traffic log group.",
 			"Type": "String"
 		},
 		"CloudTrailLogGroupName" : {
-			"Description": "Name of VPC traffic log group. [logs-store.resources.GlobalCloudTrailLog]",
+			"Description": "Name of VPC traffic log group.",
 			"Type": "String"
 		},
 		"LinuxDockerLogGroupName" : {
-			"Description": "Name of VPC traffic log group. [logs-store.resources.LxDockerLog]",
-			"Type": "String",
-			"Default" : "NO_VALUE"
+			"Description": "Name of VPC traffic log group.",
+			"Type": "String"
 		},
 		"LinuxSysLogGroupName" : {
-			"Description": "Name of VPC traffic log group. [logs-store.resources.LxSysLog]",
-			"Type": "String",
-			"Default" : "NO_VALUE"
+			"Description": "Name of VPC traffic log group.",
+			"Type": "String"
 		},
 		"LinuxAuthLogGroupName" : {
-			"Description": "Name of VPC traffic log group. [logs-store.resources.LxAuthLog]",
-			"Type": "String",
-			"Default" : "NO_VALUE"
+			"Description": "Name of VPC traffic log group.",
+			"Type": "String"
 		},
 
 		"EsHost" : {
-			"Description": "Hostname of Elasticsearch [elasticsearch.outputs.EsElb]",
+			"Description": "Hostname of Elasticsearch",
 			"Type": "String"
 		},
 
         "RawLogBucketName" : {
-			"Description": "Hostname of Elasticsearch [logs-store.resources.Raw]",
+			"Description": "Hostname of Elasticsearch",
 			"Type": "String"
 		},
         "RawLogSns" : {
-			"Description": "Hostname of Elasticsearch [logs-store.resources.RawBucketNotification]",
+			"Description": "Hostname of Elasticsearch",
 			"Type": "String"
 		},
 
         "AccessS3LogBucketName" : {
-			"Description": "Hostname of Elasticsearch [logs-store.resources.AccessS3Log]",
+			"Description": "Hostname of Elasticsearch",
 			"Type": "String"
 		},
         "AccessS3LogSns" : {
-			"Description": "Hostname of Elasticsearch [logs-store.resources.AccessS3LogBucketNotification]",
+			"Description": "Hostname of Elasticsearch",
 			"Type": "String"
 		},
         "AccessCfLogBucketName" : {
-			"Description": "Hostname of Elasticsearch [logs-store.resources.AccessCfLog]",
+			"Description": "Hostname of Elasticsearch",
 			"Type": "String"
 		},
         "AccessCfLogSns" : {
-			"Description": "Hostname of Elasticsearch [logs-store.resources.AccessCfLogBucketNotification]",
+			"Description": "Hostname of Elasticsearch",
 			"Type": "String"
 		},
 
@@ -159,7 +156,7 @@
 		"LogstashSqsDocker": {
 			"Description": "Name of cluster. This is used for discovery.",
 			"Type": "String",
-			"Default": "bitcloudedci/ls-aws-sqs3:2-1"
+			"Default": "bitclouded/ls-aws-sqs3:2-1"
 		},
 		"CwlUbuntuAgentDocker": {
 			"Description": "Name of cluster. This is used for discovery.",
@@ -167,15 +164,15 @@
 			"Default": "bitclouded/aws-cwl-agent:4.1"
 		},
 		"CwlLinuxParams" : {
-			"Description": "Environment variables for syslog and authlog cwl group names [logs-store.outputs.DockerCwlParams]",
+			"Description": "Environment variables for syslog and authlog cwl group names",
 			"Type": "String"
 		},
 		"CwlDockerParams" : {
-			"Description": "Docker log driver params [logs-store.outputs.LxDockerLogParams]",
+			"Description": "Docker log driver params",
 			"Type": "String"
 		},
 		"CwlPolicy" : {
-			"Description": "Managed policy for linux logging. [logs-store.resources.LinuxLogPolicy]",
+			"Description": "Managed policy for linux logging.",
 			"Type": "String"
 		}
 	},
