@@ -48,7 +48,7 @@
 
 
     "Parameters": {
-		"DebianJsAmiId": {
+		"BcUbuntuBaseAmiId": {
 			"Description": "Debian Jessie AMI Id.",
 			"Type": "String"
 		},
@@ -370,7 +370,7 @@
             "Type": "AWS::AutoScaling::LaunchConfiguration",
             "Properties": {
                 "IamInstanceProfile" : {"Ref":"WebServersInstanceProfile"},
-                "ImageId": { "Ref" : "DebianJsAmiId" },
+                "ImageId": { "Ref" : "BcUbuntuBaseAmiId" },
                 "InstanceType": {
                     "Ref": "InstanceType"
                 },
@@ -386,7 +386,7 @@
                 ],
                 "UserData": { "Fn::Base64": { "Fn::Join": ["", [
                     "#!/bin/bash\n",
-					"ECID=$(curl http://instance-data/latest/meta-data/instance-id)\n",
+					"ECID=$(curl http://169.254.169.254/latest/meta-data/instance-id)\n",
 					"CWLA=cwlagent_$ECID\n",
 					"docker run -d --restart=always ",
 						"--name $CWLA --log-opt awslogs-stream=$CWLA ",

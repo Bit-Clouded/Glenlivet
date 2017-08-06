@@ -61,7 +61,7 @@
 			],
 			"ConstraintDescription" : "must be a valid EC2 instance type."
 		},
-		"DebianJsAmiId": {
+		"BcUbuntuBaseAmiId": {
 			"Description": "Debian Jessie AMI Id",
 			"Type": "String"
 		},
@@ -253,7 +253,7 @@
 			"Properties" : {
 				"IamInstanceProfile" : {"Ref":"WebServersInstanceProfile"},
 				"InstanceType" : { "Ref" : "ServerInstanceType" },
-				"ImageId" : { "Ref" : "DebianJsAmiId" },
+				"ImageId" : { "Ref" : "BcUbuntuBaseAmiId" },
 				"KeyName" : {"Fn::If": [
                     "HasNoKeypair",
                     { "Ref": "AWS::NoValue" },
@@ -275,7 +275,7 @@
 					"mount -a\n",
                     "chown 999 -R /mnt/xvdb\n",
 
-					"ECID=$(curl http://instance-data/latest/meta-data/instance-id)\n",
+					"ECID=$(curl http://169.254.169.254/latest/meta-data/instance-id)\n",
 					"CWLA=cwlagent_$ECID\n",
 					"docker run -d --restart=always ",
 						"--name $CWLA --log-opt awslogs-stream=$CWLA ",
@@ -401,7 +401,7 @@
 			"Type" : "AWS::AutoScaling::LaunchConfiguration",
 			"Properties": {
 				"InstanceType" : { "Ref" : "AgentInstanceType" },
-				"ImageId" : { "Ref" : "DebianJsAmiId" },
+				"ImageId" : { "Ref" : "BcUbuntuBaseAmiId" },
 				"IamInstanceProfile" : {"Ref":"WebServersInstanceProfile"},
 				"KeyName" : {"Fn::If": [
                     "HasNoKeypair",
@@ -416,7 +416,7 @@
                     "#ifconfig eth0 mtu 1500\n",
                     "#wget -qO- https://get.docker.com/ | sh\n",
 
-					"ECID=$(curl http://instance-data/latest/meta-data/instance-id)\n",
+					"ECID=$(curl http://169.254.169.254/latest/meta-data/instance-id)\n",
 					"#CWLA=cwlagent_$ECID\n",
 					"#docker run -d --restart=always ",
 						"--name $CWLA --log-opt awslogs-stream=$CWLA ",

@@ -55,7 +55,7 @@
             "Type" : "String",
             "Default" : ""
         },
-		"DebianJsAmiId": {
+		"BcUbuntuBaseAmiId": {
 			"Description": "AMI to use. Note Ubuntu is prefered.",
 			"Type": "AWS::EC2::Image::Id"
 		},
@@ -177,7 +177,7 @@
             "Type" : "AWS::EC2::Instance",
             "Properties" : {
                 "InstanceType" : { "Ref" : "ServerInstanceType" },
-                "ImageId" : { "Ref":"DebianJsAmiId" },
+                "ImageId" : { "Ref":"BcUbuntuBaseAmiId" },
                 "IamInstanceProfile" : {"Ref":"WebServersInstanceProfile"},
                 "Tags" : [{ "Key" : "Name", "Value" : "Consul Cluster - First" }],
                 "KeyName" : {"Fn::If": [
@@ -190,7 +190,7 @@
                 ],
                 "UserData" : { "Fn::Base64" : { "Fn::Join" : ["", [
                     "#!/bin/bash\n",
-					"ECID=$(curl http://instance-data/latest/meta-data/instance-id)\n",
+					"ECID=$(curl http://169.254.169.254/latest/meta-data/instance-id)\n",
 					"CWLA=cwlagent_$ECID\n",
 					"docker run -d --restart=always ",
 						"--name $CWLA --log-opt awslogs-stream=$CWLA ",
@@ -244,7 +244,7 @@
 
             "Properties" : {
                 "InstanceType" : { "Ref" : "ServerInstanceType" },
-                "ImageId" : { "Ref":"DebianJsAmiId" },
+                "ImageId" : { "Ref":"BcUbuntuBaseAmiId" },
                 "IamInstanceProfile" : {"Ref":"WebServersInstanceProfile"},
                 "Tags" : [{ "Key" : "Name", "Value" : "Consul Cluster - Second" }],
                 "KeyName" : {"Fn::If": [
@@ -257,7 +257,7 @@
                 ],
                 "UserData" : { "Fn::Base64" : { "Fn::Join" : ["", [
                     "#!/bin/bash\n",
-					"ECID=$(curl http://instance-data/latest/meta-data/instance-id)\n",
+					"ECID=$(curl http://169.254.169.254/latest/meta-data/instance-id)\n",
 					"CWLA=cwlagent_$ECID\n",
 					"docker run -d --restart=always ",
 						"--name $CWLA --log-opt awslogs-stream=$CWLA ",
@@ -314,7 +314,7 @@
             "Type" : "AWS::EC2::Instance",
             "Properties" : {
                 "InstanceType" : { "Ref" : "ServerInstanceType" },
-                "ImageId" : { "Ref":"DebianJsAmiId" },
+                "ImageId" : { "Ref":"BcUbuntuBaseAmiId" },
                 "IamInstanceProfile" : {"Ref":"WebServersInstanceProfile"},
                 "Tags" : [{ "Key" : "Name", "Value" : "Consul Cluster - Third" }],
                 "NetworkInterfaces" : [{
@@ -327,7 +327,7 @@
                 ]},
                 "UserData" : { "Fn::Base64" : { "Fn::Join" : ["", [
                     "#!/bin/bash\n",
-					"ECID=$(curl http://instance-data/latest/meta-data/instance-id)\n",
+					"ECID=$(curl http://169.254.169.254/latest/meta-data/instance-id)\n",
 					"CWLA=cwlagent_$ECID\n",
 					"docker run -d --restart=always ",
 						"--name $CWLA --log-opt awslogs-stream=$CWLA ",

@@ -120,7 +120,7 @@
             ],
             "ConstraintDescription" : "must be a valid EC2 instance type."
         },
-        "DebianJsAmiId": {
+        "BcUbuntuBaseAmiId": {
             "Description": "AWS AMI ID of Debian Jessie.",
             "Type": "AWS::EC2::Image::Id"
         },
@@ -307,10 +307,10 @@
                 ],
                 "IamInstanceProfile": { "Ref" : "ServerRoleIp" },
                 "InstanceType": { "Ref": "WebInstanceType" },
-                "ImageId": { "Ref": "DebianJsAmiId" },
+                "ImageId": { "Ref": "BcUbuntuBaseAmiId" },
                 "UserData": { "Fn::Base64": { "Fn::Join": ["", [
                     "#!/bin/bash\n",
-					"ECID=$(curl http://instance-data/latest/meta-data/instance-id)\n",
+					"ECID=$(curl http://169.254.169.254/latest/meta-data/instance-id)\n",
 					"CWLA=cwlagent_$ECID\n",
 					"docker run -d --restart=always ",
 						"--name $CWLA --log-opt awslogs-stream=$CWLA ",

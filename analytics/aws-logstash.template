@@ -77,7 +77,7 @@
 			],
 			"ConstraintDescription" : "must be a valid EC2 instance type."
 		},
-		"DebianJsAmiId": {
+		"BcUbuntuBaseAmiId": {
 			"Description": "AMI to use",
 			"Type": "AWS::EC2::Image::Id"
 		},
@@ -309,7 +309,7 @@
 			"Type" : "AWS::AutoScaling::LaunchConfiguration",
 			"Properties": {
 				"InstanceType" : { "Ref" : "LogstashNodeType" },
-				"ImageId" : { "Ref" : "DebianJsAmiId" },
+				"ImageId" : { "Ref" : "BcUbuntuBaseAmiId" },
 				"KeyName" : {"Fn::If": [
                     "HasNoKeypair",
                     { "Ref": "AWS::NoValue" },
@@ -321,7 +321,7 @@
 				"IamInstanceProfile": { "Ref" : "LogstashInstanceProfile" },
 				"UserData" : { "Fn::Base64" : { "Fn::Join" : ["", [
                     "#!/bin/bash\n",
-					"CWLA=cwlagent-$(curl http://instance-data/latest/meta-data/instance-id)\n",
+					"CWLA=cwlagent-$(curl http://169.254.169.254/latest/meta-data/instance-id)\n",
 					"docker run -d --restart=always ",
 						"--name $CWLA --log-opt awslogs-stream=$CWLA ",
 						"-v /var/log:/var/log-host:ro ",
@@ -420,7 +420,7 @@
 			"Type" : "AWS::AutoScaling::LaunchConfiguration",
 			"Properties": {
 				"InstanceType" : { "Ref" : "LogstashNodeType" },
-				"ImageId" : { "Ref" : "DebianJsAmiId" },
+				"ImageId" : { "Ref" : "BcUbuntuBaseAmiId" },
 				"KeyName" : {"Fn::If": [
                     "HasNoKeypair",
                     { "Ref": "AWS::NoValue" },
@@ -432,7 +432,7 @@
 				"IamInstanceProfile": { "Ref" : "LogstashSqsInstanceProfile" },
 				"UserData" : { "Fn::Base64" : { "Fn::Join" : ["", [
                     "#!/bin/bash\n",
-					"CWLA=cwlagent-$(curl http://instance-data/latest/meta-data/instance-id)\n",
+					"CWLA=cwlagent-$(curl http://169.254.169.254/latest/meta-data/instance-id)\n",
 					"docker run -d --restart=always ",
 						"--name $CWLA --log-opt awslogs-stream=$CWLA ",
 						"-v /var/log:/var/log-host:ro ",
