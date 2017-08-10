@@ -620,7 +620,25 @@
 						"Effect": "Allow",
 						"Action": [
 							"cloudwatch:PutMetricData",
-							"ec2:DescribeTags"
+							"ec2:DescribeTags",
+							"ec2:DescribeInstanceStatus",
+
+							"ssm:DescribeAssociation",
+							"ssm:GetDeployablePatchSnapshotForInstance",
+							"ssm:GetDocument",
+							"ssm:GetParameters",
+							"ssm:ListAssociations",
+							"ssm:ListInstanceAssociations",
+							"ssm:PutInventory",
+							"ssm:UpdateAssociationStatus",
+							"ssm:UpdateInstanceAssociationStatus",
+							"ssm:UpdateInstanceInformation",
+							"ec2messages:AcknowledgeMessage",
+							"ec2messages:DeleteMessage",
+							"ec2messages:FailMessage",
+							"ec2messages:GetEndpoint",
+							"ec2messages:GetMessages",
+							"ec2messages:SendReply"
 						],
 						"Resource": ["*"]
 					},{
