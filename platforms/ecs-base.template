@@ -76,12 +76,23 @@ Parameters:
     Description: ''
     Type: String
     Default: '100'
+  LambdaBucket:
+    Description: 'Bucket where Lambda Code are Hosted.'
+    Type: String
+    Default: ''
+  LambdaRootPath:
+    Description: 'Root Path to Where Lambda Code are Hosted.'
+    Type: String
+    Default: citrus-rind/prod/
 Conditions:
   IsThreeAz: !Equals 
     - !Ref AzCount
     - '3'
   HasNoKeypair: !Equals 
     - !Ref KeyPairName
+    - ''
+  IsLambdaBucketParamEmpty: !Equals
+    - !Ref LambdaBucket
     - ''
 Resources:
   SharedDiskGp:
@@ -536,16 +547,17 @@ Resources:
     Type: "AWS::Lambda::Function"
     Properties:
       Code:
-        ZipFile: |
-          exports.handler = function(event, context) {
-          console.log(JSON.stringify(event));
-          console.log(JSON.stringify(context));};
+        S3Bucket: !If [IsLambdaBucketParamEmpty, !Sub "glenfiddich-${AWS::Region}", !Ref LambdaBucket]
+        S3Key: !Sub ${LambdaRootPath}ecs-drain-instance.zip
       Handler: index.handler
       Description: ECS scaling event processor
       Role:
          Fn::GetAtt: ["ScalingEventsProcessorPermission", "Arn"]
       Runtime: nodejs6.10
       Timeout: 300
+      Environment:
+        Variables:
+          CLUSTER_NAME: !Ref EcsCluster
   ScalingEventsProcessorPermission:
     Type: "AWS::IAM::Role"
     Properties:
@@ -590,10 +602,10 @@ Resources:
   LambdaInvokePermission:
     Type: "AWS::Lambda::Permission"
     Properties:
-       FunctionName: !Ref ScalingEventsProcessor
-       Action: lambda:InvokeFunction
-       Principal: sns.amazonaws.com
-       SourceArn: !Ref ScalingEvents
+      FunctionName: !Ref ScalingEventsProcessor
+      Action: lambda:InvokeFunction
+      Principal: sns.amazonaws.com
+      SourceArn: !Ref ScalingEvents
   LambdaSubscriptionToSNSTopic:
     Type: AWS::SNS::Subscription
     Properties:
@@ -602,6 +614,53 @@ Resources:
       Protocol: 'lambda'
       TopicArn: !Ref ScalingEvents
   # End of Instance Draining Handling
+
+  # Start of ECS Auto Scaling
+  LinuxScaleUpPolicy:
+    Type: "AWS::AutoScaling::ScalingPolicy"
+    Properties:
+      AdjustmentType: "PercentChangeInCapacity"
+      AutoScalingGroupName: !Ref "EcsAutoScalingGroup"
+      Cooldown: "60"
+      ScalingAdjustment: 50
+  LinuxScaleDownPolicy:
+    Type: "AWS::AutoScaling::ScalingPolicy"
+    Properties:
+      AdjustmentType: "ChangeInCapacity"
+      AutoScalingGroupName: !Ref "EcsAutoScalingGroup"
+      Cooldown: 60
+      ScalingAdjustment: "-1"
+  LinuxCapacityAlarmLow:
+    Type: "AWS::CloudWatch::Alarm"
+    Properties:
+      AlarmDescription: "Scale-up if cpu reservation is > 70% for 1 minutes"
+      MetricName: "CPUReservation"
+      Namespace: "AWS/ECS"
+      Statistic: "Maximum"
+      Period: "60"
+      EvaluationPeriods: "1"
+      Threshold: "70"
+      AlarmActions: [!Ref LinuxScaleUpPolicy]
+      Dimensions:
+        - Name: "ClusterName"
+          Value: !Ref "EcsCluster"
+      ComparisonOperator: "GreaterThanThreshold"
+  LinuxCapacityAlarmHigh:
+    Type: "AWS::CloudWatch::Alarm"
+    Properties:
+      AlarmDescription: "Scale-down if cpu reservation < 30% for 2 minutes"
+      MetricName: "CPUReservation"
+      Namespace: "AWS/ECS"
+      Statistic: "Maximum"
+      Period: "60"
+      EvaluationPeriods: "2"
+      Threshold: "30"
+      AlarmActions: [!Ref LinuxScaleDownPolicy]
+      Dimensions: 
+        - Name: "ClusterName"
+          Value: !Ref "EcsCluster"
+      ComparisonOperator: "LessThanThreshold"
+  # End of ECS Auto Scaling
 
 Outputs:
   EcsAdminUrl:
