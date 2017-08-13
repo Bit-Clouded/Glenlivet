@@ -1,510 +1,511 @@
-{
-    "AWSTemplateFormatVersion" : "2010-09-09",
-    "Metadata" : {
-        "DefaultName" : "EcsClusterBase",
-        "Dependencies": [
-            {
-                "TemplatePath": "networking/vpc",
-                "Resources": {
-                    "ElbTargetSg": "ElbTargetSecGroup"
-                },
-                "Outputs": {
-                    "AzCount": "AzCount"
-                }
-            },
-            {
-                "TemplatePath": "networking/elb-subnets",
-                "Parameters": {
-                    "VpcId": "VpcId"
-                },
-                "Outputs": {
-                    "ServerSubnets": "WebServerSubnets"
-                },
-                "NestedDependency": "networking/vpc"
-            },
-            {
-                "TemplatePath": "analytics/logs-store",
-                "Resources": {
-                    "DiagnosticsMp": "LinuxLogPolicy"
-                }
-            }
-        ]
-    },
-    "Parameters" : {
-        "KeyPairName": {
-            "Type": "String",
-            "Description": "Name of an existing EC2 KeyPair to enable SSH access to the ECS instances.",
-            "Default": ""
-        },
-        "VpcId": {
-            "Description" : "VPCid associated with the subnets. [elb-subnets.parameters.VpcId]",
-            "Type": "AWS::EC2::VPC::Id"
-        },
-        "AzCount" : {
-            "Description" : "Number of AZ. Third subnet will only be created if number is 3 [vpc.outputs.AzCount]",
-            "Type" : "String"
-        },
-        "ServerSubnets" : {
-            "Description" : "VPCid associated with the subnets. [elb-subnets.outputs.WebServerSubnets]",
-            "Type": "List<AWS::EC2::Subnet::Id>"
-        },
-        "ElbTargetSg" : {
-            "Description": "Elb Target Security Group. [vpc.resources.ElbTargetSecGroup]",
-            "Type": "String"
-        },
+AWSTemplateFormatVersion: 2010-09-09
+Metadata:
+  DefaultName: EcsClusterBase
+  Dependencies:
+    - TemplatePath: networking/vpc
+      Resources:
+        ElbTargetSg: ElbTargetSecGroup
+      Outputs:
+        AzCount: AzCount
+    - TemplatePath: networking/elb-subnets
+      Parameters:
+        VpcId: VpcId
+      Outputs:
+        ServerSubnets: WebServerSubnets
+      NestedDependency: networking/vpc
+    - TemplatePath: analytics/logs-store
+      Resources:
+        DiagnosticsMp: LinuxLogPolicy
+Parameters:
+  KeyPairName:
+    Type: String
+    Description: Name of an existing EC2 KeyPair to enable SSH access to the ECS instances.
+    Default: ''
+  VpcId:
+    Description: 'VPCid associated with the subnets. [elb-subnets.parameters.VpcId]'
+    Type: 'AWS::EC2::VPC::Id'
+  AzCount:
+    Description: >-
+      Number of AZ. Third subnet will only be created if number is 3
+      [vpc.outputs.AzCount]
+    Type: String
+  ServerSubnets:
+    Description: 'VPCid associated with the subnets. [elb-subnets.outputs.WebServerSubnets]'
+    Type: 'List<AWS::EC2::Subnet::Id>'
+  ElbTargetSg:
+    Description: 'Elb Target Security Group. [vpc.resources.ElbTargetSecGroup]'
+    Type: String
+  InstanceType:
+    Description: Phabricator server instance type
+    Type: String
+    Default: t2.medium
+    AllowedValues:
+      - t2.micro
+      - t2.small
+      - t2.medium
+      - t2.large
+      - m3.medium
+      - m4.large
+      - m4.xlarge
+      - m4.2xlarge
+      - m4.4xlarge
+      - m4.8xlarge
+      - m4.16xlarge
+      - r4.large
+      - r4.xlarge
+      - r4.2xlarge
+      - r4.4xlarge
+      - r4.8xlarge
+      - r4.16xlarge
+      - c4.large
+      - c4.xlarge
+      - c4.2xlarge
+      - c4.4xlarge
+      - c4.8xlarge
+    ConstraintDescription: Must be a valid EC2 instance type.
+  EcsAmiId:
+    Description: ECS Optimised AMI.
+    Type: 'AWS::EC2::Image::Id'
+  WindowsContainerAmiId:
+    Description: ECS Optimised AMI.
+    Type: 'AWS::EC2::Image::Id'
+  DiagnosticsMp:
+    Description: ''
+    Type: String
+  DiskSize:
+    Description: ''
+    Type: String
+    Default: '100'
+Conditions:
+  IsThreeAz: !Equals 
+    - !Ref AzCount
+    - '3'
+  HasNoKeypair: !Equals 
+    - !Ref KeyPairName
+    - ''
+Resources:
+  SharedDiskGp:
+    Type: 'AWS::EFS::FileSystem'
+    Properties:
+      FileSystemTags:
+        - Key: Name
+          Value: !Ref 'AWS::StackName'
+  MountTarget1:
+    Type: 'AWS::EFS::MountTarget'
+    Properties:
+      FileSystemId: !Ref SharedDiskGp
+      SubnetId: !Select 
+        - '0'
+        - !Ref ServerSubnets
+      SecurityGroups:
+        - !Ref DatabaseSg
+  MountTarget2:
+    Type: 'AWS::EFS::MountTarget'
+    Properties:
+      FileSystemId: !Ref SharedDiskGp
+      SubnetId: !Select 
+        - '1'
+        - !Ref ServerSubnets
+      SecurityGroups:
+        - !Ref DatabaseSg
+  MountTarget3:
+    Type: 'AWS::EFS::MountTarget'
+    Condition: IsThreeAz
+    Properties:
+      FileSystemId: !Ref SharedDiskGp
+      SubnetId: !Select 
+        - '2'
+        - !Ref ServerSubnets
+      SecurityGroups:
+        - !Ref DatabaseSg
+  EcsCluster:
+    Type: 'AWS::ECS::Cluster'
+  WindowsAgentGroups:
+    Type: 'AWS::AutoScaling::AutoScalingGroup'
+    Properties:
+      VPCZoneIdentifier: !Ref ServerSubnets
+      LaunchConfigurationName: !Ref WindowsAgentLc
+      MinSize: '0'
+      MaxSize: '100'
+      Tags:
+        - Key: Name
+          Value: !Join 
+            - ''
+            - - !Ref 'AWS::StackName'
+              - ' Windows Agent'
+          PropagateAtLaunch: 'true'
+  WindowsAgentLc:
+    Type: 'AWS::AutoScaling::LaunchConfiguration'
+    Metadata:
+      'AWS::CloudFormation::Init':
+        config:
+          files:
+            'c:\cfn\cfn-hup.conf':
+              content: !Join 
+                - ''
+                - - |
+                    [main]
+                  - stack=
+                  - !Ref 'AWS::StackId'
+                  - |+
 
-        "InstanceType" : {
-            "Description" : "Phabricator server instance type",
-            "Type" : "String",
-            "Default" : "t2.medium",
-            "AllowedValues": [
-                "t2.micro",
-                "t2.small",
-                "t2.medium",
-                "t2.large",
-                "m3.medium",
-                "m4.large",
-                "m4.xlarge",
-                "m4.2xlarge",
-                "m4.4xlarge",
-                "m4.8xlarge",
-                "m4.16xlarge",
-                "r4.large",
-                "r4.xlarge",
-                "r4.2xlarge",
-                "r4.4xlarge",
-                "r4.8xlarge",
-                "r4.16xlarge",
-                "c4.large",
-                "c4.xlarge",
-                "c4.2xlarge",
-                "c4.4xlarge",
-                "c4.8xlarge"
-            ],
-            "ConstraintDescription" : "Must be a valid EC2 instance type."
-        },
-        "EcsAmiId" : {
-            "Description" : "ECS Optimised AMI.",
-            "Type" : "AWS::EC2::Image::Id"
-        },
-        "WindowsContainerAmiId" : {
-            "Description" : "ECS Optimised AMI.",
-            "Type" : "AWS::EC2::Image::Id"
-        },
-        "DiagnosticsMp" : {
-            "Description" : "",
-            "Type" : "String"
-        },
-        "DiskSize" : {
-            "Description" : "",
-            "Type" : "String",
-            "Default" : "100"
-        }
-    },
+                  - region=
+                  - !Ref 'AWS::Region'
+                  - |+
 
-    "Conditions" : {
-        "IsThreeAz" : { "Fn::Equals" : [{"Ref" : "AzCount"}, "3"]},
-        "HasNoKeypair" : { "Fn::Equals" : [{"Ref" : "KeyPairName"}, ""]}
-    },
+            'c:\cfn\hooks.d\cfn-auto-reloader.conf':
+              content: !Join 
+                - ''
+                - - |
+                    [cfn-auto-reloader-hook]
+                  - |
+                    triggers=post.update
+                  - >
+                    path=Resources.WindowsAgentLc.Metadata.AWS::CloudFormation::Init
+                  - 'action=cfn-init.exe -v -s '
+                  - !Ref 'AWS::StackId'
+                  - ' -r SharePointFoundation'
+                  - ' --region '
+                  - !Ref 'AWS::Region'
+                  - |+
 
-    "Resources" : {
-        "SharedDiskGp": {
-            "Type": "AWS::EFS::FileSystem",
-            "Properties": {
-                "FileSystemTags": [
-                    { "Key": "Name", "Value": { "Ref": "AWS::StackName" } }
-                ]
-            }
-        },
-        "MountTarget1": {
-            "Type": "AWS::EFS::MountTarget",
-            "Properties": {
-                "FileSystemId": {
-                    "Ref": "SharedDiskGp"
-                },
-                "SubnetId": { "Fn::Select": ["0", {"Ref":"ServerSubnets"}]},
-                "SecurityGroups": [
-                    { "Ref": "DatabaseSg" }
-                ]
-            }
-        },
-        "MountTarget2": {
-            "Type": "AWS::EFS::MountTarget",
-            "Properties": {
-                "FileSystemId": {
-                    "Ref": "SharedDiskGp"
-                },
-                "SubnetId": { "Fn::Select": ["1", {"Ref":"ServerSubnets"}]},
-                "SecurityGroups": [
-                    { "Ref": "DatabaseSg" }
-                ]
-            }
-        },
-        "MountTarget3": {
-            "Type": "AWS::EFS::MountTarget",
-            "Condition" : "IsThreeAz",
-            "Properties": {
-                "FileSystemId": {
-                    "Ref": "SharedDiskGp"
-                },
-                "SubnetId": { "Fn::Select": ["2", {"Ref":"ServerSubnets"}]},
-                "SecurityGroups": [
-                    { "Ref": "DatabaseSg" }
-                ]
-            }
-        },
+          services:
+            windows:
+              cfn-hup:
+                enabled: 'true'
+                ensureRunning: 'true'
+                files:
+                  - 'c:\cfn\cfn-hup.conf'
+                  - 'c:\cfn\hooks.d\cfn-auto-reloader.conf'
+    Properties:
+      ImageId: !Ref WindowsContainerAmiId
+      SecurityGroups:
+        - !Ref DbTargetClusterSg
+        - !Ref ElbTargetSg
+      InstanceType: !Ref InstanceType
+      IamInstanceProfile: !Ref Ec2InstanceProfile
+      KeyName: !If 
+        - HasNoKeypair
+        - !Ref 'AWS::NoValue'
+        - !Ref KeyPairName
+      BlockDeviceMappings:
+        - DeviceName: /dev/sda1
+          Ebs:
+            VolumeSize: !Ref DiskSize
+            VolumeType: gp2
+      UserData: !Base64 
+        'Fn::Join':
+          - ''
+          - - |
+              <powershell> 
+            - '[Environment]::SetEnvironmentVariable("ECS_CLUSTER", "'
+            - !Ref EcsCluster
+            - |
+              ", "Machine")
+            - >
+              [Environment]::SetEnvironmentVariable("ECS_ENABLE_TASK_IAM_ROLE",
+              "true", "Machine")
+            - >
+              $gateway = (Get-WMIObject -Class Win32_IP4RouteTable | Where {
+              $_.Destination -eq '0.0.0.0' -and $_.Mask -eq '0.0.0.0' } |
+              Sort-Object Metric1 | Select NextHop).NextHop
+            - >
+              $ifIndex = (Get-NetAdapter -InterfaceDescription "Hyper-V Virtual
+              Ethernet*" | Sort-Object | Select ifIndex).ifIndex
+            - >
+              New-NetRoute -DestinationPrefix 169.254.170.2/32 -InterfaceIndex
+              $ifIndex -NextHop $gateway
+            - $agentVersion = 'v1.14.1';
+            - >-
+              $agentZipUri =
+              "https://s3.amazonaws.com/amazon-ecs-agent/ecs-agent-windows-$agentVersion.zip";
+            - $agentZipMD5Uri = "$agentZipUri.md5";
+            - '$ecsExeDir = "$env:ProgramFiles\Amazon\ECS";'
+            - '$zipFile = "$env:TEMP\ecs-agent.zip";'
+            - 'echo "log" >> c:\windows\temp\log1.txt;'
+            - 'echo $zipFile >> c:\windows\temp\log1.txt;'
+            - 'echo $ecsExeDir >> c:\windows\temp\log1.txt;'
+            - '$md5File = "$env:TEMP\ecs-agent.zip.md5";'
+            - Invoke-RestMethod -OutFile $zipFile -Uri $agentZipUri;
+            - Invoke-RestMethod -OutFile $md5File -Uri $agentZipMD5Uri;
+            - $expectedMD5 = (Get-Content $md5File);
+            - >-
+              $md5 = New-Object -TypeName
+              System.Security.Cryptography.MD5CryptoServiceProvider;
+            - >-
+              $actualMD5 =
+              [System.BitConverter]::ToString($md5.ComputeHash([System.IO.File]::ReadAllBytes($zipFile))).replace("-",
+              "");
+            - 'if($expectedMD5 -ne $actualMD5) {'
+            - echo "Download does not match hash.";
+            - 'echo "Expected: $expectedMD5 - Got: $actualMD5";'
+            - exit 1;
+            - '};'
+            - Expand-Archive -Path $zipFile -DestinationPath $ecsExeDir -Force;
+            - $jobname = "ECS-Agent-Init";
+            - $script =    "cd '$ecsExeDir'; .\amazon-ecs-agent.ps1";
+            - $repeat = (New-TimeSpan -Minutes 1);
+            - 'try {Unregister-ScheduledJob -Name $jobname | out-null} catch{};'
+            - Invoke-Expression("cd $ecsExeDir; .\amazon-ecs-agent.ps1");
+            - '$scriptblock = [scriptblock]::Create("$script");'
+            - >-
+              $trigger = New-JobTrigger -At (Get-Date).Date -RepeatIndefinitely
+              -RepetitionInterval $repeat -Once;
+            - >-
+              $options = New-ScheduledJobOption -RunElevated
+              -ContinueIfGoingOnBattery -StartIfOnBattery;
+            - >-
+              Register-ScheduledJob -Name $jobname -ScriptBlock $scriptblock
+              -Trigger $trigger -ScheduledJobOption $options -RunNow;
+            - 'echo $scriptblock >> c:\windows\temp\log1.txt;'
+            - 'echo $trigger >> c:\windows\temp\log1.txt;'
+            - 'echo $options >> c:\windows\temp\log1.txt;'
+            - |
+              # end of script
+            - ' cfn-init.exe -v -s '
+            - !Ref 'AWS::StackId'
+            - ' -r WindowsAgentLc'
+            - ' --region '
+            - !Ref 'AWS::Region'
+            - |+
 
-        "EcsCluster": {
-            "Type": "AWS::ECS::Cluster"
-        },
-        "WindowsAgentGroups" : {
-            "Type" : "AWS::AutoScaling::AutoScalingGroup",
-            "Properties" : {
-                "VPCZoneIdentifier" : { "Ref" : "ServerSubnets" },
-                "LaunchConfigurationName" : { "Ref" : "WindowsAgentLc" },
-                "MinSize" : "0",
-                "MaxSize" : "100",
-                "Tags" : [
-                    { "Key" : "Name", "Value" : {"Fn::Join": ["", [
-                        {"Ref":"AWS::StackName"}, " Windows Agent"
-                    ]]}, "PropagateAtLaunch" : "true" }
-                ]
-            }
-        },   
-        "WindowsAgentLc": {
-            "Type": "AWS::AutoScaling::LaunchConfiguration",
-            "Metadata": {
-                "AWS::CloudFormation::Init": {
-                    "config": {
-                        "files": {
-                            "c:\\cfn\\cfn-hup.conf": {
-                                "content": { "Fn::Join": ["", [
-                                    "[main]\n",
-                                    "stack=", { "Ref": "AWS::StackId" }, "\n",
-                                    "region=", { "Ref": "AWS::Region" }, "\n"
-                                ]]}
-                            },
-                            "c:\\cfn\\hooks.d\\cfn-auto-reloader.conf": {
-                                "content": {
-                                    "Fn::Join": ["", [
-                                            "[cfn-auto-reloader-hook]\n",
-                                            "triggers=post.update\n",
-                                            "path=Resources.WindowsAgentLc.Metadata.AWS::CloudFormation::Init\n",
-                                            "action=cfn-init.exe -v -s ", { "Ref": "AWS::StackId" },
-                                                " -r SharePointFoundation",
-                                                " --region ", { "Ref": "AWS::Region" }, "\n"
-                                        ]
-                                    ]
-                                }
-                            }
-                        },
-                        "services": {
-                            "windows": {
-                                "cfn-hup": {
-                                    "enabled": "true",
-                                    "ensureRunning": "true",
-                                    "files": [
-                                        "c:\\cfn\\cfn-hup.conf",
-                                        "c:\\cfn\\hooks.d\\cfn-auto-reloader.conf"
-                                    ]
-                                }
-                            }
-                        }
-                    }
-                }
-            },
-            "Properties": {
-                "ImageId": {"Ref":"WindowsContainerAmiId"},
-                "SecurityGroups": [
-                    { "Ref": "DbTargetClusterSg" },
-                    { "Ref": "ElbTargetSg" }
-                ],
-                "InstanceType": { "Ref": "InstanceType" },
-                "IamInstanceProfile": { "Ref": "Ec2InstanceProfile" },
-                "KeyName": {"Fn::If": [
-                    "HasNoKeypair",
-                    { "Ref": "AWS::NoValue" },
-                    { "Ref": "KeyPairName" }
-                ]},
-                "BlockDeviceMappings" : [{
-                    "DeviceName" : "/dev/sda1",
-                    "Ebs" : { "VolumeSize" : {"Ref":"DiskSize"}, "VolumeType" : "gp2" }
-                }],
-                "UserData": { "Fn::Base64": { "Fn::Join": ["", [
-                    "<powershell> \n",
-                    "[Environment]::SetEnvironmentVariable(\"ECS_CLUSTER\", \"", { "Ref": "EcsCluster" }, "\", \"Machine\")\n",
-                    "[Environment]::SetEnvironmentVariable(\"ECS_ENABLE_TASK_IAM_ROLE\", \"true\", \"Machine\")\n",
-                    "$gateway = (Get-WMIObject -Class Win32_IP4RouteTable | Where { $_.Destination -eq '0.0.0.0' -and $_.Mask -eq '0.0.0.0' } | Sort-Object Metric1 | Select NextHop).NextHop\n",
-                    "$ifIndex = (Get-NetAdapter -InterfaceDescription \"Hyper-V Virtual Ethernet*\" | Sort-Object | Select ifIndex).ifIndex\n",
-                    "New-NetRoute -DestinationPrefix 169.254.170.2/32 -InterfaceIndex $ifIndex -NextHop $gateway\n",
+            - ' cfn-signal.exe -e $lastexitcode --stack '
+            - !Ref 'AWS::StackName'
+            - '     --resource ECSAutoScalingGroup '
+            - '        --region '
+            - !Ref 'AWS::Region'
+            - |
+              ; 
+            - |
+              </powershell>
+            - <persist>true</persist>
+  EcsAutoScalingGroup:
+    Type: 'AWS::AutoScaling::AutoScalingGroup'
+    Properties:
+      VPCZoneIdentifier: !Ref ServerSubnets
+      LaunchConfigurationName: !Ref ContainerInstances
+      MinSize: '2'
+      MaxSize: '100'
+      Tags:
+        - Key: Name
+          Value: !Join 
+            - ''
+            - - !Ref 'AWS::StackName'
+              - ' Linux Agent'
+          PropagateAtLaunch: 'true'
+    CreationPolicy:
+      ResourceSignal:
+        Timeout: PT15M
+  ContainerInstances:
+    Type: 'AWS::AutoScaling::LaunchConfiguration'
+    DependsOn:
+      - MountTarget1
+      - MountTarget2
+    Metadata:
+      'AWS::CloudFormation::Init':
+        config:
+          commands:
+            01_add_instance_to_cluster:
+              command: !Join 
+                - ''
+                - - |
+                    #!/bin/bash
+                  - echo ECS_CLUSTER=
+                  - !Ref EcsCluster
+                  - ' >> /etc/ecs/ecs.config'
+          files:
+            /etc/cfn/cfn-hup.conf:
+              content: !Join 
+                - ''
+                - - |
+                    [main]
+                  - stack=
+                  - !Ref 'AWS::StackId'
+                  - |+
 
-                    "$agentVersion = 'v1.14.1';",
-                    "$agentZipUri = \"https://s3.amazonaws.com/amazon-ecs-agent/ecs-agent-windows-$agentVersion.zip\";",
-                    "$agentZipMD5Uri = \"$agentZipUri.md5\";",
-                    "$ecsExeDir = \"$env:ProgramFiles\\Amazon\\ECS\";",
-                    "$zipFile = \"$env:TEMP\\ecs-agent.zip\";",
-                    "echo \"log\" >> c:\\windows\\temp\\log1.txt;",
-                    "echo $zipFile >> c:\\windows\\temp\\log1.txt;",
-                    "echo $ecsExeDir >> c:\\windows\\temp\\log1.txt;",
-                    "$md5File = \"$env:TEMP\\ecs-agent.zip.md5\";",
-                    "Invoke-RestMethod -OutFile $zipFile -Uri $agentZipUri;",
-                    "Invoke-RestMethod -OutFile $md5File -Uri $agentZipMD5Uri;",
-                    "$expectedMD5 = (Get-Content $md5File);",
-                    "$md5 = New-Object -TypeName System.Security.Cryptography.MD5CryptoServiceProvider;",
-                    "$actualMD5 = [System.BitConverter]::ToString($md5.ComputeHash([System.IO.File]::ReadAllBytes($zipFile))).replace(\"-\", \"\");",
-                    "if($expectedMD5 -ne $actualMD5) {",
-                        "echo \"Download does not match hash.\";",
-                        "echo \"Expected: $expectedMD5 - Got: $actualMD5\";",
-                        "exit 1;",
-                    "};",
-                    "Expand-Archive -Path $zipFile -DestinationPath $ecsExeDir -Force;",
+                  - region=
+                  - !Ref 'AWS::Region'
+                  - |+
 
-                    "$jobname = \"ECS-Agent-Init\";",
-                    "$script =    \"cd '$ecsExeDir'; .\\amazon-ecs-agent.ps1\";",
-                    "$repeat = (New-TimeSpan -Minutes 1);",
-                    "try {Unregister-ScheduledJob -Name $jobname | out-null} catch{};",
-                    "Invoke-Expression(\"cd $ecsExeDir; .\\amazon-ecs-agent.ps1\");",
-                    "$scriptblock = [scriptblock]::Create(\"$script\");",
-                    "$trigger = New-JobTrigger -At (Get-Date).Date -RepeatIndefinitely -RepetitionInterval $repeat -Once;",
-                    "$options = New-ScheduledJobOption -RunElevated -ContinueIfGoingOnBattery -StartIfOnBattery;",
-                    "Register-ScheduledJob -Name $jobname -ScriptBlock $scriptblock -Trigger $trigger -ScheduledJobOption $options -RunNow;",
-                    "echo $scriptblock >> c:\\windows\\temp\\log1.txt;",
-                    "echo $trigger >> c:\\windows\\temp\\log1.txt;",
-                    "echo $options >> c:\\windows\\temp\\log1.txt;",
-                    "# end of script\n",
-                    " cfn-init.exe -v -s ", { "Ref": "AWS::StackId" },
-                    " -r WindowsAgentLc",
-                    " --region ", { "Ref": "AWS::Region" }, "\n",
-                    " cfn-signal.exe -e $lastexitcode --stack ", { "Ref": "AWS::StackName" },
-                    "     --resource ECSAutoScalingGroup ",
-                    "        --region ", { "Ref": "AWS::Region" }, "; \n",
-                    "</powershell>\n",
-                    "<persist>true</persist>"
-                ]]}}
-            }
-        },    
-        "EcsAutoScalingGroup" : {
-            "Type" : "AWS::AutoScaling::AutoScalingGroup",
-            "Properties" : {
-                "VPCZoneIdentifier" : { "Ref" : "ServerSubnets" },
-                "LaunchConfigurationName" : { "Ref" : "ContainerInstances" },
-                "MinSize" : "2",
-                "MaxSize" : "100",
-                "Tags" : [
-                    { "Key" : "Name", "Value" : {"Fn::Join": ["", [
-                        {"Ref":"AWS::StackName"}, " Linux Agent"
-                    ]]}, "PropagateAtLaunch" : "true" }
-                ]
-            },
-            "CreationPolicy" : {
-                "ResourceSignal" : { "Timeout" : "PT15M" }
-            }
-        },    
-        "ContainerInstances": {
-            "Type": "AWS::AutoScaling::LaunchConfiguration",
-            "DependsOn": [
-                "MountTarget1",
-                "MountTarget2"
-            ],
-            "Metadata" : {
-                "AWS::CloudFormation::Init" : {
-                    "config" : {
+              mode: '000400'
+              owner: root
+              group: root
+            /etc/cfn/hooks.d/cfn-auto-reloader.conf:
+              content: !Join 
+                - ''
+                - - |
+                    [cfn-auto-reloader-hook]
+                  - |
+                    triggers=post.update
+                  - >
+                    path=Resources.ContainerInstances.Metadata.AWS::CloudFormation::Init
+                  - 'action=/opt/aws/bin/cfn-init -v '
+                  - '         --stack '
+                  - !Ref 'AWS::StackName'
+                  - '         --resource ContainerInstances '
+                  - '         --region '
+                  - !Ref 'AWS::Region'
+                  - |+
 
-                        "commands" : {
-                            "01_add_instance_to_cluster" : {
-                                "command" : { "Fn::Join": [ "", [
-                                    "#!/bin/bash\n", "echo ECS_CLUSTER=", { "Ref": "EcsCluster" }, " >> /etc/ecs/ecs.config"
-                                ]]}
-                            }
-                        },
+                  - |
+                    runas=root
+          services:
+            sysvinit:
+              cfn-hup:
+                enabled: 'true'
+                ensureRunning: 'true'
+                files:
+                  - /etc/cfn/cfn-hup.conf
+                  - /etc/cfn/hooks.d/cfn-auto-reloader.conf
+    Properties:
+      ImageId: !Ref EcsAmiId
+      InstanceType: !Ref InstanceType
+      IamInstanceProfile: !Ref Ec2InstanceProfile
+      KeyName: !If 
+        - HasNoKeypair
+        - !Ref 'AWS::NoValue'
+        - !Ref KeyPairName
+      SecurityGroups:
+        - !Ref ElbTargetSg
+        - !Ref DbTargetClusterSg
+      UserData: !Base64 
+        'Fn::Join':
+          - ''
+          - - |
+              #!/bin/bash -xe
+            - |
+              yum update -y && yum -y install nfs-utils
+            - >
+              EC2_AVAIL_ZONE=`curl -s
+              http://169.254.169.254/latest/meta-data/placement/availability-zone`
+            - EC2_REGION=
+            - !Ref 'AWS::Region'
+            - |+
 
-                        "files" : {
-                            "/etc/cfn/cfn-hup.conf" : {
-                                "content" : { "Fn::Join" : ["", [
-                                    "[main]\n",
-                                    "stack=", { "Ref" : "AWS::StackId" }, "\n",
-                                    "region=", { "Ref" : "AWS::Region" }, "\n"
-                                ]]},
-                                "mode"    : "000400",
-                                "owner"   : "root",
-                                "group"   : "root"
-                            },
-                            "/etc/cfn/hooks.d/cfn-auto-reloader.conf" : {
-                                "content": { "Fn::Join" : ["", [
-                                    "[cfn-auto-reloader-hook]\n",
-                                    "triggers=post.update\n",
-                                    "path=Resources.ContainerInstances.Metadata.AWS::CloudFormation::Init\n",
-                                    "action=/opt/aws/bin/cfn-init -v ",
-                                    "         --stack ", { "Ref" : "AWS::StackName" },
-                                    "         --resource ContainerInstances ",
-                                    "         --region ", { "Ref" : "AWS::Region" }, "\n",
-                                    "runas=root\n"
-                                ]]}
-                            }
-                        },
+            - |
+              mkdir /mnt/efs
+            - EFS_FILE_SYSTEM_ID=
+            - !Ref SharedDiskGp
+            - |+
 
-                        "services" : {
-                            "sysvinit" : {
-                                "cfn-hup" : {
-                                    "enabled" : "true",
-                                    "ensureRunning" : "true",
-                                    "files" : [
-                                        "/etc/cfn/cfn-hup.conf",
-                                        "/etc/cfn/hooks.d/cfn-auto-reloader.conf"
-                                    ]
-                                }
-                            }
-                        }
-                    }
-                }
-            },
-            "Properties": {
-                "ImageId" : { "Ref" : "EcsAmiId" },
-                "InstanceType" : { "Ref" : "InstanceType" },
-                "IamInstanceProfile": { "Ref": "Ec2InstanceProfile" },
-                "KeyName" : {"Fn::If": [
-                    "HasNoKeypair",
-                    { "Ref": "AWS::NoValue" },
-                    { "Ref": "KeyPairName" }
-                ]},
-                "SecurityGroups" : [
-                    { "Ref": "ElbTargetSg" },
-                    { "Ref": "DbTargetClusterSg" }
-                ],
-                "UserData" : { "Fn::Base64" : { "Fn::Join" : ["", [
-                    "#!/bin/bash -xe\n",
+            - >
+              DIR_SRC=$EC2_AVAIL_ZONE.$EFS_FILE_SYSTEM_ID.efs.$EC2_REGION.amazonaws.com
+            - |
+              DIR_TGT=/mnt/efs
+            - |
+              touch /home/ec2-user/echo.res
+            - |
+              echo $EFS_FILE_SYSTEM_ID >> /home/ec2-user/echo.res
+            - |
+              echo $EC2_AVAIL_ZONE >> /home/ec2-user/echo.res
+            - |
+              echo $EC2_REGION >> /home/ec2-user/echo.res
+            - |
+              echo $DIR_SRC >> /home/ec2-user/echo.res
+            - |
+              echo $DIR_TGT >> /home/ec2-user/echo.res
+            - |
+              mount -t nfs4 $DIR_SRC:/ $DIR_TGT >> /home/ec2-user/echo.res
+            - |
+              cp -p /etc/fstab /etc/fstab.back-$(date +%F)
+            - "echo -e \"$DIR_SRC:/ \t\t $DIR_TGT \t\t nfs \t\t defaults \t\t 0 \t\t 0\" | tee -a /etc/fstab\n"
+            - |
+              mount -a
+            - |
+              yum install -y aws-cfn-bootstrap
+            - '/opt/aws/bin/cfn-init -v '
+            - '         --stack '
+            - !Ref 'AWS::StackName'
+            - '         --resource ContainerInstances '
+            - '         --region '
+            - !Ref 'AWS::Region'
+            - |+
 
-                    "yum update -y && yum -y install nfs-utils\n",
-                    "EC2_AVAIL_ZONE=`curl -s http://169.254.169.254/latest/meta-data/placement/availability-zone`\n",
-                    "EC2_REGION=",
-                    {
-                        "Ref": "AWS::Region"
-                    },
-                    "\n",
-                    "mkdir /mnt/efs\n",
-                    "EFS_FILE_SYSTEM_ID=",
-                    {
-                        "Ref": "SharedDiskGp"
-                    },
-                    "\n",
-                    "DIR_SRC=$EC2_AVAIL_ZONE.$EFS_FILE_SYSTEM_ID.efs.$EC2_REGION.amazonaws.com\n",
-                    "DIR_TGT=/mnt/efs\n",
-                    "touch /home/ec2-user/echo.res\n",
-                    "echo $EFS_FILE_SYSTEM_ID >> /home/ec2-user/echo.res\n",
-                    "echo $EC2_AVAIL_ZONE >> /home/ec2-user/echo.res\n",
-                    "echo $EC2_REGION >> /home/ec2-user/echo.res\n",
-                    "echo $DIR_SRC >> /home/ec2-user/echo.res\n",
-                    "echo $DIR_TGT >> /home/ec2-user/echo.res\n",
-                    "mount -t nfs4 $DIR_SRC:/ $DIR_TGT >> /home/ec2-user/echo.res\n",
-                    "cp -p /etc/fstab /etc/fstab.back-$(date +%F)\n",
-                    "echo -e \"$DIR_SRC:/ \t\t $DIR_TGT \t\t nfs \t\t defaults \t\t 0 \t\t 0\" | tee -a /etc/fstab\n",
-                    "mount -a\n",
+            - '/opt/aws/bin/cfn-signal -e $? '
+            - '         --stack '
+            - !Ref 'AWS::StackName'
+            - '         --resource EcsAutoScalingGroup '
+            - '         --region '
+            - !Ref 'AWS::Region'
+            - |+
 
-                    "yum install -y aws-cfn-bootstrap\n",
-
-                    "/opt/aws/bin/cfn-init -v ",
-                    "         --stack ", { "Ref" : "AWS::StackName" },
-                    "         --resource ContainerInstances ",
-                    "         --region ", { "Ref" : "AWS::Region" }, "\n",
-
-                    "/opt/aws/bin/cfn-signal -e $? ",
-                    "         --stack ", { "Ref" : "AWS::StackName" },
-                    "         --resource EcsAutoScalingGroup ",
-                    "         --region ", { "Ref" : "AWS::Region" }, "\n",
-                    "reboot now\n"
-                ]]}},
-                "BlockDeviceMappings" : [{
-                    "DeviceName" : "/dev/xvda",
-                    "Ebs" : { "VolumeSize" : {"Ref":"DiskSize"}, "VolumeType" : "gp2" }
-                }]
-            }
-        },    
-        "Ec2Role": {
-            "Type": "AWS::IAM::Role",
-            "Properties": {
-                "AssumeRolePolicyDocument": {
-                    "Statement": [{
-                        "Effect": "Allow",
-                        "Principal": { "Service": ["ec2.amazonaws.com"] },
-                        "Action": ["sts:AssumeRole"]
-                    }]
-                },
-                "Path": "/platforms/ecs/",
-                "Policies": [{
-                    "PolicyName": "ecs-service",
-                    "PolicyDocument": {
-                        "Statement": [{
-                            "Effect": "Allow",
-                            "Action": [
-                                "ecs:CreateCluster",
-                                "ecs:DeregisterContainerInstance",
-                                "ecs:DiscoverPollEndpoint",
-                                "ecs:Poll",
-                                "ecs:RegisterContainerInstance",
-                                "ecs:StartTelemetrySession",
-                                "ecs:Submit*"
-                            ],
-                            "Resource": "*"
-                        },{
-                            "Effect": "Allow",
-                            "Action": [
-                                "ecr:BatchCheckLayerAvailability",
-                                "ecr:BatchGetImage",
-                                "ecr:GetDownloadUrlForLayer",
-                                "ecr:GetAuthorizationToken"
-                            ],
-                            "Resource": "*"
-                        }]
-                    }
-                }],
-                "ManagedPolicyArns": [{"Ref":"DiagnosticsMp"}]
-            }
-        },
-        "Ec2InstanceProfile": {
-            "Type": "AWS::IAM::InstanceProfile",
-            "Properties": {
-                "Path": "/platforms/ecs/",
-                "Roles": [{ "Ref": "Ec2Role" }]
-            }
-        },
-        "DatabaseSg": {
-            "Type": "AWS::EC2::SecurityGroup",
-            "Properties": {
-                "SecurityGroupIngress": [{
-                    "IpProtocol": "-1",
-                    "SourceSecurityGroupId": { "Ref": "DbTargetClusterSg" }
-                }],
-                "VpcId": { "Ref": "VpcId" },
-                "GroupDescription": "RancherOS Database Security Group"
-            }
-        },
-        "DbTargetClusterSg": {
-            "Type": "AWS::EC2::SecurityGroup",
-            "Properties": {
-                "SecurityGroupIngress": [
-                ],
-                "VpcId": { "Ref": "VpcId" },
-                "GroupDescription": "Security group for database security to allow ingress from."
-            }
-        },
-        "ClusterSelfIngress": {
-            "Type": "AWS::EC2::SecurityGroupIngress",
-            "Properties": {
-                "GroupId": { "Ref": "DbTargetClusterSg" },
-                "IpProtocol": "-1",
-                "SourceSecurityGroupId": { "Ref": "DbTargetClusterSg" }
-            }
-        }
-
-    },
-
-    "Outputs" : {
-        "EcsAdminUrl" : {
-            "Description" : "Ec2 Container Service Cluster",
-            "Value" : { "Fn::Join": ["", [
-                "https://", { "Ref": "AWS::Region"}, ".console.aws.amazon.com/ecs/home?region=",
-                    { "Ref": "AWS::Region"}, "#/clusters/", { "Ref": "EcsCluster"}, "/containerInstances"
-            ]] }
-        }
-    }
-}
+            - |
+              reboot now
+      BlockDeviceMappings:
+        - DeviceName: /dev/xvda
+          Ebs:
+            VolumeSize: !Ref DiskSize
+            VolumeType: gp2
+  Ec2Role:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - ec2.amazonaws.com
+            Action:
+              - 'sts:AssumeRole'
+      Path: /platforms/ecs/
+      Policies:
+        - PolicyName: ecs-service
+          PolicyDocument:
+            Statement:
+              - Effect: Allow
+                Action:
+                  - 'ecs:CreateCluster'
+                  - 'ecs:DeregisterContainerInstance'
+                  - 'ecs:DiscoverPollEndpoint'
+                  - 'ecs:Poll'
+                  - 'ecs:RegisterContainerInstance'
+                  - 'ecs:StartTelemetrySession'
+                  - 'ecs:Submit*'
+                Resource: '*'
+              - Effect: Allow
+                Action:
+                  - 'ecr:BatchCheckLayerAvailability'
+                  - 'ecr:BatchGetImage'
+                  - 'ecr:GetDownloadUrlForLayer'
+                  - 'ecr:GetAuthorizationToken'
+                Resource: '*'
+      ManagedPolicyArns:
+        - !Ref DiagnosticsMp
+  Ec2InstanceProfile:
+    Type: 'AWS::IAM::InstanceProfile'
+    Properties:
+      Path: /platforms/ecs/
+      Roles:
+        - !Ref Ec2Role
+  DatabaseSg:
+    Type: 'AWS::EC2::SecurityGroup'
+    Properties:
+      SecurityGroupIngress:
+        - IpProtocol: '-1'
+          SourceSecurityGroupId: !Ref DbTargetClusterSg
+      VpcId: !Ref VpcId
+      GroupDescription: RancherOS Database Security Group
+  DbTargetClusterSg:
+    Type: 'AWS::EC2::SecurityGroup'
+    Properties:
+      SecurityGroupIngress: []
+      VpcId: !Ref VpcId
+      GroupDescription: Security group for database security to allow ingress from.
+  ClusterSelfIngress:
+    Type: 'AWS::EC2::SecurityGroupIngress'
+    Properties:
+      GroupId: !Ref DbTargetClusterSg
+      IpProtocol: '-1'
+      SourceSecurityGroupId: !Ref DbTargetClusterSg
+Outputs:
+  EcsAdminUrl:
+    Description: Ec2 Container Service Cluster
+    Value: !Join 
+      - ''
+      - - 'https://'
+        - !Ref 'AWS::Region'
+        - .console.aws.amazon.com/ecs/home?region=
+        - !Ref 'AWS::Region'
+        - '#/clusters/'
+        - !Ref EcsCluster
+        - /containerInstances
