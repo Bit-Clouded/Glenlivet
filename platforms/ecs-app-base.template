@@ -141,7 +141,7 @@
                 "DBParameterGroupName" : {"Ref": "DbParamGroup"},
                 "DBName": {"Ref":"DbName"},
                 "Engine" : "mariadb",
-                "EngineVersion" : "10.1.14",
+                "EngineVersion" : "10.1.23",
                 "MasterUsername" : {"Ref": "DbUsername"},
                 "MasterUserPassword" : {"Ref": "DbPassword"},
                 "DBSnapshotIdentifier" : {"Fn::If": [
