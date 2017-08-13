@@ -113,6 +113,16 @@
             "Description" : "EFS disk path segment. It has a /mnt/efs/ prefix followed by the guid of the CloudFormation stack id when left blank.",
             "Type" : "String",
             "Default" : ""
+        },
+        "CpuReservation" :{
+			"Description": "CPU Unit to Reserve",
+            "Type": "Number",
+            "Default": 1000
+        },
+        "MemoryReservation" :{
+			"Description": "Memory in MB to Reserve",
+            "Type": "Number",
+            "Default": 1000
         }
     },
 
@@ -191,10 +201,10 @@
             "Properties" : {
                 "ContainerDefinitions" : [{
                     "Name":"wordpress",
-                    "Cpu": "10",
+                    "Cpu": {"Ref":"CpuReservation"},
                     "Essential": "true",
                     "Image":{"Ref":"ImageName"},
-                    "Memory":"300",
+                    "Memory":{"Ref":"MemoryReservation"},
                     "Environment": [
                         { "Name" : "WORDPRESS_DB_HOST", "Value" : {"Ref":"DatabaseEndpointAddress"} },
                         { "Name" : "WORDPRESS_DB_USER", "Value" : {"Ref":"DbUsername"} },
