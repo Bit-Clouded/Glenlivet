@@ -497,6 +497,112 @@ Resources:
       GroupId: !Ref DbTargetClusterSg
       IpProtocol: '-1'
       SourceSecurityGroupId: !Ref DbTargetClusterSg
+
+  # Start of Instance Draining Handling
+  LinuxTerminateHook:
+    Type: "AWS::AutoScaling::LifecycleHook"
+    Properties:
+      AutoScalingGroupName: !Ref EcsAutoScalingGroup
+      DefaultResult: ABANDON
+      HeartbeatTimeout: 900
+      LifecycleTransition: autoscaling:EC2_INSTANCE_TERMINATING
+      NotificationTargetARN: !Ref ScalingEvents
+      RoleARN:
+         Fn::GetAtt: ["LinuxTerminateHookPermission", "Arn"]
+  LinuxTerminateHookPermission:
+    Type: "AWS::IAM::Role"
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          -
+            Effect: "Allow"
+            Principal:
+              Service:
+                - "autoscaling.amazonaws.com"
+            Action:
+              - "sts:AssumeRole"
+      ManagedPolicyArns:
+      - arn:aws:iam::aws:policy/service-role/AutoScalingNotificationAccessRole
+      Path: "/"
+  ScalingEvents:
+    Type: "AWS::SNS::Topic"
+    Properties:
+      Subscription:
+        - Endpoint:
+             Fn::GetAtt: ["ScalingEventsProcessor", "Arn"]
+          Protocol: lambda
+  ScalingEventsProcessor:
+    Type: "AWS::Lambda::Function"
+    Properties:
+      Code:
+        ZipFile: |
+          exports.handler = function(event, context) {
+          console.log(JSON.stringify(event));
+          console.log(JSON.stringify(context));};
+      Handler: index.handler
+      Description: ECS scaling event processor
+      Role:
+         Fn::GetAtt: ["ScalingEventsProcessorPermission", "Arn"]
+      Runtime: nodejs6.10
+      Timeout: 300
+  ScalingEventsProcessorPermission:
+    Type: "AWS::IAM::Role"
+    Properties:
+      Policies:
+        -
+          PolicyName: "lambda-inline"
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: "Allow"
+                Action:
+                  - autoscaling:CompleteLifecycleAction
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                  - ec2:DescribeInstances
+                  - ec2:DescribeInstanceAttribute
+                  - ec2:DescribeInstanceStatus
+                  - ec2:DescribeHosts
+                  - ecs:ListContainerInstances
+                  - ecs:SubmitContainerStateChange
+                  - ecs:SubmitTaskStateChange
+                  - ecs:DescribeContainerInstances
+                  - ecs:UpdateContainerInstancesState
+                  - ecs:ListTasks
+                  - ecs:DescribeTasks
+                  - sns:Publish
+                  - sns:ListSubscriptions
+                Resource: "*"
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: "Allow"
+            Principal:
+              Service:
+                - "lambda.amazonaws.com"
+            Action:
+              - "sts:AssumeRole"
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AutoScalingNotificationAccessRole
+      Path: "/"
+  LambdaInvokePermission:
+    Type: "AWS::Lambda::Permission"
+    Properties:
+       FunctionName: !Ref ScalingEventsProcessor
+       Action: lambda:InvokeFunction
+       Principal: sns.amazonaws.com
+       SourceArn: !Ref ScalingEvents
+  LambdaSubscriptionToSNSTopic:
+    Type: AWS::SNS::Subscription
+    Properties:
+      Endpoint:
+        Fn::GetAtt: ["ScalingEventsProcessor", "Arn"]
+      Protocol: 'lambda'
+      TopicArn: !Ref ScalingEvents
+  # End of Instance Draining Handling
+
 Outputs:
   EcsAdminUrl:
     Description: Ec2 Container Service Cluster
