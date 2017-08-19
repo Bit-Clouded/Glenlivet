@@ -1,4 +1,5 @@
 AWSTemplateFormatVersion: 2010-09-09
+Description: HA and AutoScaling Realtime setup of Snowplow
 Metadata:
   DefaultName: Snowplow
   Dependencies:
