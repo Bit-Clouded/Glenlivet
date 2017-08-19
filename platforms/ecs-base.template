@@ -63,8 +63,8 @@ Parameters:
       - c4.4xlarge
       - c4.8xlarge
     ConstraintDescription: Must be a valid EC2 instance type.
-  EcsAmiId:
-    Description: ECS Optimised AMI.
+  BcUbuntuBaseAmiId:
+    Description: Image id of the frontend
     Type: 'AWS::EC2::Image::Id'
   WindowsContainerAmiId:
     Description: ECS Optimised AMI.
@@ -84,6 +84,10 @@ Parameters:
     Description: 'Root Path to Where Lambda Code are Hosted.'
     Type: String
     Default: citrus-rind/prod/
+  EcsAgentImage:
+    Description: 'AWS ECS Agent Name'
+    Type: String
+    Default: amazon/amazon-ecs-agent:v1.14.3
 Conditions:
   IsThreeAz: !Equals 
     - !Ref AzCount
@@ -304,72 +308,16 @@ Resources:
             - - !Ref 'AWS::StackName'
               - ' Linux Agent'
           PropagateAtLaunch: 'true'
-    CreationPolicy:
-      ResourceSignal:
-        Timeout: PT15M
+    #CreationPolicy:
+    #  ResourceSignal:
+    #    Timeout: PT15M
   ContainerInstances:
     Type: 'AWS::AutoScaling::LaunchConfiguration'
     DependsOn:
       - MountTarget1
       - MountTarget2
-    Metadata:
-      'AWS::CloudFormation::Init':
-        config:
-          commands:
-            01_add_instance_to_cluster:
-              command: !Join 
-                - ''
-                - - |
-                    #!/bin/bash
-                  - echo ECS_CLUSTER=
-                  - !Ref EcsCluster
-                  - ' >> /etc/ecs/ecs.config'
-          files:
-            /etc/cfn/cfn-hup.conf:
-              content: !Join 
-                - ''
-                - - |
-                    [main]
-                  - stack=
-                  - !Ref 'AWS::StackId'
-                  - |+
-
-                  - region=
-                  - !Ref 'AWS::Region'
-                  - |+
-
-              mode: '000400'
-              owner: root
-              group: root
-            /etc/cfn/hooks.d/cfn-auto-reloader.conf:
-              content: !Join 
-                - ''
-                - - |
-                    [cfn-auto-reloader-hook]
-                  - |
-                    triggers=post.update
-                  - >
-                    path=Resources.ContainerInstances.Metadata.AWS::CloudFormation::Init
-                  - 'action=/opt/aws/bin/cfn-init -v '
-                  - '         --stack '
-                  - !Ref 'AWS::StackName'
-                  - '         --resource ContainerInstances '
-                  - '         --region '
-                  - !Ref 'AWS::Region'
-                  - |+
-
-                  - |
-                    runas=root
-          services:
-            sysvinit:
-              cfn-hup:
-                enabled: 'true'
-                ensureRunning: 'true'
-                files:
-                  - /etc/cfn/cfn-hup.conf
-                  - /etc/cfn/hooks.d/cfn-auto-reloader.conf
     Properties:
-      ImageId: !Ref EcsAmiId
+      ImageId: !Ref BcUbuntuBaseAmiId
       InstanceType: !Ref InstanceType
       IamInstanceProfile: !Ref Ec2InstanceProfile
       KeyName: !If 
@@ -379,69 +327,35 @@ Resources:
       SecurityGroups:
         - !Ref ElbTargetSg
         - !Ref DbTargetClusterSg
-      UserData: !Base64 
-        'Fn::Join':
-          - ''
-          - - |
-              #!/bin/bash -xe
-            - |
-              yum update -y && yum -y install nfs-utils
-            - >
-              EC2_AVAIL_ZONE=`curl -s
-              http://169.254.169.254/latest/meta-data/placement/availability-zone`
-            - EC2_REGION=
-            - !Ref 'AWS::Region'
-            - |+
+      UserData: !Base64
+        'Fn::Sub': |
+          #!/bin/bash
+          apt-get update -qqy && apt-get install -qqy nfs-common
+          EC2_AVAIL_ZONE=`curl -s http://169.254.169.254/latest/meta-data/placement/availability-zone`
+          DIR_SRC=$EC2_AVAIL_ZONE.${SharedDiskGp}.efs.${AWS::Region}.amazonaws.com
+          mkdir /mnt/efs
+          echo -e "$DIR_SRC:/ /mnt/efs nfs defaults 0 0" | tee -a /etc/fstab
+          mount -a
+          # restart docker service so efs mount can come into effect.
+          service docker restart
 
-            - |
-              mkdir /mnt/efs
-            - EFS_FILE_SYSTEM_ID=
-            - !Ref SharedDiskGp
-            - |+
+          sh -c "echo 'net.ipv4.conf.all.route_localnet = 1' >> /etc/sysctl.conf"
+          sysctl -p /etc/sysctl.conf
+          iptables -t nat -A PREROUTING -p tcp -d 169.254.170.2 --dport 80 -j DNAT --to-destination 127.0.0.1:51678
+          iptables -t nat -A OUTPUT -d 169.254.170.2 -p tcp -m tcp --dport 80 -j REDIRECT --to-ports 51678
+          docker run -d --restart=always \
+            -e ECS_AVAILABLE_LOGGING_DRIVERS=[\"json-file\",\"awslogs\"] \
+            -e ECS_ENABLE_TASK_IAM_ROLE_NETWORK_HOST=true \
+            -e ECS_ENABLE_TASK_IAM_ROLE=true \
+            -e ECS_CLUSTER=${EcsCluster} \
+            -e ECS_LOGFILE=/log/ecs-agent.log \
+            -e ECS_DATADIR=/data \
+            -v /var/run/docker.sock:/var/run/docker.sock \
+            -v /var/log/ecs/:/log \
+            -v /var/lib/ecs/data:/data \
+            -p 127.0.0.1:51678:51678 \
+            ${EcsAgentImage}
 
-            - >
-              DIR_SRC=$EC2_AVAIL_ZONE.$EFS_FILE_SYSTEM_ID.efs.$EC2_REGION.amazonaws.com
-            - |
-              DIR_TGT=/mnt/efs
-            - |
-              touch /home/ec2-user/echo.res
-            - |
-              echo $EFS_FILE_SYSTEM_ID >> /home/ec2-user/echo.res
-            - |
-              echo $EC2_AVAIL_ZONE >> /home/ec2-user/echo.res
-            - |
-              echo $EC2_REGION >> /home/ec2-user/echo.res
-            - |
-              echo $DIR_SRC >> /home/ec2-user/echo.res
-            - |
-              echo $DIR_TGT >> /home/ec2-user/echo.res
-            - |
-              mount -t nfs4 $DIR_SRC:/ $DIR_TGT >> /home/ec2-user/echo.res
-            - |
-              cp -p /etc/fstab /etc/fstab.back-$(date +%F)
-            - "echo -e \"$DIR_SRC:/ \t\t $DIR_TGT \t\t nfs \t\t defaults \t\t 0 \t\t 0\" | tee -a /etc/fstab\n"
-            - |
-              mount -a
-            - |
-              yum install -y aws-cfn-bootstrap
-            - '/opt/aws/bin/cfn-init -v '
-            - '         --stack '
-            - !Ref 'AWS::StackName'
-            - '         --resource ContainerInstances '
-            - '         --region '
-            - !Ref 'AWS::Region'
-            - |+
-
-            - '/opt/aws/bin/cfn-signal -e $? '
-            - '         --stack '
-            - !Ref 'AWS::StackName'
-            - '         --resource EcsAutoScalingGroup '
-            - '         --region '
-            - !Ref 'AWS::Region'
-            - |+
-
-            - |
-              reboot now
       BlockDeviceMappings:
         - DeviceName: /dev/xvda
           Ebs:
