@@ -89,6 +89,45 @@ Parameters:
     Description: 'AWS ECS Agent Name'
     Type: String
     Default: amazon/amazon-ecs-agent:v1.14.3
+
+  # Scaling Parameters
+  ScaleTestPeriod:
+    Description: Length of time block in seconds to test for thresholds.
+    Type: Number
+    Default: 60
+  ScaleUpPercentage:
+    Description: Percentage of extra servers to provision when scaling up.
+    Type: Number
+    Default: 60
+  ScaleUpCooldown:
+    Description: Number of seconds before anothe round of scale up happens.
+    Type: Number
+    Default: 90
+  ScaleUpThreshold:
+    Description: CPU allocation threshold to scale up at.
+    Type: Number
+    Default: 75
+  ScaleUpTestPeriodCount:
+    Description: Number of time block to test for scaling up.
+    Type: Number
+    Default: 1
+  ScaleDownCount:
+    Description: Number of servers to decomission when scaling down.
+    Type: Number
+    Default: -1
+  ScaleDownCooldown:
+    Description: Number of seconds before anothe round of scale down happens.
+    Type: Number
+    Default: 120
+  ScaleDownThreshold:
+    Description: CPU allocation threshold to scale down at.
+    Type: Number
+    Default: 50
+  ScaleDownTestPeriodCount:
+    Description: Number of time block to test for scaling up.
+    Type: Number
+    Default: 2
+
 Conditions:
   IsThreeAz: !Equals 
     - !Ref AzCount
@@ -342,8 +381,8 @@ Resources:
 
           sh -c "echo 'net.ipv4.conf.all.route_localnet = 1' >> /etc/sysctl.conf"
           sysctl -p /etc/sysctl.conf
-          iptables -t nat -A PREROUTING -p tcp -d 169.254.170.2 --dport 80 -j DNAT --to-destination 127.0.0.1:51678
-          iptables -t nat -A OUTPUT -d 169.254.170.2 -p tcp -m tcp --dport 80 -j REDIRECT --to-ports 51678
+          iptables -t nat -A PREROUTING -p tcp -d 169.254.170.2 --dport 80 -j DNAT --to-destination 127.0.0.1:51679
+          iptables -t nat -A OUTPUT -d 169.254.170.2 -p tcp -m tcp --dport 80 -j REDIRECT --to-ports 51679
           docker run -d --restart=always \
             -e ECS_AVAILABLE_LOGGING_DRIVERS=[\"json-file\",\"awslogs\"] \
             -e ECS_ENABLE_TASK_IAM_ROLE_NETWORK_HOST=true \
@@ -355,10 +394,11 @@ Resources:
             -v /var/log/ecs/:/log \
             -v /var/lib/ecs/data:/data \
             -p 127.0.0.1:51678:51678 \
+            -p 127.0.0.1:51679:51679 \
             ${EcsAgentImage}
 
       BlockDeviceMappings:
-        - DeviceName: /dev/xvda
+        - DeviceName: /dev/sda1
           Ebs:
             VolumeSize: !Ref DiskSize
             VolumeType: gp2
