@@ -1,7 +1,7 @@
 {
 	"AWSTemplateFormatVersion": "2010-09-09",
 
-	"Description": "A template to launch Jenkins build servers.",
+	"Description": "Jenkins with Windows and Linux Build Agents on AutoScaling Groups",
 
 	"Metadata" : {
         "DefaultName" : "Jenkins",

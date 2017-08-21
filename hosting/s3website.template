@@ -1,7 +1,7 @@
 {
     "AWSTemplateFormatVersion" : "2010-09-09",
 
-    "Description" : "S3 Hosting",
+    "Description" : "S3 Static Website Hosting with CloudFront",
 
     "Parameters": {
         "SubDomain" : {

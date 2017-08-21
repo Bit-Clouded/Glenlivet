@@ -1,7 +1,7 @@
 {
     "AWSTemplateFormatVersion" : "2010-09-09",
 
-    "Description" : "RethinkDB Cluster",
+    "Description" : "HA RethinkDB Cluster",
 
     "Metadata" : {
         "DefaultName" : "RethinkDb",
