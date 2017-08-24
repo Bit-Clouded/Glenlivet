@@ -1,520 +1,469 @@
-{
-	"AWSTemplateFormatVersion": "2010-09-09",
+AWSTemplateFormatVersion: 2010-09-09
+Description: >-
+  Logstash for sending logs collected in analytics/logs-store template to
+  Elasticsearch
+Metadata:
+  DefaultName: AwsLogstash
+  Dependencies:
+    - TemplatePath: networking/vpc
+    - TemplatePath: networking/nat-subnets
+      Parameters:
+        VpcId: VpcId
+      Outputs:
+        Subnets: Subnets
+      NestedDependency: networking/vpc
+    - TemplatePath: analytics/logs-store
+      Resources:
+        LogStream: LogStream
+        VpcTrafficLogGroupName: VpcTrafficLog
+        CloudTrailLogGroupName: GlobalCloudTrailLog
+        LinuxDockerLogGroupName: LxDockerLog
+        LinuxSysLogGroupName: LxSysLog
+        LinuxAuthLogGroupName: LxAuthLog
+        RawLogBucketName: Raw
+        RawLogSns: RawBucketNotification
+        AccessS3LogBucketName: AccessS3Log
+        AccessS3LogSns: AccessS3LogBucketNotification
+        AccessCfLogBucketName: AccessCfLog
+        AccessCfLogSns: AccessCfLogBucketNotification
+        CwlPolicy: LinuxLogPolicy
+      Outputs:
+        CwlLinuxParams: LxDockerLogParams
+        CwlDockerParams: DockerCwlParams
+    - TemplatePath: datastore/elasticsearch
+      Outputs:
+        EsHost: EsElb
+Parameters:
+  KeyPairName:
+    Description: Name of an existing EC2 KeyPair to enable SSH access to the instances
+    Type: String
+    Default: ''
+  LogstashNodeType:
+    Description: >-
+      Logstash EC2 instance type. t2.nano should only be used for development
+      purpose.
+    Type: String
+    Default: m3.medium
+    AllowedValues:
+      - t2.nano
+      - t2.micro
+      - t2.small
+      - m3.medium
+      - m4.large
+      - m4.xlarge
+      - m4.2xlarge
+      - r3.large
+      - r3.xlarge
+      - r3.2xlarge
+      - r3.4xlarge
+      - r3.8xlarge
+    ConstraintDescription: must be a valid EC2 instance type.
+  BcUbuntuBaseAmiId:
+    Description: AMI to use
+    Type: 'AWS::EC2::Image::Id'
+  VpcId:
+    Description: VPCid associated with the subnets.
+    Type: 'AWS::EC2::VPC::Id'
+  Subnets:
+    Description: Subnet to run HA web cluster on.
+    Type: 'List<AWS::EC2::Subnet::Id>'
+  LogStream:
+    Description: Name of VPC traffic log group.
+    Type: String
+  VpcTrafficLogGroupName:
+    Description: Name of VPC traffic log group.
+    Type: String
+  CloudTrailLogGroupName:
+    Description: Name of VPC traffic log group.
+    Type: String
+  LinuxDockerLogGroupName:
+    Description: Name of VPC traffic log group.
+    Type: String
+  LinuxSysLogGroupName:
+    Description: Name of VPC traffic log group.
+    Type: String
+  LinuxAuthLogGroupName:
+    Description: Name of VPC traffic log group.
+    Type: String
+  EsHost:
+    Description: Hostname of Elasticsearch
+    Type: String
+  RawLogBucketName:
+    Description: Hostname of Elasticsearch
+    Type: String
+  RawLogSns:
+    Description: Hostname of Elasticsearch
+    Type: String
+  AccessS3LogBucketName:
+    Description: Hostname of Elasticsearch
+    Type: String
+  AccessS3LogSns:
+    Description: Hostname of Elasticsearch
+    Type: String
+  AccessCfLogBucketName:
+    Description: Hostname of Elasticsearch
+    Type: String
+  AccessCfLogSns:
+    Description: Hostname of Elasticsearch
+    Type: String
+  LogstashDocker:
+    Description: Name of cluster. This is used for discovery.
+    Type: String
+    Default: 'bitclouded/ls-aws-kinesis:2.2'
+  LogstashSqsDocker:
+    Description: Name of cluster. This is used for discovery.
+    Type: String
+    Default: 'bitclouded/ls-aws-sqs3:2-1'
+  CwlUbuntuAgentDocker:
+    Description: Name of cluster. This is used for discovery.
+    Type: String
+    Default: 'bitclouded/aws-cwl-agent:4.1'
+  CwlLinuxParams:
+    Description: Environment variables for syslog and authlog cwl group names
+    Type: String
+  CwlDockerParams:
+    Description: Docker log driver params
+    Type: String
+  CwlPolicy:
+    Description: Managed policy for linux logging.
+    Type: String
+Mappings:
+  InstanceVariables:
+    t2.micro:
+      ram: '450'
+    t2.small:
+      ram: '950'
+    t2.medium:
+      ram: '1950'
+    t2.large:
+      ram: '3800'
+    m3.medium:
+      ram: '1800'
+    m4.large:
+      ram: '3600'
+    m4.xlarge:
+      ram: '7000'
+    m4.2xlarge:
+      ram: '14500'
+    r3.large:
+      ram: '7500'
+    r3.xlarge:
+      ram: '15000'
+    r3.2xlarge:
+      ram: '30000'
+    r3.4xlarge:
+      ram: '60000'
+    r3.8xlarge:
+      ram: '120000'
+Conditions:
+  HasNoKeypair: !Equals 
+    - !Ref KeyPairName
+    - ''
+Resources:
+  LogStreamKclLeasesTable:
+    Type: 'AWS::DynamoDB::Table'
+    Properties:
+      TableName: !Ref 'AWS::StackName'
+      ProvisionedThroughput:
+        ReadCapacityUnits: '10'
+        WriteCapacityUnits: '10'
+      AttributeDefinitions:
+        - AttributeName: leaseKey
+          AttributeType: S
+      KeySchema:
+        - AttributeName: leaseKey
+          KeyType: HASH
+  RawSubscription:
+    Type: 'AWS::SNS::Subscription'
+    Properties:
+      Endpoint: !GetAtt 
+        - LogQueue
+        - Arn
+      Protocol: sqs
+      TopicArn: !Ref RawLogSns
+  S3Subscription:
+    Type: 'AWS::SNS::Subscription'
+    Properties:
+      Endpoint: !GetAtt 
+        - LogQueue
+        - Arn
+      Protocol: sqs
+      TopicArn: !Ref AccessS3LogSns
+  CfSubscription:
+    Type: 'AWS::SNS::Subscription'
+    Properties:
+      Endpoint: !GetAtt 
+        - LogQueue
+        - Arn
+      Protocol: sqs
+      TopicArn: !Ref AccessCfLogSns
+  LogQueue:
+    Type: 'AWS::SQS::Queue'
+    Properties:
+      QueueName: !Join 
+        - ''
+        - - !Ref 'AWS::StackName'
+      ReceiveMessageWaitTimeSeconds: '20'
+      VisibilityTimeout: 300
+  LogQueuePolicy:
+    Type: 'AWS::SQS::QueuePolicy'
+    Properties:
+      PolicyDocument:
+        Version: 2012-10-17
+        Id: LogQueuePolicy
+        Statement:
+          - Sid: RawLog
+            Effect: Allow
+            Principal: '*'
+            Action:
+              - 'sqs:SendMessage'
+            Resource: '*'
+            Condition:
+              ArnEquals:
+                'aws:SourceArn': !Join 
+                  - ''
+                  - - 'arn:aws:sns:ap-southeast-2:'
+                    - !Ref 'AWS::AccountId'
+                    - ':*'
+      Queues:
+        - !Ref LogQueue
+  LogstashSg:
+    Type: 'AWS::EC2::SecurityGroup'
+    Properties:
+      GroupDescription: Security group for logstash nodes.
+      SecurityGroupEgress:
+        - IpProtocol: '-1'
+          CidrIp: 0.0.0.0/0
+          FromPort: '0'
+          ToPort: '65535'
+      VpcId: !Ref VpcId
+      Tags:
+        - Key: Name
+          Value: Ls Nodes
+  LogstashAsg:
+    Type: 'AWS::AutoScaling::AutoScalingGroup'
+    Properties:
+      VPCZoneIdentifier: !Ref Subnets
+      LaunchConfigurationName: !Ref LogstashLc
+      MinSize: '1'
+      MaxSize: '5'
+      Tags:
+        - Key: Name
+          Value: Logstash Kinesis
+          PropagateAtLaunch: 'True'
+  LogstashLc:
+    Type: 'AWS::AutoScaling::LaunchConfiguration'
+    Properties:
+      InstanceType: !Ref LogstashNodeType
+      ImageId: !Ref BcUbuntuBaseAmiId
+      KeyName: !If 
+        - HasNoKeypair
+        - !Ref 'AWS::NoValue'
+        - !Ref KeyPairName
+      SecurityGroups:
+        - !Ref LogstashSg
+      IamInstanceProfile: !Ref LogstashInstanceProfile
+      UserData: !Base64 
+        'Fn::Join':
+          - ''
+          - - |
+              #!/bin/bash
+            - >
+              CWLA=cwlagent-$(curl
+              http://169.254.169.254/latest/meta-data/instance-id)
+            - 'docker run -d --restart=always '
+            - '--name $CWLA --log-opt awslogs-stream=$CWLA '
+            - '-v /var/log:/var/log-host:ro '
+            - !Ref CwlLinuxParams
+            - ' '
+            - !Ref CwlDockerParams
+            - ' '
+            - !Ref CwlUbuntuAgentDocker
+            - |+
 
-	"Description": "Logstash for sending logs collected in analytics/logs-store template to Elasticsearch",
+            - docker run -d --name logstash-kinesis --restart=always
+            - ' -e KINESIS='
+            - !Ref LogStream
+            - ' -e DDB_CHECKPOINT='
+            - !Ref 'AWS::StackName'
+            - ' -e ES_HOST='
+            - !Ref EsHost
+            - ' -e VPC_LOG='
+            - !Ref VpcTrafficLogGroupName
+            - ' -e CLOUDTRAIL='
+            - !Ref CloudTrailLogGroupName
+            - ' -e DOCKER_LOG='
+            - !Ref LinuxDockerLogGroupName
+            - ' -e SYSLOG='
+            - !Ref LinuxSysLogGroupName
+            - ' -e AUTHLOG='
+            - !Ref LinuxAuthLogGroupName
+            - ' '
+            - !Ref LogstashDocker
+      BlockDeviceMappings:
+        - DeviceName: /dev/xvda
+          Ebs:
+            VolumeSize: '50'
+            VolumeType: gp2
+  LogstashInstanceProfile:
+    Type: 'AWS::IAM::InstanceProfile'
+    Properties:
+      Path: /analytics/logstash/
+      Roles:
+        - !Ref LogstashRole
+  LogstashRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - ec2.amazonaws.com
+            Action:
+              - 'sts:AssumeRole'
+      Path: /analytics/logstash/
+      ManagedPolicyArns:
+        - !Ref CwlPolicy
+  LogstashRolePolicies:
+    Type: 'AWS::IAM::Policy'
+    Properties:
+      PolicyName: LogstashKinesisAccessPolicy
+      PolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Action: 'dynamodb:*'
+            Resource: !Join 
+              - ''
+              - - 'arn:aws:dynamodb:'
+                - !Ref 'AWS::Region'
+                - ':'
+                - !Ref 'AWS::AccountId'
+                - ':table/'
+                - !Ref LogStreamKclLeasesTable
+          - Effect: Allow
+            Action:
+              - 'kinesis:Get*'
+              - 'kinesis:List*'
+              - 'kinesis:Describe*'
+            Resource: !Join 
+              - ''
+              - - 'arn:aws:kinesis:*:'
+                - !Ref 'AWS::AccountId'
+                - ':stream/'
+                - !Ref LogStream
+      Roles:
+        - !Ref LogstashRole
+  LogstashSqsAsg:
+    Type: 'AWS::AutoScaling::AutoScalingGroup'
+    Properties:
+      VPCZoneIdentifier: !Ref Subnets
+      LaunchConfigurationName: !Ref LogstashSqsLc
+      MinSize: '1'
+      MaxSize: '20'
+      Tags:
+        - Key: Name
+          Value: Logstash Sqs
+          PropagateAtLaunch: 'True'
+  LogstashSqsLc:
+    Type: 'AWS::AutoScaling::LaunchConfiguration'
+    Properties:
+      InstanceType: !Ref LogstashNodeType
+      ImageId: !Ref BcUbuntuBaseAmiId
+      KeyName: !If 
+        - HasNoKeypair
+        - !Ref 'AWS::NoValue'
+        - !Ref KeyPairName
+      SecurityGroups:
+        - !Ref LogstashSg
+      IamInstanceProfile: !Ref LogstashSqsInstanceProfile
+      UserData: !Base64 
+        'Fn::Join':
+          - ''
+          - - |
+              #!/bin/bash
+            - >
+              CWLA=cwlagent-$(curl
+              http://169.254.169.254/latest/meta-data/instance-id)
+            - 'docker run -d --restart=always '
+            - '--name $CWLA --log-opt awslogs-stream=$CWLA '
+            - '-v /var/log:/var/log-host:ro '
+            - !Ref CwlLinuxParams
+            - ' '
+            - !Ref CwlDockerParams
+            - ' '
+            - !Ref CwlUbuntuAgentDocker
+            - |+
 
-	"Metadata" : {
-        "DefaultName" : "AwsLogstash",
-        "Dependencies": [
-            {
-                "TemplatePath": "networking/vpc"
-            },
-            {
-                "TemplatePath": "networking/nat-subnets",
-                "Parameters": {
-                    "VpcId": "VpcId"
-                },
-                "Outputs": {
-                    "Subnets": "Subnets"
-                },
-                "NestedDependency": "networking/vpc"
-            },
-            {
-                "TemplatePath": "analytics/logs-store",
-                "Resources": {
-                    "LogStream": "LogStream",
-                    "VpcTrafficLogGroupName": "VpcTrafficLog",
-                    "CloudTrailLogGroupName": "GlobalCloudTrailLog",
-                    "LinuxDockerLogGroupName": "LxDockerLog",
-                    "LinuxSysLogGroupName": "LxSysLog",
-                    "LinuxAuthLogGroupName": "LxAuthLog",
-                    "RawLogBucketName": "Raw",
-                    "RawLogSns": "RawBucketNotification",
-                    "AccessS3LogBucketName": "AccessS3Log",
-                    "AccessS3LogSns": "AccessS3LogBucketNotification",
-                    "AccessCfLogBucketName": "AccessCfLog",
-                    "AccessCfLogSns": "AccessCfLogBucketNotification",
-                    "CwlPolicy": "LinuxLogPolicy"
-                },
-                "Outputs": {
-                    "CwlLinuxParams": "LxDockerLogParams",
-                    "CwlDockerParams": "DockerCwlParams"
-                }
-            },
-            {
-                "TemplatePath": "datastore/elasticsearch",
-                "Outputs": {
-                    "EsHost": "EsElb"
-                }
-            }
-        ]
-    },
-
-	"Parameters": {
-		"KeyPairName": {
-			"Description": "Name of an existing EC2 KeyPair to enable SSH access to the instances",
-			"Type": "String",
-			"Default": ""
-		},
-
-		"LogstashNodeType" : {
-			"Description" : "Logstash EC2 instance type. t2.nano should only be used for development purpose.",
-			"Type" : "String",
-			"Default" : "m3.medium",
-			"AllowedValues": [
-				"t2.nano",
-				"t2.micro",
-				"t2.small",
-				"m3.medium",
-				"m4.large",
-				"m4.xlarge",
-				"m4.2xlarge",
-				"r3.large",
-				"r3.xlarge",
-				"r3.2xlarge",
-				"r3.4xlarge",
-				"r3.8xlarge"
-			],
-			"ConstraintDescription" : "must be a valid EC2 instance type."
-		},
-		"BcUbuntuBaseAmiId": {
-			"Description": "AMI to use",
-			"Type": "AWS::EC2::Image::Id"
-		},
-
-		"VpcId": {
-			"Description" : "VPCid associated with the subnets.",
-			"Type": "AWS::EC2::VPC::Id"
-		},
-		"Subnets": {
-			"Description" : "Subnet to run HA web cluster on.",
-			"Type": "List<AWS::EC2::Subnet::Id>"
-		},
-
-		"LogStream" : {
-			"Description": "Name of VPC traffic log group.",
-			"Type": "String"
-		},
-
-		"VpcTrafficLogGroupName" : {
-			"Description": "Name of VPC traffic log group.",
-			"Type": "String"
-		},
-		"CloudTrailLogGroupName" : {
-			"Description": "Name of VPC traffic log group.",
-			"Type": "String"
-		},
-		"LinuxDockerLogGroupName" : {
-			"Description": "Name of VPC traffic log group.",
-			"Type": "String"
-		},
-		"LinuxSysLogGroupName" : {
-			"Description": "Name of VPC traffic log group.",
-			"Type": "String"
-		},
-		"LinuxAuthLogGroupName" : {
-			"Description": "Name of VPC traffic log group.",
-			"Type": "String"
-		},
-
-		"EsHost" : {
-			"Description": "Hostname of Elasticsearch",
-			"Type": "String"
-		},
-
-        "RawLogBucketName" : {
-			"Description": "Hostname of Elasticsearch",
-			"Type": "String"
-		},
-        "RawLogSns" : {
-			"Description": "Hostname of Elasticsearch",
-			"Type": "String"
-		},
-
-        "AccessS3LogBucketName" : {
-			"Description": "Hostname of Elasticsearch",
-			"Type": "String"
-		},
-        "AccessS3LogSns" : {
-			"Description": "Hostname of Elasticsearch",
-			"Type": "String"
-		},
-        "AccessCfLogBucketName" : {
-			"Description": "Hostname of Elasticsearch",
-			"Type": "String"
-		},
-        "AccessCfLogSns" : {
-			"Description": "Hostname of Elasticsearch",
-			"Type": "String"
-		},
-
-		"LogstashDocker": {
-			"Description": "Name of cluster. This is used for discovery.",
-			"Type": "String",
-			"Default": "bitclouded/ls-aws-kinesis:2.2"
-		},
-		"LogstashSqsDocker": {
-			"Description": "Name of cluster. This is used for discovery.",
-			"Type": "String",
-			"Default": "bitclouded/ls-aws-sqs3:2-1"
-		},
-		"CwlUbuntuAgentDocker": {
-			"Description": "Name of cluster. This is used for discovery.",
-			"Type": "String",
-			"Default": "bitclouded/aws-cwl-agent:4.1"
-		},
-		"CwlLinuxParams" : {
-			"Description": "Environment variables for syslog and authlog cwl group names",
-			"Type": "String"
-		},
-		"CwlDockerParams" : {
-			"Description": "Docker log driver params",
-			"Type": "String"
-		},
-		"CwlPolicy" : {
-			"Description": "Managed policy for linux logging.",
-			"Type": "String"
-		}
-	},
-
-	"Mappings" : {
-		"InstanceVariables" : {
-			"t2.micro": { "ram" : "450" },
-			"t2.small": { "ram" : "950" },
-			"t2.medium": { "ram" : "1950" },
-			"t2.large": { "ram" : "3800" },
-			"m3.medium": { "ram" : "1800" },
-			"m4.large": { "ram" : "3600" },
-			"m4.xlarge": { "ram" : "7000" },
-			"m4.2xlarge": { "ram" : "14500" },
-			"r3.large": { "ram" : "7500" },
-			"r3.xlarge": { "ram" : "15000" },
-			"r3.2xlarge": { "ram" : "30000" },
-			"r3.4xlarge": { "ram" : "60000" },
-			"r3.8xlarge": { "ram" : "120000" }
-		}
-	},
-    
-    "Conditions" : {
-        "HasNoKeypair" : { "Fn::Equals" : [{"Ref" : "KeyPairName"}, ""]}
-    },
-
-	"Resources" : {
-		"LogStreamKclLeasesTable": {
-			"Type": "AWS::DynamoDB::Table",
-			"Properties": {
-				"TableName": { "Ref": "AWS::StackName" },
-				"ProvisionedThroughput" : {
-					"ReadCapacityUnits" : "10",
-					"WriteCapacityUnits" : "10"
-				},
-				"AttributeDefinitions" : [{
-					"AttributeName" : "leaseKey",
-					"AttributeType" : "S"   
-				}],
-				"KeySchema" : [{
-					"AttributeName" : "leaseKey",
-					"KeyType" : "HASH"
-				}]
-			}
-		},
-
-		"RawSubscription" : {
-			"Type" : "AWS::SNS::Subscription",
-			"Properties" : {
-				"Endpoint" : { "Fn::GetAtt": ["LogQueue", "Arn"] },
-				"Protocol" : "sqs",
-				"TopicArn" : {"Ref" : "RawLogSns"}
-			}
-		},
-		
-		"S3Subscription" : {
-			"Type" : "AWS::SNS::Subscription",
-			"Properties" : {
-				"Endpoint" : { "Fn::GetAtt": ["LogQueue", "Arn"] },
-				"Protocol" : "sqs",
-				"TopicArn" : {"Ref" : "AccessS3LogSns"}
-			}
-		},
-		
-		"CfSubscription" : {
-			"Type" : "AWS::SNS::Subscription",
-			"Properties" : {
-				"Endpoint" : { "Fn::GetAtt": ["LogQueue", "Arn"] },
-				"Protocol" : "sqs",
-				"TopicArn" : {"Ref" : "AccessCfLogSns"}
-			}
-		},
-		
-		"LogQueue" : {
-			"Type": "AWS::SQS::Queue",
-			"Properties": {
-				"QueueName": { "Fn::Join": ["", [
-					{"Ref": "AWS::StackName"}
-				]]},
-				"ReceiveMessageWaitTimeSeconds": "20",
-				"VisibilityTimeout": 300
-			}
-		},
-		"LogQueuePolicy":{
-			"Type":"AWS::SQS::QueuePolicy",
-			"Properties":{        
-				"PolicyDocument":{
-					"Version":"2012-10-17",
-					"Id":"LogQueuePolicy",
-					"Statement":[
-						{
-							"Sid":"RawLog",
-							"Effect":"Allow",           
-							"Principal":"*",
-							"Action":["sqs:SendMessage"],
-							"Resource":"*",
-							"Condition":{
-								"ArnEquals":{
-									"aws:SourceArn": {"Fn::Join":["", [
-										"arn:aws:sns:ap-southeast-2:", {"Ref":"AWS::AccountId"}, ":*"
-									]]}
-								}
-							}
-						}
-					]
-				},
-				"Queues":[{"Ref":"LogQueue"}]
-			}
-		},
-
-		"LogstashSg" : {
-			"Type" : "AWS::EC2::SecurityGroup",
-			"Properties" : {
-				"GroupDescription" : "Security group for logstash nodes.",
-				"SecurityGroupEgress" : [
-					{ "IpProtocol" : "-1" ,  "CidrIp": "0.0.0.0/0", "FromPort" : "0", "ToPort" : "65535"  }
-				],
-				"VpcId" : { "Ref" : "VpcId"},
-				"Tags": [{"Key": "Name", "Value" : "Ls Nodes"}]
-			}
-		},
-
-		"LogstashAsg" : {
-			"Type" : "AWS::AutoScaling::AutoScalingGroup",
-			"Properties" : {
-				"VPCZoneIdentifier": { "Ref" : "Subnets" },
-				"LaunchConfigurationName" : { "Ref" : "LogstashLc" },
-				"MinSize" : "1",
-				"MaxSize" : "5",
-				"Tags" : [{"Key": "Name", "Value" : "Logstash Kinesis", "PropagateAtLaunch" : "True"}]
-			}
-		},
-		"LogstashLc" : {
-			"Type" : "AWS::AutoScaling::LaunchConfiguration",
-			"Properties": {
-				"InstanceType" : { "Ref" : "LogstashNodeType" },
-				"ImageId" : { "Ref" : "BcUbuntuBaseAmiId" },
-				"KeyName" : {"Fn::If": [
-                    "HasNoKeypair",
-                    { "Ref": "AWS::NoValue" },
-                    { "Ref": "KeyPairName" }
-                ]},
-				"SecurityGroups": [
-					{ "Ref" : "LogstashSg" }
-				],
-				"IamInstanceProfile": { "Ref" : "LogstashInstanceProfile" },
-				"UserData" : { "Fn::Base64" : { "Fn::Join" : ["", [
-                    "#!/bin/bash\n",
-					"CWLA=cwlagent-$(curl http://169.254.169.254/latest/meta-data/instance-id)\n",
-					"docker run -d --restart=always ",
-						"--name $CWLA --log-opt awslogs-stream=$CWLA ",
-						"-v /var/log:/var/log-host:ro ",
-						{"Ref":"CwlLinuxParams"}," ",
-						{"Ref":"CwlDockerParams"}," ",
-						{"Ref":"CwlUbuntuAgentDocker"},"\n",
-
-					"docker run -d --name logstash-kinesis --restart=always",
-						" -e KINESIS=", {"Ref":"LogStream"},
-						" -e DDB_CHECKPOINT=", {"Ref": "AWS::StackName"},
-						" -e ES_HOST=", {"Ref":"EsHost"},
-						" -e VPC_LOG=", {"Ref":"VpcTrafficLogGroupName"},
-						" -e CLOUDTRAIL=", {"Ref":"CloudTrailLogGroupName"},
-						" -e DOCKER_LOG=", {"Ref":"LinuxDockerLogGroupName"},
-						" -e SYSLOG=", {"Ref":"LinuxSysLogGroupName"},
-						" -e AUTHLOG=", {"Ref":"LinuxAuthLogGroupName"},
-						" ", {"Ref":"LogstashDocker"}
-				]]}},
-				"BlockDeviceMappings" : [{
-					"DeviceName" : "/dev/xvda",
-					"Ebs" : { "VolumeSize" : "50", "VolumeType" : "gp2" }
-				}]
-			}
-		},
-
-		"LogstashInstanceProfile": {
-			"Type": "AWS::IAM::InstanceProfile",
-			"Properties": {
-				"Path": "/analytics/logstash/",
-				"Roles": [{ "Ref": "LogstashRole" }]
-			}
-		},
-		"LogstashRole": {
-			"Type": "AWS::IAM::Role",
-			"Properties": {
-				"AssumeRolePolicyDocument": {
-					"Version": "2012-10-17",
-					"Statement": [
-						{
-							"Effect": "Allow",
-							"Principal": {
-								"Service": [ "ec2.amazonaws.com" ]
-							},
-							"Action": [ "sts:AssumeRole" ]
-						}
-					]
-				},
-				"Path": "/analytics/logstash/",
-				"ManagedPolicyArns" : [
-					{"Ref":"CwlPolicy"}
-				]
-			}
-		},
-		"LogstashRolePolicies" : {
-			"Type" : "AWS::IAM::Policy",
-			"Properties" : {
-				"PolicyName" : "LogstashKinesisAccessPolicy",
-				"PolicyDocument": {
-					"Version" : "2012-10-17",
-					"Statement": [
-						{
-							"Effect": "Allow",
-							"Action": "dynamodb:*",
-							"Resource": { "Fn::Join": ["", [
-								"arn:aws:dynamodb:",{ "Ref": "AWS::Region" },":", {"Ref": "AWS::AccountId"},":table/", { "Ref": "LogStreamKclLeasesTable" }
-							]]}
-						},
-						{
-							"Effect": "Allow",
-							"Action": [
-								"kinesis:Get*",
-								"kinesis:List*",
-								"kinesis:Describe*"
-							],
-							"Resource": {"Fn::Join":["",[
-								"arn:aws:kinesis:*:",{"Ref":"AWS::AccountId"},":stream/",{"Ref":"LogStream"}
-							]]}
-						}
-					]
-				},
-				"Roles": [ { "Ref": "LogstashRole" } ]
-			}
-		},
-
-		"LogstashSqsAsg" : {
-			"Type" : "AWS::AutoScaling::AutoScalingGroup",
-			"Properties" : {
-				"VPCZoneIdentifier": { "Ref" : "Subnets" },
-				"LaunchConfigurationName" : { "Ref" : "LogstashSqsLc" },
-				"MinSize" : "1",
-				"MaxSize" : "20",
-				"Tags" : [{"Key": "Name", "Value" : "Logstash Sqs", "PropagateAtLaunch" : "True"}]
-			}
-		},
-		"LogstashSqsLc" : {
-			"Type" : "AWS::AutoScaling::LaunchConfiguration",
-			"Properties": {
-				"InstanceType" : { "Ref" : "LogstashNodeType" },
-				"ImageId" : { "Ref" : "BcUbuntuBaseAmiId" },
-				"KeyName" : {"Fn::If": [
-                    "HasNoKeypair",
-                    { "Ref": "AWS::NoValue" },
-                    { "Ref": "KeyPairName" }
-                ]},
-				"SecurityGroups": [
-					{ "Ref" : "LogstashSg" }
-				],
-				"IamInstanceProfile": { "Ref" : "LogstashSqsInstanceProfile" },
-				"UserData" : { "Fn::Base64" : { "Fn::Join" : ["", [
-                    "#!/bin/bash\n",
-					"CWLA=cwlagent-$(curl http://169.254.169.254/latest/meta-data/instance-id)\n",
-					"docker run -d --restart=always ",
-						"--name $CWLA --log-opt awslogs-stream=$CWLA ",
-						"-v /var/log:/var/log-host:ro ",
-						{"Ref":"CwlLinuxParams"}," ",
-						{"Ref":"CwlDockerParams"}," ",
-						{"Ref":"CwlUbuntuAgentDocker"},"\n",
-					"docker run -d --restart=always --name cwcron",
-						{"Ref":"CwlUbuntuAgentDocker"}," cron\n",
-
-                    "docker run --name logstash-sqs3 -d --restart=always ",
-						"-e SQS=", {"Fn::GetAtt":["LogQueue","QueueName"]}, " ",
-						"-e ES_HOST=", {"Ref":"EsHost"}, " ",
-                        "-e RAW_BUCKET=", {"Ref":"RawLogBucketName"}, " ",
-						"-e S3_BUCKET=", {"Ref":"AccessS3LogBucketName"}, " ",
-						"-e CF_BUCKET=", {"Ref":"AccessCfLogBucketName"}, " ",
-						{"Ref":"LogstashSqsDocker"}
-				]]}},
-				"BlockDeviceMappings" : [{
-					"DeviceName" : "/dev/xvda",
-					"Ebs" : { "VolumeSize" : "50", "VolumeType" : "gp2" }
-				}]
-			}
-		},
-
-		"LogstashSqsInstanceProfile": {
-			"Type": "AWS::IAM::InstanceProfile",
-			"Properties": {
-				"Path": "/analytics/logstash/",
-				"Roles": [{ "Ref": "LogstashSqsRole" }]
-			}
-		},
-		"LogstashSqsRole": {
-			"Type": "AWS::IAM::Role",
-			"Properties": {
-				"AssumeRolePolicyDocument": {
-					"Version": "2012-10-17",
-					"Statement": [
-						{
-							"Effect": "Allow",
-							"Principal": {
-								"Service": [ "ec2.amazonaws.com" ]
-							},
-							"Action": [ "sts:AssumeRole" ]
-						}
-					]
-				},
-				"Path": "/analytics/logstash/",
-				"ManagedPolicyArns" : [
-					{"Ref":"CwlPolicy"}
-				]
-			}
-		},
-		"LogstashSqsRolePolicies" : {
-			"Type" : "AWS::IAM::Policy",
-			"Properties" : {
-				"PolicyName" : "LogstashSqsPolicy",
-				"PolicyDocument": {
-					"Version" : "2012-10-17",
-					"Statement":[
-						{
-							"Effect":"Allow",
-							"Action":[
-								"sqs:*"
-							],
-							"Resource":[
-								{"Fn::GetAtt":["LogQueue","Arn"]}
-							] 
-						},
-						{
-							"Effect":"Allow",
-							"Action":[
-								"s3:Get*"
-							],
-							"Resource": "*"
-						}
-					]
-				},
-				"Roles": [ { "Ref": "LogstashSqsRole" } ]
-			}
-		}
-	},
-
-	"Outputs" : {
-	}
-}
+            - docker run -d --restart=always --name cwcron
+            - !Ref CwlUbuntuAgentDocker
+            - |2
+               cron
+            - 'docker run --name logstash-sqs3 -d --restart=always '
+            - '-e SQS='
+            - !GetAtt 
+              - LogQueue
+              - QueueName
+            - ' '
+            - '-e ES_HOST='
+            - !Ref EsHost
+            - ' '
+            - '-e RAW_BUCKET='
+            - !Ref RawLogBucketName
+            - ' '
+            - '-e S3_BUCKET='
+            - !Ref AccessS3LogBucketName
+            - ' '
+            - '-e CF_BUCKET='
+            - !Ref AccessCfLogBucketName
+            - ' '
+            - !Ref LogstashSqsDocker
+      BlockDeviceMappings:
+        - DeviceName: /dev/xvda
+          Ebs:
+            VolumeSize: '50'
+            VolumeType: gp2
+  LogstashSqsInstanceProfile:
+    Type: 'AWS::IAM::InstanceProfile'
+    Properties:
+      Path: /analytics/logstash/
+      Roles:
+        - !Ref LogstashSqsRole
+  LogstashSqsRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - ec2.amazonaws.com
+            Action:
+              - 'sts:AssumeRole'
+      Path: /analytics/logstash/
+      ManagedPolicyArns:
+        - !Ref CwlPolicy
+  LogstashSqsRolePolicies:
+    Type: 'AWS::IAM::Policy'
+    Properties:
+      PolicyName: LogstashSqsPolicy
+      PolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Action:
+              - 'sqs:*'
+            Resource:
+              - !GetAtt 
+                - LogQueue
+                - Arn
+          - Effect: Allow
+            Action:
+              - 's3:Get*'
+            Resource: '*'
+      Roles:
+        - !Ref LogstashSqsRole
+Outputs: {}
