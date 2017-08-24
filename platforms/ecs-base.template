@@ -576,25 +576,26 @@ Resources:
     Properties:
       AdjustmentType: "PercentChangeInCapacity"
       AutoScalingGroupName: !Ref "EcsAutoScalingGroup"
-      Cooldown: "60"
-      ScalingAdjustment: 50
+      Cooldown: !Ref ScaleUpCooldown
+      ScalingAdjustment: !Ref ScaleUpPercentage
   LinuxScaleDownPolicy:
     Type: "AWS::AutoScaling::ScalingPolicy"
     Properties:
       AdjustmentType: "ChangeInCapacity"
       AutoScalingGroupName: !Ref "EcsAutoScalingGroup"
-      Cooldown: 60
-      ScalingAdjustment: "-1"
+      Cooldown: !Ref ScaleUpCooldown
+      ScalingAdjustment: !Ref ScaleDownCount
   LinuxCapacityAlarmLow:
     Type: "AWS::CloudWatch::Alarm"
     Properties:
-      AlarmDescription: "Scale-up if cpu reservation is > 70% for 1 minutes"
+      AlarmDescription: !Sub |
+        Scale-down if cpu reservation < ${ScaleUpThreshold}% for ${ScaleUpTestPeriodCount} * ${ScaleTestPeriod} seconds
       MetricName: "CPUReservation"
       Namespace: "AWS/ECS"
       Statistic: "Maximum"
-      Period: "60"
-      EvaluationPeriods: "1"
-      Threshold: "70"
+      Period: !Ref ScaleTestPeriod
+      EvaluationPeriods: !Ref ScaleUpTestPeriodCount
+      Threshold: !Ref ScaleUpThreshold
       AlarmActions: [!Ref LinuxScaleUpPolicy]
       Dimensions:
         - Name: "ClusterName"
@@ -603,13 +604,14 @@ Resources:
   LinuxCapacityAlarmHigh:
     Type: "AWS::CloudWatch::Alarm"
     Properties:
-      AlarmDescription: "Scale-down if cpu reservation < 30% for 2 minutes"
+      AlarmDescription: !Sub |
+        Scale-down if cpu reservation < ${ScaleDownThreshold}% for ${ScaleDownTestPeriodCount} * ${ScaleTestPeriod} seconds
       MetricName: "CPUReservation"
       Namespace: "AWS/ECS"
       Statistic: "Maximum"
-      Period: "60"
-      EvaluationPeriods: "2"
-      Threshold: "30"
+      Period: !Ref ScaleTestPeriod
+      EvaluationPeriods: !Ref ScaleDownTestPeriodCount
+      Threshold: !Ref ScaleDownThreshold
       AlarmActions: [!Ref LinuxScaleDownPolicy]
       Dimensions: 
         - Name: "ClusterName"
