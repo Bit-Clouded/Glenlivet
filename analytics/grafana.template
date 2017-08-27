@@ -263,59 +263,22 @@ Resources:
       InstanceType: !Ref WebInstanceType
       ImageId: !Ref BcUbuntuBaseAmiId
       UserData: !Base64 
-        'Fn::Join':
-          - ''
-          - - |
-              #!/bin/bash
-            - |
-              ECID=$(curl http://169.254.169.254/latest/meta-data/instance-id)
-            - |
-              CWLA=cwlagent_$ECID
-            - 'docker run -d --restart=always '
-            - '--name $CWLA --log-opt awslogs-stream=$CWLA '
-            - '-v /var/log:/var/log-host:ro '
-            - !Ref CwlLinuxParams
-            - ' '
-            - !Ref CwlDockerParams
-            - ' '
-            - !Ref CwlUbuntuAgentDocker
-            - |+
+        'Fn::Sub': |
+          #!/bin/bash
+          ECID=$(curl http://169.254.169.254/latest/meta-data/instance-id)
+          docker run -d --restart=always \
+            --name grafana --log-opt awslogs-stream=${AWS::StackName}/grafana/$ECID \
+            ${CwlLinuxParams} \
+            -p 3000:3000 \
+            -e GF_DATABASE_URL=mysql://${DbUsername}:${DbPassword}@${Database.Endpoint.Address}:${Database.Endpoint.Port}/grafana \
+            -e GF_DATABASE_TYPE=MYSQL \
+            ${GrafanaContainerImage}
 
-            - 'docker run -d --restart=always --name cwlcron '
-            - !Ref CwlUbuntuAgentDocker
-            - |2
-               cron
-            - |
-              GRAFANA=grafana_$ECID
-            - 'docker run -d --restart=always '
-            - '--name $GRAFANA --log-opt awslogs-stream=$GRAFANA '
-            - !Ref CwlLinuxParams
-            - ' -p 3000:3000'
-            - ' -e GF_DATABASE_URL=mysql://'
-            - !Ref DbUsername
-            - ':'
-            - !Ref DbPassword
-            - '@'
-            - !GetAtt 
-              - Database
-              - Endpoint.Address
-            - ':'
-            - !GetAtt 
-              - Database
-              - Endpoint.Port
-            - /grafana
-            - ' -e GF_DATABASE_TYPE=MYSQL '
-            - !Ref GrafanaContainerImage
-            - |+
-
-            - |
-              SSLREDIRECT=sslredirect_$ECID
-            - 'docker run -d --restart=always '
-            - '--name $SSLREDIRECT --log-opt awslogs-stream=$SSLREDIRECT '
-            - !Ref CwlLinuxParams
-            - ' -p 80:80 '
-            - !Ref SslRedirectContainerImage
-            - |+
+          docker run -d --restart=always \
+            --name sslredirect --log-opt awslogs-stream=${AWS::StackName}/sslredirect/$ECID \
+            ${CwlLinuxParams} \
+            -p 80:80 \
+            ${SslRedirectContainerImage}
 
   WebServerSg:
     Type: 'AWS::EC2::SecurityGroup'

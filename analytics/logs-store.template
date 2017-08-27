@@ -11,6 +11,10 @@ Parameters:
       - Six_Hours
       - Twelve_Hours
       - TwentyFour_Hours
+  CwlUbuntuAgentDocker:
+    Description: Name tag of log shipping agent container.
+    Type: String
+    Default: 'bitclouded/aws-cwl-agent:4.1'
 Metadata:
   DefaultName: LogStore
 Resources:
@@ -253,30 +257,7 @@ Resources:
                 - /AWSLogs/*
             Principal:
               Service: cloudtrail.amazonaws.com
-          - Action:
-              - 's3:PutObject'
-            Effect: Allow
-            Resource: !Join 
-              - ''
-              - - 'arn:aws:s3:::'
-                - !Ref Raw
-                - /AWSLogs/*
-            Principal:
-              AWS:
-                - '127311923021'
-                - 033677994240
-                - 027434742980
-                - '797873946194'
-                - '985666609251'
-                - '156460612806'
-                - 054676820928
-                - '652711504416'
-                - '582318560864'
-                - '600734575887'
-                - '114774131450'
-                - '783225319266'
-                - '718504428378'
-                - '507241528517'
+
   RawBucketNotification:
     Type: 'AWS::SNS::Topic'
     Properties:
@@ -649,6 +630,43 @@ Resources:
                 - !Ref 'AWS::AccountId'
                 - ':role/'
                 - !Ref LogStreamRole
+  LinuxMemoryAndLogShiping:
+    Type: "AWS::SSM::Document"
+    Properties: 
+      DocumentType: Command
+      Content: 
+        schemaVersion: "2.0"
+        description: "Send memory metrics to cloudwatch custom metrics. Send syslog and authlog to cloudwatch logs."
+        mainSteps:
+          - action: "aws:runShellScript"
+            name: "LaunchLogAgent"
+            inputs:
+              runCommand: 
+                - !Sub |
+                  ECID=$(curl http://169.254.169.254/latest/meta-data/instance-id)
+                  STACK_NAME=$(aws ec2 describe-tags \
+                    --filters "Name=resource-id,Values=$ECID" "Name=key,Values=aws:cloudformation:stack-name" \
+                    --region=${AWS::Region} --output=text | cut -f5)
+                  docker run -d --restart=always \
+                    -v /var/log:/var/log-host:ro \
+                    --name cwlagent \
+                    --log-opt awslogs-stream=$STACK_NAME/cwlagent/$ECID \
+                    --log-opt awslogs-group=${LxDockerLog} \
+                    --log-driver=awslogs \
+                    -e SYSLOG=${LxSysLog} -e AUTHLOG=${LxAuthLog} \
+                    ${CwlUbuntuAgentDocker}
+                  docker run -d --restart=always --name cwlcron ${CwlUbuntuAgentDocker} cron
+  BcTemplatesAssociation:
+    Type: "AWS::SSM::Association"
+    Properties: 
+      Name: !Ref LinuxMemoryAndLogShiping
+      Targets:
+        - Key: "tag:bc:template-name"
+          Values:
+            - analytics/aws-logstash
+            - analytics/grafana
+            - analytics/snowplow
+            - datastore/elasticsearch
 Outputs:
   LxDockerLogParams:
     Value: !Join 

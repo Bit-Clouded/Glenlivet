@@ -264,42 +264,18 @@ Resources:
         - !Ref LogstashSg
       IamInstanceProfile: !Ref LogstashInstanceProfile
       UserData: !Base64 
-        'Fn::Join':
-          - ''
-          - - |
-              #!/bin/bash
-            - >
-              CWLA=cwlagent-$(curl
-              http://169.254.169.254/latest/meta-data/instance-id)
-            - 'docker run -d --restart=always '
-            - '--name $CWLA --log-opt awslogs-stream=$CWLA '
-            - '-v /var/log:/var/log-host:ro '
-            - !Ref CwlLinuxParams
-            - ' '
-            - !Ref CwlDockerParams
-            - ' '
-            - !Ref CwlUbuntuAgentDocker
-            - |+
-
-            - docker run -d --name logstash-kinesis --restart=always
-            - ' -e KINESIS='
-            - !Ref LogStream
-            - ' -e DDB_CHECKPOINT='
-            - !Ref 'AWS::StackName'
-            - ' -e ES_HOST='
-            - !Ref EsHost
-            - ' -e VPC_LOG='
-            - !Ref VpcTrafficLogGroupName
-            - ' -e CLOUDTRAIL='
-            - !Ref CloudTrailLogGroupName
-            - ' -e DOCKER_LOG='
-            - !Ref LinuxDockerLogGroupName
-            - ' -e SYSLOG='
-            - !Ref LinuxSysLogGroupName
-            - ' -e AUTHLOG='
-            - !Ref LinuxAuthLogGroupName
-            - ' '
-            - !Ref LogstashDocker
+        'Fn::Sub': |
+          #!/bin/bash
+          docker run -d --name logstash-kinesis --restart=always \
+            -e KINESIS=${LogStream} \
+            -e DDB_CHECKPOINT=${AWS::StackName} \
+            -e ES_HOST=${EsHost} \
+            -e VPC_LOG=${VpcTrafficLogGroupName} \
+            -e CLOUDTRAIL=${CloudTrailLogGroupName} \
+            -e DOCKER_LOG=${LinuxDockerLogGroupName} \
+            -e SYSLOG=${LinuxSysLogGroupName} \
+            -e AUTHLOG=${LinuxAuthLogGroupName} \
+            ${LogstashDocker}
       BlockDeviceMappings:
         - DeviceName: /dev/xvda
           Ebs:
@@ -380,46 +356,15 @@ Resources:
         - !Ref LogstashSg
       IamInstanceProfile: !Ref LogstashSqsInstanceProfile
       UserData: !Base64 
-        'Fn::Join':
-          - ''
-          - - |
-              #!/bin/bash
-            - >
-              CWLA=cwlagent-$(curl
-              http://169.254.169.254/latest/meta-data/instance-id)
-            - 'docker run -d --restart=always '
-            - '--name $CWLA --log-opt awslogs-stream=$CWLA '
-            - '-v /var/log:/var/log-host:ro '
-            - !Ref CwlLinuxParams
-            - ' '
-            - !Ref CwlDockerParams
-            - ' '
-            - !Ref CwlUbuntuAgentDocker
-            - |+
-
-            - docker run -d --restart=always --name cwcron
-            - !Ref CwlUbuntuAgentDocker
-            - |2
-               cron
-            - 'docker run --name logstash-sqs3 -d --restart=always '
-            - '-e SQS='
-            - !GetAtt 
-              - LogQueue
-              - QueueName
-            - ' '
-            - '-e ES_HOST='
-            - !Ref EsHost
-            - ' '
-            - '-e RAW_BUCKET='
-            - !Ref RawLogBucketName
-            - ' '
-            - '-e S3_BUCKET='
-            - !Ref AccessS3LogBucketName
-            - ' '
-            - '-e CF_BUCKET='
-            - !Ref AccessCfLogBucketName
-            - ' '
-            - !Ref LogstashSqsDocker
+        'Fn::Sub': |
+          #!/bin/bash
+          docker run --name logstash-sqs3 -d --restart=always \
+            -e SQS=${LogQueue.QueueName} \
+            -e ES_HOST=${EsHost} \
+            -e RAW_BUCKET=${RawLogBucketName} \
+            -e S3_BUCKET=${AccessS3LogBucketName} \
+            -e CF_BUCKET=${AccessCfLogBucketName} \
+            ${LogstashSqsDocker}
       BlockDeviceMappings:
         - DeviceName: /dev/xvda
           Ebs:
@@ -466,4 +411,8 @@ Resources:
             Resource: '*'
       Roles:
         - !Ref LogstashSqsRole
-Outputs: {}
+
+Outputs:
+  ViewAvailableIndex:
+    Value: !Sub 'http://${EsHost}:9200/_plugin/kopf'
+    Description: View list of indexes that holds the AWS logs.

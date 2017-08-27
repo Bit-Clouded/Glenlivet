@@ -52,7 +52,7 @@ Parameters:
     Type: String
     Default: 'bitclouded/snowplow-stream-es-sink:1-1'
   InstanceType:
-    Description: Type of EC2 instance to launch for frontend
+    Description: Type of EC2 instance to launch for snowplow servers. c4 family is usually recommended.
     Type: String
     Default: t2.micro
     AllowedValues:
@@ -64,6 +64,13 @@ Parameters:
       - m4.large
       - m4.xlarge
       - m4.2xlarge
+      - m4.4xlarge
+      - m4.10xlarge
+      - c4.large
+      - c4.xlarge
+      - c4.2xlarge
+      - c4.4xlarge
+      - c4.8xlarge
     ConstraintDescription: Must be a valid EC2 instance type.
   BcUbuntuBaseAmiId:
     Description: Image id of the frontend
@@ -306,10 +313,60 @@ Resources:
       Path: /analytics/snowplow/
       ManagedPolicyArns:
         - !Ref CwlPolicy
+
+  # Start Autoscaling for Event Collectors
+  EcScaleUpPolicy:
+    Type: 'AWS::AutoScaling::ScalingPolicy'
+    Properties:
+      AdjustmentType: PercentChangeInCapacity
+      AutoScalingGroupName: !Ref EventCollectionGroup
+      Cooldown: '60'
+      ScalingAdjustment: '100'
+  EcScaleDownPolicy:
+    Type: 'AWS::AutoScaling::ScalingPolicy'
+    Properties:
+      AdjustmentType: ChangeInCapacity
+      AutoScalingGroupName: !Ref EventCollectionGroup
+      Cooldown: '60'
+      ScalingAdjustment: '-1'
+  EcCpuHigh:
+    Type: 'AWS::CloudWatch::Alarm'
+    Properties:
+      AlarmDescription: Scale-up snowplow event collectors if CPU > 70% for 1 minutes
+      MetricName: CPUUtilization
+      Namespace: AWS/EC2
+      Statistic: Average
+      Period: '60'
+      EvaluationPeriods: '1'
+      Threshold: '70'
+      AlarmActions:
+        - !Ref EcScaleUpPolicy
+      Dimensions:
+        - Name: AutoScalingGroupName
+          Value: !Ref EventCollectionGroup
+      ComparisonOperator: GreaterThanThreshold
+  EcCpuLow:
+    Type: 'AWS::CloudWatch::Alarm'
+    Properties:
+      AlarmDescription: Scale-down snowplow event collectors if CPU < 30% for 10 minutes
+      MetricName: CPUUtilization
+      Namespace: AWS/EC2
+      Statistic: Average
+      Period: '300'
+      EvaluationPeriods: '2'
+      Threshold: '30'
+      AlarmActions:
+        - !Ref EcScaleDownPolicy
+      Dimensions:
+        - Name: AutoScalingGroupName
+          Value: !Ref EventCollectionGroup
+      ComparisonOperator: LessThanThreshold
+  # End Autoscaling for Event Collectors
+
   EventCollectionGroup:
     Type: 'AWS::AutoScaling::AutoScalingGroup'
     Properties:
-      MinSize: '1'
+      MinSize: '2'
       MaxSize: '10'
       LoadBalancerNames:
         - !Ref EventCollectionEndPoint
@@ -332,41 +389,14 @@ Resources:
       SecurityGroups:
         - !Ref ElbTargetSg
       UserData: !Base64 
-        'Fn::Join':
-          - ''
-          - - |
-              #!/bin/bash
-            - |
-              ECID=$(curl http://169.254.169.254/latest/meta-data/instance-id)
-            - |
-              CWLA=cwlagent_$ECID
-            - 'docker run -d --restart=always '
-            - '--name $CWLA --log-opt awslogs-stream=$CWLA '
-            - '-v /var/log:/var/log-host:ro '
-            - !Ref CwlLinuxParams
-            - ' '
-            - !Ref CwlDockerParams
-            - ' '
-            - !Ref CwlUbuntuAgentDocker
-            - |+
-
-            - 'docker run -d --restart=always --name cwlcron '
-            - !Ref CwlUbuntuAgentDocker
-            - |2
-               cron
-            - |
-              MAIN=snowplow-ssc_$ECID
-            - 'docker run --name $MAIN -d --restart=always -p 80:80 '
-            - '--log-opt awslogs-stream=$MAIN '
-            - !Ref CwlLinuxParams
-            - ' '
-            - '-e STREAM_GOOD='
-            - !Ref RawStream
-            - ' '
-            - '-e STREAM_BAD='
-            - !Ref RawStreamBad
-            - ' '
-            - !Ref ContainerSssc
+        'Fn::Sub': |
+          #!/bin/bash
+          ECID=$(curl http://169.254.169.254/latest/meta-data/instance-id)
+          docker run --name ssc -d --restart=always -p 80:80 \
+            ${CwlLinuxParams} \
+            --log-opt awslogs-stream=${AWS::StackName}/ssc/$ECID \
+            -e STREAM_GOOD=${RawStream} -e STREAM_BAD=${RawStreamBad} \
+            ${ContainerSssc}
   EventCollectionPermission:
     Type: 'AWS::IAM::ManagedPolicy'
     Properties:
@@ -439,48 +469,65 @@ Resources:
       SecurityGroups:
         - !Ref Outbound
       UserData: !Base64 
-        'Fn::Join':
-          - ''
-          - - |
-              #!/bin/bash
-            - |
-              ECID=$(curl http://169.254.169.254/latest/meta-data/instance-id)
-            - |
-              CWLA=cwlagent_$ECID
-            - 'docker run -d --restart=always '
-            - '--name $CWLA --log-opt awslogs-stream=$CWLA '
-            - '-v /var/log:/var/log-host:ro '
-            - !Ref CwlLinuxParams
-            - ' '
-            - !Ref CwlDockerParams
-            - ' '
-            - !Ref CwlUbuntuAgentDocker
-            - |+
+        'Fn::Sub': |
+          #!/bin/bash
+          ECID=$(curl http://169.254.169.254/latest/meta-data/instance-id)
+          docker run --name sse -d --restart=always --log-opt \
+            awslogs-stream=${AWS::StackName}/sse/$ECID ${CwlLinuxParams} \
+            -e STREAM_SOURCE=${RawStream} \
+            -e DDB_CHECKPOINT=${RawReadCheckpoint} \
+            -e STREAM_GOOD=${EnrichedStream} \
+            -e STREAM_BAD=${EnrichedStreamBad} \
+            ${ContainerSse}
+  # Start Autoscaling for Stream Enrich
+  EnrichScaleUpPolicy:
+    Type: 'AWS::AutoScaling::ScalingPolicy'
+    Properties:
+      AdjustmentType: PercentChangeInCapacity
+      AutoScalingGroupName: !Ref EnrichStreamGroup
+      Cooldown: '60'
+      ScalingAdjustment: '50'
+  EnrichScaleDownPolicy:
+    Type: 'AWS::AutoScaling::ScalingPolicy'
+    Properties:
+      AdjustmentType: ChangeInCapacity
+      AutoScalingGroupName: !Ref EnrichStreamGroup
+      Cooldown: '60'
+      ScalingAdjustment: '-1'
+  EnrichCpuHigh:
+    Type: 'AWS::CloudWatch::Alarm'
+    Properties:
+      AlarmDescription: Scale-up snowplow enricher if CPU > 70% for 1 minutes
+      MetricName: CPUUtilization
+      Namespace: AWS/EC2
+      Statistic: Average
+      Period: '60'
+      EvaluationPeriods: '1'
+      Threshold: '70'
+      AlarmActions:
+        - !Ref EnrichScaleUpPolicy
+      Dimensions:
+        - Name: AutoScalingGroupName
+          Value: !Ref EnrichStreamGroup
+      ComparisonOperator: GreaterThanThreshold
+  EnrichCpuLow:
+    Type: 'AWS::CloudWatch::Alarm'
+    Properties:
+      AlarmDescription: Scale-down snowplow enricher if CPU < 30% for 10 minutes
+      MetricName: CPUUtilization
+      Namespace: AWS/EC2
+      Statistic: Average
+      Period: '300'
+      EvaluationPeriods: '2'
+      Threshold: '30'
+      AlarmActions:
+        - !Ref EnrichScaleDownPolicy
+      Dimensions:
+        - Name: AutoScalingGroupName
+          Value: !Ref EnrichStreamGroup
+      ComparisonOperator: LessThanThreshold
+  # End Autoscaling for Stream Enrich
 
-            - 'docker run -d --restart=always --name cwlcron '
-            - !Ref CwlUbuntuAgentDocker
-            - |2
-               cron
-            - |
-              MAIN=snowplow-sse_$ECID
-            - >-
-              docker run --name $MAIN -d --restart=always --log-opt
-              awslogs-stream=$MAIN 
-            - !Ref CwlLinuxParams
-            - ' '
-            - '-e STREAM_SOURCE='
-            - !Ref RawStream
-            - ' '
-            - '-e DDB_CHECKPOINT='
-            - !Ref RawReadCheckpoint
-            - ' '
-            - '-e STREAM_GOOD='
-            - !Ref EnrichedStream
-            - ' '
-            - '-e STREAM_BAD='
-            - !Ref EnrichedStreamBad
-            - ' '
-            - !Ref ContainerSse
   EnrichedStreamRole:
     Type: 'AWS::IAM::Role'
     Properties:
@@ -524,75 +571,79 @@ Resources:
       InstanceType: !Ref InstanceType
       SecurityGroups:
         - !Ref Outbound
-      UserData: !Base64 
+      UserData: !Base64
         'Fn::Join':
           - ''
-          - - |
-              #!/bin/bash
-            - |
-              ECID=$(curl http://169.254.169.254/latest/meta-data/instance-id)
-            - |
-              CWLA=cwlagent_$ECID
-            - 'docker run -d --restart=always '
-            - '--name $CWLA --log-opt awslogs-stream=$CWLA '
-            - '-v /var/log:/var/log-host:ro '
-            - !Ref CwlLinuxParams
-            - ' '
-            - !Ref CwlDockerParams
-            - ' '
-            - !Ref CwlUbuntuAgentDocker
-            - |+
-
-            - 'docker run -d --restart=always --name cwlcron '
-            - !Ref CwlUbuntuAgentDocker
-            - |2
-               cron
-            - |
-              MAIN=snowplow-sks_$ECID
-            - >-
-              docker run --name $MAIN -d --restart=always --log-opt
-              awslogs-stream=$MAIN 
-            - !Ref CwlLinuxParams
-            - ' '
-            - '-e STREAM_SOURCE='
-            - !Ref EnrichedStream
-            - ' '
-            - '-e DDB_CHECKPOINT='
-            - !Ref EnrichedToS3Checkpoint
-            - ' '
-            - '-e BUCKET_NAME='
-            - !Ref RawDataStore
-            - ' '
-            - '-e STREAM_BAD='
-            - !Ref SinkOutputBad
-            - ' '
-            - !Ref ContainerSks
-            - |+
-
-            - |
-              ES_SINK=snowplow-sess_$ECID
+          - - 'Fn::Sub': |
+                #!/bin/bash
+                ECID=$(curl http://169.254.169.254/latest/meta-data/instance-id)
+                docker run --name sks -d --restart=always --log-opt \
+                  awslogs-stream=${AWS::StackName}/sks/$ECID ${CwlLinuxParams} \
+                  -e STREAM_SOURCE=${EnrichedStream} \
+                  -e DDB_CHECKPOINT=${EnrichedToS3Checkpoint} \
+                  -e BUCKET_NAME=${RawDataStore} \
+                  -e STREAM_BAD=${SinkOutputBad} \
+                  ${ContainerSks}
             - !If 
               - HasEsHost
-              - !Join 
-                - ''
-                - - >-
-                    docker run --name $ES_SINK -d --restart=always --log-opt
-                    awslogs-stream=$ES_SINK 
-                  - !Ref CwlLinuxParams
-                  - ' '
-                  - '-e STREAM_SOURCE='
-                  - !Ref EnrichedStream
-                  - ' '
-                  - '-e DDB_CHECKPOINT='
-                  - !Ref EnrichedToEsCheckpoint
-                  - ' '
-                  - '-e ES_HOST='
-                  - !Ref EsHost
-                  - ' '
-                  - !Ref ContainerSess
-                  - |+
-
+              - !Sub |
+                  docker run --name sess -d --restart=always --log-opt \
+                    awslogs-stream=${AWS::StackName}/sess/$ECID ${CwlLinuxParams} \
+                    -e STREAM_SOURCE=${EnrichedStream} \
+                    -e DDB_CHECKPOINT=${EnrichedToEsCheckpoint} \
+                    -e ES_HOST=${EsHost} \
+                    ${ContainerSess}
               - ''
+
+  # Start Autoscaling for Event Collectors
+  EnrichedScaleUpPolicy:
+    Type: 'AWS::AutoScaling::ScalingPolicy'
+    Properties:
+      AdjustmentType: PercentChangeInCapacity
+      AutoScalingGroupName: !Ref EnrichedStreamGroup
+      Cooldown: '60'
+      ScalingAdjustment: '50'
+  EnrichedScaleDownPolicy:
+    Type: 'AWS::AutoScaling::ScalingPolicy'
+    Properties:
+      AdjustmentType: ChangeInCapacity
+      AutoScalingGroupName: !Ref EnrichedStreamGroup
+      Cooldown: '60'
+      ScalingAdjustment: '-1'
+  EnrichedCpuHigh:
+    Type: 'AWS::CloudWatch::Alarm'
+    Properties:
+      AlarmDescription: Scale-up snowplow event collectors if CPU > 70% for 1 minutes
+      MetricName: CPUUtilization
+      Namespace: AWS/EC2
+      Statistic: Average
+      Period: '60'
+      EvaluationPeriods: '1'
+      Threshold: '70'
+      AlarmActions:
+        - !Ref EnrichedScaleUpPolicy
+      Dimensions:
+        - Name: AutoScalingGroupName
+          Value: !Ref EnrichedStreamGroup
+      ComparisonOperator: GreaterThanThreshold
+  EnrichedCpuLow:
+    Type: 'AWS::CloudWatch::Alarm'
+    Properties:
+      AlarmDescription: Scale-down snowplow event collectors if CPU < 30% for 10 minutes
+      MetricName: CPUUtilization
+      Namespace: AWS/EC2
+      Statistic: Average
+      Period: '300'
+      EvaluationPeriods: '2'
+      Threshold: '30'
+      AlarmActions:
+        - !Ref EnrichedScaleDownPolicy
+      Dimensions:
+        - Name: AutoScalingGroupName
+          Value: !Ref EnrichedStreamGroup
+      ComparisonOperator: LessThanThreshold
+  # End Autoscaling for Event Collectors
+
   EventCollectionEndPoint:
     Type: 'AWS::ElasticLoadBalancing::LoadBalancer'
     Properties:
