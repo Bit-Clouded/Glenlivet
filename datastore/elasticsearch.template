@@ -242,7 +242,6 @@
                     { "Ref": "AWS::NoValue" },
                     { "Ref": "KeyPairName" }
                 ]},
-                "AssociatePublicIpAddress": "false",
                 "SecurityGroups": [
                     { "Ref" : "EsClusterNodeSg" }
                 ],
@@ -322,7 +321,6 @@
                 "VPCZoneIdentifier": [
                     {"Fn::Select":["0", { "Ref" : "ServerSubnets" }]}
                 ],
-                "AvailabilityZones" : [{ "Fn::Select": ["0",  { "Fn::GetAZs": "" }]}],
                 "LaunchConfigurationName" : { "Ref" : "EsDataNodeGroupOneLc" },
                 "MinSize" : "1",
                 "MaxSize" : "10",
@@ -339,7 +337,6 @@
                     { "Ref": "AWS::NoValue" },
                     { "Ref": "KeyPairName" }
                 ]},
-                "AssociatePublicIpAddress": "false",
                 "SecurityGroups": [
                     { "Ref" : "EsClusterNodeSg" }
                 ],
@@ -419,7 +416,6 @@
                 "VPCZoneIdentifier": [
                     {"Fn::Select":["1", { "Ref" : "ServerSubnets" }]}
                 ],
-                "AvailabilityZones" : [{ "Fn::Select": ["1",  { "Fn::GetAZs": "" }]}],
                 "LaunchConfigurationName" : { "Ref" : "EsDataNodeGroupTwoLc" },
                 "MinSize" : "1",
                 "MaxSize" : "10",
