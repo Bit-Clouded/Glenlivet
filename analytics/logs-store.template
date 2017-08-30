@@ -656,6 +656,12 @@ Resources:
                     -e SYSLOG=${LxSysLog} -e AUTHLOG=${LxAuthLog} \
                     ${CwlUbuntuAgentDocker}
                   docker run -d --restart=always --name cwlcron ${CwlUbuntuAgentDocker} cron
+          - action: "aws:runShellScript"
+            name: "InstallInspector"
+            inputs:
+              runCommand: 
+                - !Sub |
+                  wget https://d1wk0tztpsntt1.cloudfront.net/linux/latest/install -O - | bash
   BcTemplatesAssociation:
     Type: "AWS::SSM::Association"
     Properties: 
