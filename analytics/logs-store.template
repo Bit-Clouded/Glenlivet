@@ -667,6 +667,7 @@ Resources:
             - analytics/grafana
             - analytics/snowplow
             - datastore/elasticsearch
+            - platforms/ecs-base
 Outputs:
   LxDockerLogParams:
     Value: !Join 
