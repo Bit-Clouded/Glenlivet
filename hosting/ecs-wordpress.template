@@ -1,295 +1,253 @@
-{
-    "AWSTemplateFormatVersion" : "2010-09-09",
-    "Description": "HA Redmine on ECS",
-    "Metadata" : {
-        "DefaultName" : "JoomlaOnEcs",
-        "Dependencies": [
-            {
-                "TemplatePath": "networking/vpc",
-                "Resources": {
-                    "ElbSg": "ElbSecGroup",
-                    "HttpSg": "HttpNsSecGroup"
-                }
-            },
-            {
-                "TemplatePath": "networking/elb-subnets",
-                "Parameters": {
-                    "VpcId": "VpcId"
-                },
-                "Outputs": {
-                    "ElbSubnets": "ElbSubnets"
-                },
-                "NestedDependency": "networking/vpc"
-            },
-            {
-                "TemplatePath": "platforms/ecs-app-base",
-                "Parameters": {
-                    "DbUsername": "DbUsername"
-                },
-                "Resources": {
-                    "TaskRole": "TaskRole",
-                    "EcsServiceRole": "EcsServiceRole"
-                },
-                "Outputs": {
-                    "DatabaseEndpointAddress": "DatabaseEndpointAddress"
-                }
-            },
-            {
-                "TemplatePath": "platforms/ecs-base",
-                "Resources": {
-                    "EcsCluster": "EcsCluster"
-                }
-            },
-            {
-                "TemplatePath": "analytics/logs-store",
-                "Resources": {
-                    "AccessLogBucket": "Raw",
-                    "LxDockerLog": "LxDockerLog"
-                }
-            }
-        ]
-    },
-    "Parameters" : {
-        "VpcId": {
-            "Description" : "VPCid associated with the subnets. [elb-subnets.parameters.VpcId]",
-            "Type": "AWS::EC2::VPC::Id"
-        },
-        "EcsCluster": {
-            "Type": "String",
-            "Description": "[ecs-base.resources.EcsCluster]"
-        },
-        "ElbSg" : {
-            "Description": "Elb Security Group. [vpc.resources.ElbSecGroup]",
-            "Type": "String"
-        },
-        "HttpSg" : {
-            "Description": "Elb Target Security Group. [vpc.resources.HttpNsSecGroup]",
-            "Type": "String"
-        },
-        "ElbSubnets" : {
-            "Description" : "VPCid associated with the subnets. [ecs-base.parameters.ElbSubnets]",
-            "Type": "List<AWS::EC2::Subnet::Id>"
-        },
-        "TaskRole" : {
-            "Description": "[ecs-app-base.resources.TaskRole]",
-            "Type": "String"
-        },
-        "DbName" : {
-            "Description" : "Name of the database in the database server. Can be changed to facilitate a different instance of the installation.",
-            "Type" : "String",
-            "Default" : ""
-        },
-        "DbUsername" : {
-            "Description" : "MariaDB server username [ecs-app-base.parameters.DbUsername]",
-            "Type" : "String"
-        },
-        "DbPassword" : {
-            "Description" : "MariaDB server password",
-            "Type" : "String",
-            "Default" : "Password1234",
-            "NoEcho" : "True"
-        },
-        "EcsServiceRole" : {
-			"Description": "[ecs-app-base.resources.EcsServiceRole]",
-            "Type": "String"
-        },
-        "DatabaseEndpointAddress" : {
-            "Description" : "[ecs-app-base.outputs.DatabaseEndpointAddress]",
-            "Type" : "String"
-        },
-        "ImageName" : {
-            "Description" : "",
-            "Type" : "String",
-            "Default" : "wordpress:4.7.0-php7.0-apache"
-        },
-        "LxDockerLog" : {
-            "Description" : "",
-            "Type" : "String"
-        },
-		"AccessLogBucket" : {
-			"Description": "Elb Target Security Group.",
-            "Type": "String"
-		},
-        "EfsPath" : {
-            "Description" : "EFS disk path segment. It has a /mnt/efs/ prefix followed by the guid of the CloudFormation stack id when left blank.",
-            "Type" : "String",
-            "Default" : ""
-        },
-        "CpuReservation" :{
-			"Description": "CPU Unit to Reserve",
-            "Type": "Number",
-            "Default": 1000
-        },
-        "MemoryReservation" :{
-			"Description": "Memory in MB to Reserve",
-            "Type": "Number",
-            "Default": 1000
-        }
-    },
-
-    "Conditions" : {
-        "HasNoEfsPath" : { "Fn::Equals": [{"Ref" : "EfsPath"}, ""] },
-        "HasNoDbName" : { "Fn::Equals": [{"Ref" : "DbName"}, ""] }
-    },
-
-    "Resources" : {
-        "HttpGateway":{
-            "Type":"AWS::ElasticLoadBalancingV2::LoadBalancer",
-            "Properties":{
-                "Scheme":"internet-facing",
-                "LoadBalancerAttributes":[{
-                    "Key":"idle_timeout.timeout_seconds",
-                    "Value":"30"
-                },{
-                    "Key":"access_logs.s3.enabled",
-                    "Value":"true"
-                },{
-                    "Key":"access_logs.s3.bucket",
-                    "Value":{"Ref":"AccessLogBucket"}
-                }],
-                "Subnets": { "Ref" : "ElbSubnets" },
-                "SecurityGroups":[
-                    { "Ref": "ElbSg" },
-                    { "Ref": "HttpSg" }
-                ]
-            }
-        },
-        "AlbListener":{
-            "Type":"AWS::ElasticLoadBalancingV2::Listener",
-            "Properties":{
-                "DefaultActions":[{
-                    "Type":"forward",
-                    "TargetGroupArn":{ "Ref":"AlbTargetGroup" }
-                }],
-                "LoadBalancerArn":{ "Ref":"HttpGateway" },
-                "Port":"80",
-                "Protocol":"HTTP"
-            }
-        },
-        "AlbListenerRule":{
-            "Type":"AWS::ElasticLoadBalancingV2::ListenerRule",
-            "DependsOn":"AlbListener",
-            "Properties":{
-                "Actions":[{
-                    "Type":"forward",
-                    "TargetGroupArn":{ "Ref":"AlbTargetGroup" }
-                }],
-                "Conditions":[{
-                    "Field":"path-pattern",
-                    "Values":["/"]
-                }],
-                "ListenerArn":{ "Ref":"AlbListener" },
-                "Priority":1
-            }
-        },
-        "AlbTargetGroup":{
-            "Type":"AWS::ElasticLoadBalancingV2::TargetGroup",
-            "DependsOn":"HttpGateway",
-            "Properties":{
-                "HealthCheckIntervalSeconds":30,
-                "HealthCheckPath":"/favicon.ico",
-                "HealthCheckProtocol":"HTTP",
-                "HealthCheckTimeoutSeconds":5,
-                "HealthyThresholdCount":10,
-                "Port":80,
-                "Protocol":"HTTP",
-                "UnhealthyThresholdCount":10,
-                "VpcId" : {"Ref":"VpcId"}
-            }
-        },
-        "TaskDef": {
-            "Type": "AWS::ECS::TaskDefinition",
-            "Properties" : {
-                "ContainerDefinitions" : [{
-                    "Name":"wordpress",
-                    "Cpu": {"Ref":"CpuReservation"},
-                    "Essential": "true",
-                    "Image":{"Ref":"ImageName"},
-                    "Memory":{"Ref":"MemoryReservation"},
-                    "Environment": [
-                        { "Name" : "WORDPRESS_DB_HOST", "Value" : {"Ref":"DatabaseEndpointAddress"} },
-                        { "Name" : "WORDPRESS_DB_USER", "Value" : {"Ref":"DbUsername"} },
-                        { "Name" : "WORDPRESS_DB_PASSWORD", "Value" : {"Ref":"DbPassword"} },
-                        { "Name" : "WORDPRESS_DB_NAME", "Value" : {"Fn::If": [
-                            "HasNoDbName",
-                            { "Fn::Select" : [ "2", { "Fn::Split": ["/", {"Ref":"AWS::StackId"}]}] },
-                            {"Ref":"DbName"}
-                        ]}},
-
-                        { "Name" : "WORDPRESS_AUTH_KEY", "Value" : {"Ref":"DbPassword"} },
-                        { "Name" : "WORDPRESS_SECURE_AUTH_KEY", "Value" : {"Ref":"DbPassword"} },
-                        { "Name" : "WORDPRESS_LOGGED_IN_KEY", "Value" : {"Ref":"DbPassword"} },
-                        { "Name" : "WORDPRESS_NONCE_KEY", "Value" : {"Ref":"DbPassword"} },
-                        { "Name" : "WORDPRESS_AUTH_SALT", "Value" : {"Ref":"DbPassword"} },
-                        { "Name" : "WORDPRESS_SECURE_AUTH_SALT", "Value" : {"Ref":"DbPassword"} },
-                        { "Name" : "WORDPRESS_LOGGED_IN_SALT", "Value" : {"Ref":"DbPassword"} },
-                        { "Name" : "WORDPRESS_NONCE_SALT", "Value" : {"Ref":"DbPassword"} }
-                    ],
-                    "PortMappings": [
-                        { "ContainerPort": 80 }
-                    ],
-                    "LogConfiguration": {
-                        "LogDriver": "awslogs",
-                        "Options": {
-                            "awslogs-group": {"Ref":"LxDockerLog"},
-                            "awslogs-region": {"Ref":"AWS::Region"},
-                            "awslogs-stream-prefix": "apache"
-                        }
-                    },
-                    "MountPoints": [{
-                        "SourceVolume": "efs",
-                        "ContainerPath": "/var/www/html",
-                        "ReadOnly": false
-                    }]
-                }],
-                "TaskRoleArn": {"Ref":"TaskRole"},
-                "Volumes": [{
-                    "Name": "efs",
-                    "Host": { "SourcePath": {"Fn::Join": ["", [
-                        "/mnt/efs/",
-                        {"Fn::If": [
-                            "HasNoEfsPath",
-                            { "Fn::Select" : [ "2", { "Fn::Split": ["/", {"Ref":"AWS::StackId"}]}] },
-                            {"Ref":"EfsPath"}
-                        ]}
-                    ]]}}
-                }]
-            }
-        },    
-
-        "EcsService": {
-            "Type": "AWS::ECS::Service",
-            "DependsOn":"AlbListener",
-            "Properties" : {
-                "Cluster": {"Ref": "EcsCluster"},
-                "DesiredCount": "1",
-                "Role" : {"Ref":"EcsServiceRole"},
-                "LoadBalancers": [{
-                    "ContainerName": "wordpress",
-                    "ContainerPort": "80",
-                    "TargetGroupArn":{ "Ref":"AlbTargetGroup" }
-                }],
-                "TaskDefinition" : {"Ref":"TaskDef"}
-            }
-        }
-    },
-
-    "Outputs" : {
-        "Service": {
-            "Value": { "Fn::Join": ["", [
-                "https://", { "Ref": "AWS::Region"}, ".console.aws.amazon.com/ecs/home?region=",
-                    { "Ref": "AWS::Region"}, "#/clusters/", { "Ref": "EcsCluster"},
-                    "/services/", { "Fn::GetAtt": ["EcsService", "Name"] }, "/tasks"
-            ]] },
-            "Description": "ECS service that manages the containers running wordpress."
-        },
-        "BackofficeUrl": {
-            "Value": "",
-            "Description": "Url to the admin page."
-        },
-        "PublicUrl": {
-            "Value": "",
-            "Description": "Url to the public facing site."
-        }
-    }
-}
+AWSTemplateFormatVersion: 2010-09-09
+Description: HA Redmine on ECS
+Metadata:
+  DefaultName: JoomlaOnEcs
+  Dependencies:
+    - TemplatePath: networking/vpc
+      Resources:
+        ElbSg: ElbSecGroup
+        HttpSg: HttpNsSecGroup
+    - TemplatePath: networking/elb-subnets
+      Parameters:
+        VpcId: VpcId
+      Outputs:
+        ElbSubnets: ElbSubnets
+      NestedDependency: networking/vpc
+    - TemplatePath: platforms/ecs-app-base
+      Parameters:
+        DbUsername: DbUsername
+      Resources:
+        TaskRole: TaskRole
+        EcsServiceRole: EcsServiceRole
+      Outputs:
+        DatabaseEndpointAddress: DatabaseEndpointAddress
+    - TemplatePath: platforms/ecs-base
+      Resources:
+        EcsCluster: EcsCluster
+    - TemplatePath: analytics/logs-store
+      Resources:
+        AccessLogBucket: Raw
+        LxDockerLog: LxDockerLog
+Parameters:
+  VpcId:
+    Description: 'VPCid associated with the subnets. [elb-subnets.parameters.VpcId]'
+    Type: 'AWS::EC2::VPC::Id'
+  EcsCluster:
+    Type: String
+    Description: '[ecs-base.resources.EcsCluster]'
+  ElbSg:
+    Description: 'Elb Security Group. [vpc.resources.ElbSecGroup]'
+    Type: String
+  HttpSg:
+    Description: 'Elb Target Security Group. [vpc.resources.HttpNsSecGroup]'
+    Type: String
+  ElbSubnets:
+    Description: 'VPCid associated with the subnets. [ecs-base.parameters.ElbSubnets]'
+    Type: 'List<AWS::EC2::Subnet::Id>'
+  TaskRole:
+    Description: '[ecs-app-base.resources.TaskRole]'
+    Type: String
+  DbName:
+    Description: >-
+      Name of the database in the database server. Can be changed to facilitate
+      a different instance of the installation.
+    Type: String
+    Default: ''
+  DbUsername:
+    Description: 'MariaDB server username [ecs-app-base.parameters.DbUsername]'
+    Type: String
+  DbPassword:
+    Description: MariaDB server password
+    Type: String
+    Default: Password1234
+    NoEcho: 'True'
+  EcsServiceRole:
+    Description: '[ecs-app-base.resources.EcsServiceRole]'
+    Type: String
+  DatabaseEndpointAddress:
+    Description: '[ecs-app-base.outputs.DatabaseEndpointAddress]'
+    Type: String
+  ImageName:
+    Description: ''
+    Type: String
+    Default: 'wordpress:4.7.0-php7.0-apache'
+  LxDockerLog:
+    Description: ''
+    Type: String
+  AccessLogBucket:
+    Description: Elb Target Security Group.
+    Type: String
+  EfsPath:
+    Description: >-
+      EFS disk path segment. It has a /mnt/efs/ prefix followed by the guid of
+      the CloudFormation stack id when left blank.
+    Type: String
+    Default: ''
+  CpuReservation:
+    Description: CPU Unit to Reserve
+    Type: Number
+    Default: 1000
+  MemoryReservation:
+    Description: Memory in MB to Reserve
+    Type: Number
+    Default: 1000
+Conditions:
+  HasNoEfsPath: !Equals 
+    - !Ref EfsPath
+    - ''
+  HasNoDbName: !Equals 
+    - !Ref DbName
+    - ''
+Resources:
+  HttpGateway:
+    Type: 'AWS::ElasticLoadBalancingV2::LoadBalancer'
+    Properties:
+      Scheme: internet-facing
+      LoadBalancerAttributes:
+        - Key: idle_timeout.timeout_seconds
+          Value: '30'
+        - Key: access_logs.s3.enabled
+          Value: 'true'
+        - Key: access_logs.s3.bucket
+          Value: !Ref AccessLogBucket
+      Subnets: !Ref ElbSubnets
+      SecurityGroups:
+        - !Ref ElbSg
+        - !Ref HttpSg
+  AlbListener:
+    Type: 'AWS::ElasticLoadBalancingV2::Listener'
+    Properties:
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref AlbTargetGroup
+      LoadBalancerArn: !Ref HttpGateway
+      Port: '80'
+      Protocol: HTTP
+  AlbListenerRule:
+    Type: 'AWS::ElasticLoadBalancingV2::ListenerRule'
+    DependsOn: AlbListener
+    Properties:
+      Actions:
+        - Type: forward
+          TargetGroupArn: !Ref AlbTargetGroup
+      Conditions:
+        - Field: path-pattern
+          Values:
+            - /
+      ListenerArn: !Ref AlbListener
+      Priority: 1
+  AlbTargetGroup:
+    Type: 'AWS::ElasticLoadBalancingV2::TargetGroup'
+    DependsOn: HttpGateway
+    Properties:
+      HealthCheckIntervalSeconds: 30
+      HealthCheckPath: /favicon.ico
+      HealthCheckProtocol: HTTP
+      HealthCheckTimeoutSeconds: 5
+      HealthyThresholdCount: 10
+      Port: 80
+      Protocol: HTTP
+      UnhealthyThresholdCount: 10
+      VpcId: !Ref VpcId
+  TaskDef:
+    Type: 'AWS::ECS::TaskDefinition'
+    Properties:
+      ContainerDefinitions:
+        - Name: wordpress
+          Cpu: !Ref CpuReservation
+          Essential: 'true'
+          Image: !Ref ImageName
+          Memory: !Ref MemoryReservation
+          Environment:
+            - Name: WORDPRESS_DB_HOST
+              Value: !Ref DatabaseEndpointAddress
+            - Name: WORDPRESS_DB_USER
+              Value: !Ref DbUsername
+            - Name: WORDPRESS_DB_PASSWORD
+              Value: !Ref DbPassword
+            - Name: WORDPRESS_DB_NAME
+              Value: !If 
+                - HasNoDbName
+                - !Select 
+                  - '2'
+                  - !Split 
+                    - /
+                    - !Ref 'AWS::StackId'
+                - !Ref DbName
+            - Name: WORDPRESS_AUTH_KEY
+              Value: !Ref DbPassword
+            - Name: WORDPRESS_SECURE_AUTH_KEY
+              Value: !Ref DbPassword
+            - Name: WORDPRESS_LOGGED_IN_KEY
+              Value: !Ref DbPassword
+            - Name: WORDPRESS_NONCE_KEY
+              Value: !Ref DbPassword
+            - Name: WORDPRESS_AUTH_SALT
+              Value: !Ref DbPassword
+            - Name: WORDPRESS_SECURE_AUTH_SALT
+              Value: !Ref DbPassword
+            - Name: WORDPRESS_LOGGED_IN_SALT
+              Value: !Ref DbPassword
+            - Name: WORDPRESS_NONCE_SALT
+              Value: !Ref DbPassword
+          PortMappings:
+            - ContainerPort: 80
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !Ref LxDockerLog
+              awslogs-region: !Ref 'AWS::Region'
+              awslogs-stream-prefix: apache
+          MountPoints:
+            - SourceVolume: efs
+              ContainerPath: /var/www/html
+              ReadOnly: false
+      TaskRoleArn: !Ref TaskRole
+      Volumes:
+        - Name: efs
+          Host:
+            SourcePath: !Join 
+              - ''
+              - - /mnt/efs/
+                - !If 
+                  - HasNoEfsPath
+                  - !Select 
+                    - '2'
+                    - !Split 
+                      - /
+                      - !Ref 'AWS::StackId'
+                  - !Ref EfsPath
+  EcsService:
+    Type: 'AWS::ECS::Service'
+    DependsOn: AlbListener
+    Properties:
+      Cluster: !Ref EcsCluster
+      DesiredCount: '1'
+      Role: !Ref EcsServiceRole
+      LoadBalancers:
+        - ContainerName: wordpress
+          ContainerPort: '80'
+          TargetGroupArn: !Ref AlbTargetGroup
+      TaskDefinition: !Ref TaskDef
+Outputs:
+  Service:
+    Value: !Join 
+      - ''
+      - - 'https://'
+        - !Ref 'AWS::Region'
+        - .console.aws.amazon.com/ecs/home?region=
+        - !Ref 'AWS::Region'
+        - '#/clusters/'
+        - !Ref EcsCluster
+        - /services/
+        - !GetAtt 
+          - EcsService
+          - Name
+        - /tasks
+    Description: ECS service that manages the containers running wordpress.
+  BackofficeUrl:
+    Value: ''
+    Description: Url to the admin page.
+  PublicUrl:
+    Value: ''
+    Description: Url to the public facing site.

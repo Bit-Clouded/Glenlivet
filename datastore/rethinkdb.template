@@ -1,388 +1,386 @@
-{
-    "AWSTemplateFormatVersion" : "2010-09-09",
+AWSTemplateFormatVersion: 2010-09-09
+Description: HA RethinkDB Cluster
+Metadata:
+  DefaultName: RethinkDb
+  Dependencies:
+    - TemplatePath: networking/nat-subnets
+      Parameters:
+        VpcId: VpcId
+      Resources:
+        Subnet1Id: Subnet1
+        Subnet2Id: Subnet2
+        Subnet3Id: Subnet3
+      NestedDependency: networking/vpc.template
+    - TemplatePath: analytics/logs-store
+      Resources:
+        CwlPolicy: LinuxLogPolicy
+      Outputs:
+        CwlLinuxParams: LxDockerLogParams
+        CwlDockerParams: DockerCwlParams
+Parameters:
+  VpcId:
+    Description: 'VPCid associated with the subnets. [nat-subnets.parameters.VpcId]'
+    Type: 'AWS::EC2::VPC::Id'
+  Subnet1Id:
+    Description: 'Subnet to run HA web cluster on. [nat-subnets.resources.Subnet1]'
+    Type: 'AWS::EC2::Subnet::Id'
+  Subnet2Id:
+    Description: 'Subnet to run HA web cluster on. [nat-subnets.resources.Subnet2]'
+    Type: 'AWS::EC2::Subnet::Id'
+  Subnet3Id:
+    Description: 'Subnet to run HA web cluster on. [nat-subnets.resources.Subnet3]'
+    Type: String
+    Default: ''
+  KeyPairName:
+    Description: Name of an existing EC2 KeyPair to enable SSH access
+    Type: String
+    Default: ''
+  BcUbuntuBaseAmiId:
+    Description: AMI to use. Note Ubuntu is prefered.
+    Type: 'AWS::EC2::Image::Id'
+  ServerInstanceType:
+    Type: String
+    Default: t2.medium
+    AllowedValues:
+      - t2.micro
+      - t2.small
+      - t2.medium
+      - t2.large
+      - m3.medium
+      - m4.large
+      - m4.xlarge
+      - m4.2xlarge
+      - r3.large
+      - r3.xlarge
+      - r3.2xlarge
+      - r3.4xlarge
+      - r3.8xlarge
+    Description: EC2 instance type
+  VolumeSize:
+    Description: Volume size for each EBS volume
+    Type: Number
+    Default: '100'
+  RethinkDbContainer:
+    Description: ''
+    Default: 'rethinkdb:2.3.5'
+    Type: String
+  CwlUbuntuAgentDocker:
+    Description: Name of cluster. This is used for discovery.
+    Type: String
+    Default: 'bitclouded/aws-cwl-agent:4.1'
+  CwlLinuxParams:
+    Description: >-
+      Environment variables for syslog and authlog cwl group names
+      [logs-store.outputs.LxDockerLogParams]
+    Type: String
+  CwlDockerParams:
+    Description: 'Docker log driver params [logs-store.outputs.DockerCwlParams]'
+    Type: String
+  CwlPolicy:
+    Description: 'Managed policy for linux logging. [logs-store.resources.LinuxLogPolicy]'
+    Type: String
+Conditions:
+  IsThreeAz: !Not 
+    - !Equals 
+      - !Ref Subnet3Id
+      - ''
+  HasNoKeypair: !Equals 
+    - !Ref KeyPairName
+    - ''
+Resources:
+  RethinkDBConsumer:
+    Type: 'AWS::EC2::SecurityGroup'
+    Properties:
+      GroupDescription: Allow inbound access to RethinkDB Cluster.
+      Tags:
+        - Key: Name
+          Value: RethinkDB Consumer
+      VpcId: !Ref VpcId
+  EnableInterRethinkDB:
+    Type: 'AWS::EC2::SecurityGroup'
+    Properties:
+      GroupDescription: Enable inter RethinkDB member communication.
+      SecurityGroupIngress:
+        - IpProtocol: '-1'
+          SourceSecurityGroupId: !Ref RethinkDBConsumer
+      Tags:
+        - Key: Name
+          Value: Inter RethinkDB Communication
+      VpcId: !Ref VpcId
+  EnableInterRethinkDBIngress:
+    Type: 'AWS::EC2::SecurityGroupIngress'
+    Properties:
+      GroupId: !Ref EnableInterRethinkDB
+      IpProtocol: '-1'
+      SourceSecurityGroupId: !Ref EnableInterRethinkDB
+  DataVolume1:
+    Type: 'AWS::EC2::Volume'
+    Properties:
+      Size: !Ref VolumeSize
+      Tags:
+        - Key: Name
+          Value: RethinkDb Data Volume 1
+      AvailabilityZone: !GetAtt 
+        - FirstDataMember
+        - AvailabilityZone
+  DataVolume1Mount:
+    Type: 'AWS::EC2::VolumeAttachment'
+    Properties:
+      InstanceId: !Ref FirstDataMember
+      VolumeId: !Ref DataVolume1
+      Device: /dev/xvdb
+  FirstDataMemberEni:
+    Type: 'AWS::EC2::NetworkInterface'
+    Properties:
+      Tags:
+        - Key: Name
+          Value: RethinkDB Member 1
+      GroupSet:
+        - !Ref EnableInterRethinkDB
+      SubnetId: !Ref Subnet1Id
+  FirstDataMember:
+    Type: 'AWS::EC2::Instance'
+    Properties:
+      InstanceType: !Ref ServerInstanceType
+      ImageId: !Ref BcUbuntuBaseAmiId
+      IamInstanceProfile: !Ref WebServersInstanceProfile
+      Tags:
+        - Key: Name
+          Value: RethinkDB Cluster - First
+      KeyName: !If 
+        - HasNoKeypair
+        - !Ref 'AWS::NoValue'
+        - !Ref KeyPairName
+      NetworkInterfaces:
+        - NetworkInterfaceId: !Ref FirstDataMemberEni
+          DeviceIndex: '0'
+      UserData: !Base64 
+        'Fn::Join':
+          - ''
+          - - |
+              #!/bin/bash
+            - |
+              ECID=$(curl http://169.254.169.254/latest/meta-data/instance-id)
+            - |
+              CWLA=cwlagent_$ECID
+            - 'docker run -d --restart=always '
+            - '--name $CWLA --log-opt awslogs-stream=$CWLA '
+            - '-v /var/log:/var/log-host:ro '
+            - !Ref CwlLinuxParams
+            - ' '
+            - !Ref CwlDockerParams
+            - ' '
+            - !Ref CwlUbuntuAgentDocker
+            - |+
 
-    "Description" : "HA RethinkDB Cluster",
+            - 'docker run -d --restart=always --name cwlcron '
+            - !Ref CwlUbuntuAgentDocker
+            - |2
+               cron
+            - |
+              RETHINK=rethinkdb_$ECID
+            - 'docker run -d --restart=always '
+            - '--name $RETHINK --log-opt awslogs-stream=$RETHINK '
+            - !Ref CwlLinuxParams
+            - ' '
+            - '-p 8080:8080 -p 29015:29015 -p 28015:28015 '
+            - !Ref RethinkDbContainer
+            - ' rethinkdb --bind all '
+            - '--canonical-address '
+            - !GetAtt 
+              - FirstDataMemberEni
+              - PrimaryPrivateIpAddress
+  DataVolume2Mount:
+    Type: 'AWS::EC2::VolumeAttachment'
+    Properties:
+      InstanceId: !Ref SecondDataMember
+      VolumeId: !Ref DataVolume2
+      Device: /dev/xvdb
+  DataVolume2:
+    Type: 'AWS::EC2::Volume'
+    Properties:
+      Size: !Ref VolumeSize
+      Tags:
+        - Key: Name
+          Value: RethinkDb Data Volume 2
+      AvailabilityZone: !GetAtt 
+        - SecondDataMember
+        - AvailabilityZone
+  SecondDataMemberEni:
+    Type: 'AWS::EC2::NetworkInterface'
+    Properties:
+      Tags:
+        - Key: Name
+          Value: RethinkDB Member 1
+      GroupSet:
+        - !Ref EnableInterRethinkDB
+      SubnetId: !Ref Subnet2Id
+  SecondDataMember:
+    Type: 'AWS::EC2::Instance'
+    Properties:
+      InstanceType: !Ref ServerInstanceType
+      ImageId: !Ref BcUbuntuBaseAmiId
+      IamInstanceProfile: !Ref WebServersInstanceProfile
+      Tags:
+        - Key: Name
+          Value: RethinkDB Cluster - Second
+      KeyName: !If 
+        - HasNoKeypair
+        - !Ref 'AWS::NoValue'
+        - !Ref KeyPairName
+      NetworkInterfaces:
+        - NetworkInterfaceId: !Ref SecondDataMemberEni
+          DeviceIndex: '0'
+      UserData: !Base64 
+        'Fn::Join':
+          - ''
+          - - |
+              #!/bin/bash
+            - |
+              ECID=$(curl http://169.254.169.254/latest/meta-data/instance-id)
+            - |
+              CWLA=cwlagent_$ECID
+            - 'docker run -d --restart=always '
+            - '--name $CWLA --log-opt awslogs-stream=$CWLA '
+            - '-v /var/log:/var/log-host:ro '
+            - !Ref CwlLinuxParams
+            - ' '
+            - !Ref CwlDockerParams
+            - ' '
+            - !Ref CwlUbuntuAgentDocker
+            - |+
 
-    "Metadata" : {
-        "DefaultName" : "RethinkDb",
-        "Dependencies": [
-            {
-                "TemplatePath": "networking/nat-subnets",
-                "Parameters": {
-                    "VpcId": "VpcId"
-                },
-                "Resources": {
-                    "Subnet1Id": "Subnet1",
-                    "Subnet2Id": "Subnet2",
-                    "Subnet3Id": "Subnet3"
-                },
-                "NestedDependency": "networking/vpc.template"
-            },
-            {
-                "TemplatePath": "analytics/logs-store",
-                "Resources": {
-                    "CwlPolicy": "LinuxLogPolicy"
-                },
-                "Outputs": {
-                    "CwlLinuxParams": "LxDockerLogParams",
-                    "CwlDockerParams": "DockerCwlParams"
-                }
-            }
-        ]
-    },
+            - 'docker run -d --restart=always --name cwlcron '
+            - !Ref CwlUbuntuAgentDocker
+            - |2
+               cron
+            - |
+              RETHINK=rethinkdb_$ECID
+            - 'docker run -d --restart=always '
+            - '--name $RETHINK --log-opt awslogs-stream=$RETHINK '
+            - !Ref CwlLinuxParams
+            - ' '
+            - '-p 8080:8080 -p 29015:29015 -p 28015:28015 '
+            - !Ref RethinkDbContainer
+            - ' rethinkdb --bind all '
+            - '--canonical-address '
+            - !GetAtt 
+              - SecondDataMemberEni
+              - PrimaryPrivateIpAddress
+            - ' '
+            - '--join '
+            - !GetAtt 
+              - FirstDataMemberEni
+              - PrimaryPrivateIpAddress
+  DataVolume3:
+    Type: 'AWS::EC2::Volume'
+    Properties:
+      Size: !Ref VolumeSize
+      Tags:
+        - Key: Name
+          Value: RethinkDb Data Volume 3
+      AvailabilityZone: !GetAtt 
+        - ThirdDataMember
+        - AvailabilityZone
+  DataVolume3Mount:
+    Type: 'AWS::EC2::VolumeAttachment'
+    Properties:
+      InstanceId: !Ref ThirdDataMember
+      VolumeId: !Ref DataVolume3
+      Device: /dev/xvdb
+  ThirdDataMemberEni:
+    Type: 'AWS::EC2::NetworkInterface'
+    Properties:
+      Tags:
+        - Key: Name
+          Value: RethinkDB Member 1
+      GroupSet:
+        - !Ref EnableInterRethinkDB
+      SubnetId: !If 
+        - IsThreeAz
+        - !Ref Subnet3Id
+        - !Ref Subnet2Id
+  ThirdDataMember:
+    Type: 'AWS::EC2::Instance'
+    Properties:
+      InstanceType: !Ref ServerInstanceType
+      ImageId: !Ref BcUbuntuBaseAmiId
+      IamInstanceProfile: !Ref WebServersInstanceProfile
+      Tags:
+        - Key: Name
+          Value: RethinkDB Cluster - Third
+      NetworkInterfaces:
+        - NetworkInterfaceId: !Ref ThirdDataMemberEni
+          DeviceIndex: '0'
+      KeyName: !If 
+        - HasNoKeypair
+        - !Ref 'AWS::NoValue'
+        - !Ref KeyPairName
+      UserData: !Base64 
+        'Fn::Join':
+          - ''
+          - - |
+              #!/bin/bash
+            - |
+              ECID=$(curl http://169.254.169.254/latest/meta-data/instance-id)
+            - |
+              CWLA=cwlagent_$ECID
+            - 'docker run -d --restart=always '
+            - '--name $CWLA --log-opt awslogs-stream=$CWLA '
+            - '-v /var/log:/var/log-host:ro '
+            - !Ref CwlLinuxParams
+            - ' '
+            - !Ref CwlDockerParams
+            - ' '
+            - !Ref CwlUbuntuAgentDocker
+            - |+
 
-    "Parameters" : {
-		"VpcId": {
-			"Description" : "VPCid associated with the subnets. [nat-subnets.parameters.VpcId]",
-			"Type": "AWS::EC2::VPC::Id"
-		},
-		"Subnet1Id": {
-			"Description" : "Subnet to run HA web cluster on. [nat-subnets.resources.Subnet1]",
-			"Type": "AWS::EC2::Subnet::Id"
-		},
-		"Subnet2Id": {
-			"Description" : "Subnet to run HA web cluster on. [nat-subnets.resources.Subnet2]",
-			"Type": "AWS::EC2::Subnet::Id"
-		},
-		"Subnet3Id": {
-			"Description" : "Subnet to run HA web cluster on. [nat-subnets.resources.Subnet3]",
-			"Type": "String",
-			"Default": ""
-		},
-
-        "KeyPairName" : {
-            "Description" : "Name of an existing EC2 KeyPair to enable SSH access",
-            "Type" : "String",
-            "Default": ""
-        },
-		"BcUbuntuBaseAmiId": {
-			"Description": "AMI to use. Note Ubuntu is prefered.",
-			"Type": "AWS::EC2::Image::Id"
-		},
-
-        "ServerInstanceType" : {
-            "Type" : "String",
-            "Default" : "t2.medium",
-            "AllowedValues" : [
-				"t2.micro",
-				"t2.small",
-				"t2.medium",
-				"t2.large",
-				"m3.medium",
-				"m4.large",
-				"m4.xlarge",
-				"m4.2xlarge",
-				"r3.large",
-				"r3.xlarge",
-				"r3.2xlarge",
-				"r3.4xlarge",
-				"r3.8xlarge"
-            ],
-            "Description" : "EC2 instance type"
-        },
-
-        "VolumeSize" : {
-            "Description" : "Volume size for each EBS volume",
-            "Type" : "Number",
-            "Default" : "100"
-        },
-
-        "RethinkDbContainer": {
-			"Description": "",
-			"Default": "rethinkdb:2.3.5",
-			"Type": "String"
-		},
-
-		"CwlUbuntuAgentDocker": {
-			"Description": "Name of cluster. This is used for discovery.",
-			"Type": "String",
-			"Default": "bitclouded/aws-cwl-agent:4.1"
-		},
-		"CwlLinuxParams" : {
-			"Description": "Environment variables for syslog and authlog cwl group names [logs-store.outputs.LxDockerLogParams]",
-			"Type": "String"
-		},
-		"CwlDockerParams" : {
-			"Description": "Docker log driver params [logs-store.outputs.DockerCwlParams]",
-			"Type": "String"
-		},
-		"CwlPolicy" : {
-			"Description": "Managed policy for linux logging. [logs-store.resources.LinuxLogPolicy]",
-			"Type": "String"
-		}
-    },
-
-    "Conditions" : {
-		"IsThreeAz" : { "Fn::Not" : [{ "Fn::Equals" : [{"Ref" : "Subnet3Id"}, ""]}]},
-        "HasNoKeypair" : { "Fn::Equals" : [{"Ref" : "KeyPairName"}, ""]}
-    },
-
-    "Resources" : {
-        "RethinkDBConsumer" : {
-            "Type" : "AWS::EC2::SecurityGroup",
-            "Properties" : {
-                "GroupDescription" : "Allow inbound access to RethinkDB Cluster.",
-                "Tags" : [ {"Key":"Name", "Value":"RethinkDB Consumer"} ],
-                "VpcId" : {"Ref":"VpcId"}
-            }
-        },
-        "EnableInterRethinkDB" : {
-            "Type" : "AWS::EC2::SecurityGroup",
-            "Properties" : {
-                "GroupDescription" : "Enable inter RethinkDB member communication.",
-                "SecurityGroupIngress" : [{
-                    "IpProtocol" : "-1",
-                    "SourceSecurityGroupId" : { "Ref" : "RethinkDBConsumer" }
-                }],
-                "Tags" : [ {"Key":"Name", "Value":"Inter RethinkDB Communication"} ],
-                "VpcId" : {"Ref":"VpcId"}
-            }
-        },
-        "EnableInterRethinkDBIngress" : {
-            "Type" : "AWS::EC2::SecurityGroupIngress",
-            "Properties" : {
-                "GroupId" : { "Ref" : "EnableInterRethinkDB" },
-                "IpProtocol" : "-1",
-                "SourceSecurityGroupId" : { "Ref" : "EnableInterRethinkDB" }
-            }
-        },
-
-        "DataVolume1" : {
-            "Type" : "AWS::EC2::Volume",
-            "Properties" : {
-                "Size" : { "Ref" : "VolumeSize" },
-                "Tags" : [{ "Key" : "Name", "Value" : "RethinkDb Data Volume 1" }],
-                "AvailabilityZone" : { "Fn::GetAtt" : [ "FirstDataMember", "AvailabilityZone" ]}
-            }
-        },
-
-        "DataVolume1Mount" : {
-            "Type" : "AWS::EC2::VolumeAttachment",
-            "Properties" : {
-                "InstanceId" : { "Ref" : "FirstDataMember" },
-                "VolumeId" : { "Ref" : "DataVolume1" },
-                "Device" : "/dev/xvdb"
-            }
-        },
-        "FirstDataMemberEni" : {
-            "Type" : "AWS::EC2::NetworkInterface",
-            "Properties" : {
-                "Tags": [{"Key":"Name","Value":"RethinkDB Member 1"}],
-                "GroupSet": [{ "Ref" : "EnableInterRethinkDB" }],
-                "SubnetId": {"Ref":"Subnet1Id"}
-            }
-        },
-
-        "FirstDataMember" : {
-            "Type" : "AWS::EC2::Instance",
-            "Properties" : {
-                "InstanceType" : { "Ref" : "ServerInstanceType" },
-                "ImageId" : { "Ref":"BcUbuntuBaseAmiId" },
-                "IamInstanceProfile" : {"Ref":"WebServersInstanceProfile"},
-                "Tags" : [{ "Key" : "Name", "Value" : "RethinkDB Cluster - First" }],
-                "KeyName": {"Fn::If": [
-                    "HasNoKeypair",
-                    { "Ref": "AWS::NoValue" },
-                    { "Ref": "KeyPairName" }
-                ]},
-                "NetworkInterfaces" : [{
-                    "NetworkInterfaceId" : {"Ref" : "FirstDataMemberEni"}, "DeviceIndex" : "0" }
-                ],
-                "UserData" : { "Fn::Base64" : { "Fn::Join" : ["", [
-                    "#!/bin/bash\n",
-					"ECID=$(curl http://169.254.169.254/latest/meta-data/instance-id)\n",
-					"CWLA=cwlagent_$ECID\n",
-					"docker run -d --restart=always ",
-						"--name $CWLA --log-opt awslogs-stream=$CWLA ",
-						"-v /var/log:/var/log-host:ro ",
-						{"Ref":"CwlLinuxParams"}," ",
-						{"Ref":"CwlDockerParams"}," ",
-						{"Ref":"CwlUbuntuAgentDocker"},"\n",
-					"docker run -d --restart=always --name cwlcron ",
-						{"Ref":"CwlUbuntuAgentDocker"}," cron\n",
-
-					"RETHINK=rethinkdb_$ECID\n",
-                    "docker run -d --restart=always ",
-                        "--name $RETHINK --log-opt awslogs-stream=$RETHINK ",
-                        {"Ref":"CwlLinuxParams"}," ",
-                        "-p 8080:8080 -p 29015:29015 -p 28015:28015 ",
-                        {"Ref":"RethinkDbContainer"}, " rethinkdb --bind all ",
-                        "--canonical-address ", {"Fn::GetAtt" : ["FirstDataMemberEni","PrimaryPrivateIpAddress"]}
-                ] ] } }
-            }
-        },
-
-        "DataVolume2Mount" : {
-            "Type" : "AWS::EC2::VolumeAttachment",
-            "Properties" : {
-                "InstanceId" : { "Ref" : "SecondDataMember" },
-                "VolumeId" : { "Ref" : "DataVolume2" },
-                "Device" : "/dev/xvdb"
-            }
-        },
-
-        "DataVolume2" : {
-            "Type" : "AWS::EC2::Volume",
-            "Properties" : {
-                "Size" : { "Ref" : "VolumeSize" },
-                "Tags" : [{ "Key" : "Name", "Value" : "RethinkDb Data Volume 2" }],
-                "AvailabilityZone" : { "Fn::GetAtt" : [ "SecondDataMember", "AvailabilityZone" ]}
-            }
-        },
-
-        "SecondDataMemberEni" : {
-            "Type" : "AWS::EC2::NetworkInterface",
-            "Properties" : {
-                "Tags": [{"Key":"Name","Value":"RethinkDB Member 1"}],
-                "GroupSet": [{ "Ref" : "EnableInterRethinkDB" }],
-                "SubnetId": {"Ref":"Subnet2Id"}
-            }
-        },
-
-        "SecondDataMember" : {
-            "Type" : "AWS::EC2::Instance",
-
-            "Properties" : {
-                "InstanceType" : { "Ref" : "ServerInstanceType" },
-                "ImageId" : { "Ref":"BcUbuntuBaseAmiId" },
-                "IamInstanceProfile" : {"Ref":"WebServersInstanceProfile"},
-                "Tags" : [{ "Key" : "Name", "Value" : "RethinkDB Cluster - Second" }],
-                "KeyName" : {"Fn::If": [
-                    "HasNoKeypair",
-                    { "Ref": "AWS::NoValue" },
-                    { "Ref": "KeyPairName" }
-                ]},
-                "NetworkInterfaces" : [{
-                    "NetworkInterfaceId" : {"Ref" : "SecondDataMemberEni"}, "DeviceIndex" : "0" }
-                ],
-                "UserData" : { "Fn::Base64" : { "Fn::Join" : ["", [
-                    "#!/bin/bash\n",
-					"ECID=$(curl http://169.254.169.254/latest/meta-data/instance-id)\n",
-					"CWLA=cwlagent_$ECID\n",
-					"docker run -d --restart=always ",
-						"--name $CWLA --log-opt awslogs-stream=$CWLA ",
-						"-v /var/log:/var/log-host:ro ",
-						{"Ref":"CwlLinuxParams"}," ",
-						{"Ref":"CwlDockerParams"}," ",
-						{"Ref":"CwlUbuntuAgentDocker"},"\n",
-					"docker run -d --restart=always --name cwlcron ",
-						{"Ref":"CwlUbuntuAgentDocker"}," cron\n",
-
-					"RETHINK=rethinkdb_$ECID\n",
-                    "docker run -d --restart=always ",
-                        "--name $RETHINK --log-opt awslogs-stream=$RETHINK ",
-                        {"Ref":"CwlLinuxParams"}," ",
-                        "-p 8080:8080 -p 29015:29015 -p 28015:28015 ",
-                        {"Ref":"RethinkDbContainer"}, " rethinkdb --bind all ",
-                        "--canonical-address ", {"Fn::GetAtt" : ["SecondDataMemberEni","PrimaryPrivateIpAddress"]}, " ",
-                        "--join ", {"Fn::GetAtt" : ["FirstDataMemberEni","PrimaryPrivateIpAddress"]}
-                ] ] } }
-            }
-        },
-
-        "DataVolume3" : {
-            "Type" : "AWS::EC2::Volume",
-            "Properties" : {
-                "Size" : { "Ref" : "VolumeSize" },
-                "Tags" : [{ "Key" : "Name", "Value" : "RethinkDb Data Volume 3" }],
-                "AvailabilityZone" : { "Fn::GetAtt" : [ "ThirdDataMember", "AvailabilityZone" ]}
-            }
-        },
-
-
-        "DataVolume3Mount" : {
-            "Type" : "AWS::EC2::VolumeAttachment",
-            "Properties" : {
-                "InstanceId" : { "Ref" : "ThirdDataMember" },
-                "VolumeId" : { "Ref" : "DataVolume3" },
-                "Device" : "/dev/xvdb"
-            }
-        },
-        "ThirdDataMemberEni" : {
-            "Type" : "AWS::EC2::NetworkInterface",
-            "Properties" : {
-                "Tags": [{"Key":"Name","Value":"RethinkDB Member 1"}],
-                "GroupSet": [{ "Ref" : "EnableInterRethinkDB" }],
-                "SubnetId": { "Fn::If" : ["IsThreeAz",
-					{"Ref":"Subnet3Id"},
-					{"Ref":"Subnet2Id"}]
-                }
-            }
-        },
-
-        "ThirdDataMember" : {
-            "Type" : "AWS::EC2::Instance",
-            "Properties" : {
-                "InstanceType" : { "Ref" : "ServerInstanceType" },
-                "ImageId" : { "Ref":"BcUbuntuBaseAmiId" },
-                "IamInstanceProfile" : {"Ref":"WebServersInstanceProfile"},
-                "Tags" : [{ "Key" : "Name", "Value" : "RethinkDB Cluster - Third" }],
-                "NetworkInterfaces" : [{
-                    "NetworkInterfaceId" : {"Ref" : "ThirdDataMemberEni"}, "DeviceIndex" : "0" }
-                ],
-                "KeyName": {"Fn::If": [
-                    "HasNoKeypair",
-                    { "Ref": "AWS::NoValue" },
-                    { "Ref": "KeyPairName" }
-                ]},
-                "UserData" : { "Fn::Base64" : { "Fn::Join" : ["", [
-                    "#!/bin/bash\n",
-					"ECID=$(curl http://169.254.169.254/latest/meta-data/instance-id)\n",
-					"CWLA=cwlagent_$ECID\n",
-					"docker run -d --restart=always ",
-						"--name $CWLA --log-opt awslogs-stream=$CWLA ",
-						"-v /var/log:/var/log-host:ro ",
-						{"Ref":"CwlLinuxParams"}," ",
-						{"Ref":"CwlDockerParams"}," ",
-						{"Ref":"CwlUbuntuAgentDocker"},"\n",
-					"docker run -d --restart=always --name cwlcron ",
-						{"Ref":"CwlUbuntuAgentDocker"}," cron\n",
-
-					"RETHINK=rethinkdb_$ECID\n",
-                    "docker run -d --restart=always ",
-                        "--name $RETHINK --log-opt awslogs-stream=$RETHINK ",
-                        {"Ref":"CwlLinuxParams"}," ",
-                        "-p 8080:8080 -p 29015:29015 -p 28015:28015 ",
-                        {"Ref":"RethinkDbContainer"}, " rethinkdb --bind all ",
-                        "--canonical-address ", {"Fn::GetAtt" : ["ThirdDataMemberEni","PrimaryPrivateIpAddress"]}, " ",
-                        "--join ", {"Fn::GetAtt" : ["FirstDataMemberEni","PrimaryPrivateIpAddress"]}
-                ] ] } }
-            }
-        },
-
-        "WebServersRole" : {
-			"Type": "AWS::IAM::Role",
-			"Properties": {
-				"AssumeRolePolicyDocument": {
-					"Version": "2012-10-17",
-					"Statement": [{
-						"Effect": "Allow",
-						"Principal": {
-							"Service": [ "ec2.amazonaws.com" ]
-						},
-						"Action": [ "sts:AssumeRole" ]
-					}]
-				},
-				"Path": "/datastore/rethinkdb/",
-				"ManagedPolicyArns" : [
-					{"Ref":"CwlPolicy"}
-				]
-			}
-		},
-		"WebServersInstanceProfile" : {
-			"Type": "AWS::IAM::InstanceProfile",
-			"Properties": {
-				"Path": "/datastore/rethinkdb/",
-				"Roles": [{"Ref" : "WebServersRole"}]
-			}
-		}
-
-    },
-
-    "Outputs" : {
-        "ReplicaSetMemberName" : {
-            "Value" : { "Fn::GetAtt" : [ "SecondDataMember", "PublicDnsName" ] },
-            "Description" : "public DNS name of the RethinkDB Cluster Member Instance"
-        }
-    }
-}
+            - 'docker run -d --restart=always --name cwlcron '
+            - !Ref CwlUbuntuAgentDocker
+            - |2
+               cron
+            - |
+              RETHINK=rethinkdb_$ECID
+            - 'docker run -d --restart=always '
+            - '--name $RETHINK --log-opt awslogs-stream=$RETHINK '
+            - !Ref CwlLinuxParams
+            - ' '
+            - '-p 8080:8080 -p 29015:29015 -p 28015:28015 '
+            - !Ref RethinkDbContainer
+            - ' rethinkdb --bind all '
+            - '--canonical-address '
+            - !GetAtt 
+              - ThirdDataMemberEni
+              - PrimaryPrivateIpAddress
+            - ' '
+            - '--join '
+            - !GetAtt 
+              - FirstDataMemberEni
+              - PrimaryPrivateIpAddress
+  WebServersRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - ec2.amazonaws.com
+            Action:
+              - 'sts:AssumeRole'
+      Path: /datastore/rethinkdb/
+      ManagedPolicyArns:
+        - !Ref CwlPolicy
+  WebServersInstanceProfile:
+    Type: 'AWS::IAM::InstanceProfile'
+    Properties:
+      Path: /datastore/rethinkdb/
+      Roles:
+        - !Ref WebServersRole
+Outputs:
+  ReplicaSetMemberName:
+    Value: !GetAtt 
+      - SecondDataMember
+      - PublicDnsName
+    Description: public DNS name of the RethinkDB Cluster Member Instance

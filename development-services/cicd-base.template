@@ -1,288 +1,227 @@
-{
-	"AWSTemplateFormatVersion": "2010-09-09",
-
-	"Description": "Shared components for the ci/cd platforms",
-
-	"Metadata" : {
-        "DefaultName" : "GoCD",
-        "Dependencies": [
-            {
-                "TemplatePath": "networking/elb-subnets",
-				"Parameters" : {
-                    "VpcId": "VpcId"
-				}
-            },
-            {
-                "TemplatePath": "analytics/logs-store",
-                "Resources": {
-                    "CwlPolicy": "LinuxLogPolicy",
-                    "AccessS3Log": "AccessS3Log"
-                }
-            }
-        ]
-    },
-
-	"Parameters": {
-		"VpcId": {
-            "Description" : "VPCid associated with the subnets. [elb-subnets.parameters.VpcId]",
-            "Type": "AWS::EC2::VPC::Id"
-        },
-        "AccessS3Log" : {
-			"Description": "Managed policy for linux logging. [logs-store.resources.AccessS3Log]",
-			"Type": "String"
-        },
-		"CwlPolicy" : {
-			"Description": "Managed policy for linux logging. [logs-store.resources.LinuxLogPolicy]",
-			"Type": "String"
-		}
-	},
-
-	"Resources" : {
-
-        "Utility" : {
-            "Type" : "AWS::S3::Bucket",
-            "Properties" : {
-				"LoggingConfiguration": {
-					"DestinationBucketName" : { "Ref": "AccessS3Log"},
-					"LogFilePrefix" : {"Fn::Join": ["",[
-						{"Ref":"AWS::StackName"}, "-Utility"
-					]]}
-				}
-            }
-        },
-        "ServerRole" : {
-			"Type": "AWS::IAM::Role",
-			"Properties": {
-				"AssumeRolePolicyDocument": {
-					"Version": "2012-10-17",
-					"Statement": [{
-						"Effect": "Allow",
-						"Principal": {
-							"Service": [
-                                "ec2.amazonaws.com",
-                                "ecs-tasks.amazonaws.com"
-                            ]
-						},
-						"Action": [ "sts:AssumeRole" ]
-					}]
-				},
-				"Path": "/development-services/",
-				"ManagedPolicyArns" : [
-					{"Ref":"CwlPolicy"}
-				]
-			}
-		},
-		"ServerInstanceProfile" : {
-			"Type": "AWS::IAM::InstanceProfile",
-			"Properties": {
-				"Path": "/devservices/",
-				"Roles": [{"Ref" : "ServerRole"}]
-			}
-		},
-
-        "AgentRole" : {
-			"Type": "AWS::IAM::Role",
-			"Properties": {
-				"AssumeRolePolicyDocument": {
-					"Version": "2012-10-17",
-					"Statement": [{
-						"Effect": "Allow",
-						"Principal": {
-							"Service": [
-                                "ec2.amazonaws.com",
-                                "ecs-tasks.amazonaws.com"
-                            ]
-						},
-						"Action": [ "sts:AssumeRole" ]
-					}]
-				},
-				"Path": "/development-services/",
-				"ManagedPolicyArns" : [
-					{"Ref":"CwlPolicy"},
-					{"Ref":"AgentBasePermissions"},
-					{"Ref":"HashicorpPackerPermission"}
-				]
-			}
-		},
-		"AgentInstanceProfile" : {
-			"Type": "AWS::IAM::InstanceProfile",
-			"Properties": {
-				"Path": "/devservices/",
-				"Roles": [{"Ref" : "AgentRole"}]
-			}
-		},
-		"AgentBasePermissions" : {
-			"Type": "AWS::IAM::ManagedPolicy",
-			"Properties": {
-				"Path" : "/analytics/",
-				"PolicyDocument" : {
-					"Version": "2012-10-17",
-					"Statement": [
-                        {
-                            "Sid": "Containers",
-                            "Action": ["ecr:*","ecs:*"],
-                            "Effect": "Allow",
-                            "Resource": "*"
-                        },
-                        {
-                            "Sid": "ArtifactBucket",
-                            "Action": [
-                                "s3:DeleteObject*",
-                                "s3:PutObject*",
-                                "s3:List*",
-                                "s3:Replicate*",
-                                "s3:RestoreObject"
-                            ],
-                            "Effect": "Allow",
-                            "Resource": [
-								{ "Fn::Join" : ["", [
-                                    "arn:aws:s3:::", {"Ref":"Utility"}, "/*"
-                                ]]},
-                                { "Fn::Join" : ["", [
-                                    "arn:aws:s3:::", {"Ref":"Utility"}
-                                ]]}
-							]
-                        },
-                        {
-                            "Sid": "CodeDeploy",
-                            "Action": [
-                                "codedeploy:AddTagsToOnPremisesInstances",
-                                "codedeploy:BatchGet*",
-                                "codedeploy:CreateDeployment",
-                                "codedeploy:DeregisterOnPremisesInstance",
-                                "codedeploy:Get*",
-                                "codedeploy:List*",
-                                "codedeploy:RegisterApplicationRevision",
-                                "codedeploy:RegisterOnPremisesInstance",
-                                "codedeploy:RemoveTagsFromOnPremisesInstances",
-                                "codedeploy:StopDeployment"
-                            ],
-                            "Effect": "Allow",
-                            "Resource": "*"
-                        }
-					]
-				}
-			}
-		},
-		"HashicorpPackerPermission" : {
-			"Type": "AWS::IAM::ManagedPolicy",
-			"Properties": {
-				"Path" : "/analytics/",
-				"PolicyDocument" : {
-					"Version": "2012-10-17",
-					"Statement": [
-						{
-							"Sid": "PackerSecurityGroupAccess",
-							"Action": [
-								"ec2:CreateSecurityGroup",
-								"ec2:DeleteSecurityGroup",
-								"ec2:DescribeSecurityGroups",
-								"ec2:AuthorizeSecurityGroupIngress",
-								"ec2:RevokeSecurityGroupIngress"
-							],
-							"Effect": "Allow",
-							"Resource": ["*"]
-						},
-						{
-							"Sid": "PackerAMIAccess",
-							"Action": [
-								"ec2:CreateImage",
-								"ec2:RegisterImage",
-								"ec2:DeregisterImage",
-								"ec2:DescribeImages"
-							],
-							"Effect": "Allow",
-							"Resource": ["*"]
-						},
-						{
-							"Sid": "PackerSnapshotAccess",
-							"Action": [
-								"ec2:CreateSnapshot",
-								"ec2:DeleteSnaphot",
-								"ec2:DescribeSnapshots"
-							],
-							"Effect": "Allow",
-							"Resource": ["*"]
-						},
-						{
-							"Sid": "PackerInstanceAccess",
-							"Action": [
-								"ec2:RunInstances",
-								"ec2:StartInstances",
-								"ec2:StopInstances",
-								"ec2:RebootInstances",
-								"ec2:TerminateInstances",
-								"ec2:DescribeInstances",
-								"ec2:CreateTags"
-							],
-							"Effect": "Allow",
-							"Resource": ["*"]
-						},
-						{
-							"Sid": "PackerKeyPairAccess",
-							"Action": [
-								"ec2:CreateKeyPair",
-								"ec2:DeleteKeyPair",
-								"ec2:DescribeKeyPairs"
-							],
-							"Effect": "Allow",
-							"Resource": ["*"]
-						},
-						{
-							"Sid": "PackerS3Access",
-							"Action": [
-								"s3:Get*",
-								"s3:List*",
-								"s3:PutObject*",
-								"s3:DeleteObject*"
-							],
-							"Effect": "Allow",
-							"Resource": ["*"]
-						},
-						{
-							"Sid": "PackerS3BucketAccess",
-							"Action": [
-								"s3:ListAllMyBuckets",
-								"s3:CreateBucket"
-							],
-							"Effect": "Allow",
-							"Resource": ["*"]
-						}
-					]
-				}
-			}
-		},
-
-		"ServerSg" : {
-			"Type" : "AWS::EC2::SecurityGroup",
-			"Properties" : {
-				"GroupDescription" : "Shared for build servers, allowing unlimited access from the build agents.",
-				"VpcId" : { "Ref" : "VpcId"},
-				"SecurityGroupIngress" : [
-					{ "IpProtocol": "-1", "SourceSecurityGroupId" : {"Ref" : "AgentSg"}}
-				],
-				"Tags": [{"Key": "Name", "Value" : "Build Server Security Group"}]
-			}
-		},
-		"AgentSg" : {
-			"Type" : "AWS::EC2::SecurityGroup",
-			"Properties" : {
-				"GroupDescription" : "Build agents shared security groups.",
-				"VpcId" : { "Ref" : "VpcId"},
-				"Tags": [{"Key": "Name", "Value" : "Build Agent Security Group"}]
-			}
-		},
-		"DeploymentTargetSg" : {
-			"Type" : "AWS::EC2::SecurityGroup",
-			"Properties" : {
-				"GroupDescription" : "Security group for deployment targets. This allows unlimited access from the build agent security group.",
-				"SecurityGroupIngress" : [
-					{ "IpProtocol": "-1", "SourceSecurityGroupId" : {"Ref" : "AgentSg"} }
-				],
-				"VpcId" : { "Ref" : "VpcId"},
-				"Tags": [{"Key": "Name", "Value" : "Deployment Target Security Group"}]
-			}
-		}
-
-	}
-}
+AWSTemplateFormatVersion: 2010-09-09
+Description: Shared components for the ci/cd platforms
+Metadata:
+  DefaultName: GoCD
+  Dependencies:
+    - TemplatePath: networking/elb-subnets
+      Parameters:
+        VpcId: VpcId
+    - TemplatePath: analytics/logs-store
+      Resources:
+        CwlPolicy: LinuxLogPolicy
+        AccessS3Log: AccessS3Log
+Parameters:
+  VpcId:
+    Description: 'VPCid associated with the subnets. [elb-subnets.parameters.VpcId]'
+    Type: 'AWS::EC2::VPC::Id'
+  AccessS3Log:
+    Description: 'Managed policy for linux logging. [logs-store.resources.AccessS3Log]'
+    Type: String
+  CwlPolicy:
+    Description: 'Managed policy for linux logging. [logs-store.resources.LinuxLogPolicy]'
+    Type: String
+Resources:
+  Utility:
+    Type: 'AWS::S3::Bucket'
+    Properties:
+      LoggingConfiguration:
+        DestinationBucketName: !Ref AccessS3Log
+        LogFilePrefix: !Join 
+          - ''
+          - - !Ref 'AWS::StackName'
+            - '-Utility'
+  ServerRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - ec2.amazonaws.com
+                - ecs-tasks.amazonaws.com
+            Action:
+              - 'sts:AssumeRole'
+      Path: /development-services/
+      ManagedPolicyArns:
+        - !Ref CwlPolicy
+  ServerInstanceProfile:
+    Type: 'AWS::IAM::InstanceProfile'
+    Properties:
+      Path: /devservices/
+      Roles:
+        - !Ref ServerRole
+  AgentRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - ec2.amazonaws.com
+                - ecs-tasks.amazonaws.com
+            Action:
+              - 'sts:AssumeRole'
+      Path: /development-services/
+      ManagedPolicyArns:
+        - !Ref CwlPolicy
+        - !Ref AgentBasePermissions
+        - !Ref HashicorpPackerPermission
+  AgentInstanceProfile:
+    Type: 'AWS::IAM::InstanceProfile'
+    Properties:
+      Path: /devservices/
+      Roles:
+        - !Ref AgentRole
+  AgentBasePermissions:
+    Type: 'AWS::IAM::ManagedPolicy'
+    Properties:
+      Path: /analytics/
+      PolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Sid: Containers
+            Action:
+              - 'ecr:*'
+              - 'ecs:*'
+            Effect: Allow
+            Resource: '*'
+          - Sid: ArtifactBucket
+            Action:
+              - 's3:DeleteObject*'
+              - 's3:PutObject*'
+              - 's3:List*'
+              - 's3:Replicate*'
+              - 's3:RestoreObject'
+            Effect: Allow
+            Resource:
+              - !Join 
+                - ''
+                - - 'arn:aws:s3:::'
+                  - !Ref Utility
+                  - /*
+              - !Join 
+                - ''
+                - - 'arn:aws:s3:::'
+                  - !Ref Utility
+          - Sid: CodeDeploy
+            Action:
+              - 'codedeploy:AddTagsToOnPremisesInstances'
+              - 'codedeploy:BatchGet*'
+              - 'codedeploy:CreateDeployment'
+              - 'codedeploy:DeregisterOnPremisesInstance'
+              - 'codedeploy:Get*'
+              - 'codedeploy:List*'
+              - 'codedeploy:RegisterApplicationRevision'
+              - 'codedeploy:RegisterOnPremisesInstance'
+              - 'codedeploy:RemoveTagsFromOnPremisesInstances'
+              - 'codedeploy:StopDeployment'
+            Effect: Allow
+            Resource: '*'
+  HashicorpPackerPermission:
+    Type: 'AWS::IAM::ManagedPolicy'
+    Properties:
+      Path: /analytics/
+      PolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Sid: PackerSecurityGroupAccess
+            Action:
+              - 'ec2:CreateSecurityGroup'
+              - 'ec2:DeleteSecurityGroup'
+              - 'ec2:DescribeSecurityGroups'
+              - 'ec2:AuthorizeSecurityGroupIngress'
+              - 'ec2:RevokeSecurityGroupIngress'
+            Effect: Allow
+            Resource:
+              - '*'
+          - Sid: PackerAMIAccess
+            Action:
+              - 'ec2:CreateImage'
+              - 'ec2:RegisterImage'
+              - 'ec2:DeregisterImage'
+              - 'ec2:DescribeImages'
+            Effect: Allow
+            Resource:
+              - '*'
+          - Sid: PackerSnapshotAccess
+            Action:
+              - 'ec2:CreateSnapshot'
+              - 'ec2:DeleteSnaphot'
+              - 'ec2:DescribeSnapshots'
+            Effect: Allow
+            Resource:
+              - '*'
+          - Sid: PackerInstanceAccess
+            Action:
+              - 'ec2:RunInstances'
+              - 'ec2:StartInstances'
+              - 'ec2:StopInstances'
+              - 'ec2:RebootInstances'
+              - 'ec2:TerminateInstances'
+              - 'ec2:DescribeInstances'
+              - 'ec2:CreateTags'
+            Effect: Allow
+            Resource:
+              - '*'
+          - Sid: PackerKeyPairAccess
+            Action:
+              - 'ec2:CreateKeyPair'
+              - 'ec2:DeleteKeyPair'
+              - 'ec2:DescribeKeyPairs'
+            Effect: Allow
+            Resource:
+              - '*'
+          - Sid: PackerS3Access
+            Action:
+              - 's3:Get*'
+              - 's3:List*'
+              - 's3:PutObject*'
+              - 's3:DeleteObject*'
+            Effect: Allow
+            Resource:
+              - '*'
+          - Sid: PackerS3BucketAccess
+            Action:
+              - 's3:ListAllMyBuckets'
+              - 's3:CreateBucket'
+            Effect: Allow
+            Resource:
+              - '*'
+  ServerSg:
+    Type: 'AWS::EC2::SecurityGroup'
+    Properties:
+      GroupDescription: >-
+        Shared for build servers, allowing unlimited access from the build
+        agents.
+      VpcId: !Ref VpcId
+      SecurityGroupIngress:
+        - IpProtocol: '-1'
+          SourceSecurityGroupId: !Ref AgentSg
+      Tags:
+        - Key: Name
+          Value: Build Server Security Group
+  AgentSg:
+    Type: 'AWS::EC2::SecurityGroup'
+    Properties:
+      GroupDescription: Build agents shared security groups.
+      VpcId: !Ref VpcId
+      Tags:
+        - Key: Name
+          Value: Build Agent Security Group
+  DeploymentTargetSg:
+    Type: 'AWS::EC2::SecurityGroup'
+    Properties:
+      GroupDescription: >-
+        Security group for deployment targets. This allows unlimited access from
+        the build agent security group.
+      SecurityGroupIngress:
+        - IpProtocol: '-1'
+          SourceSecurityGroupId: !Ref AgentSg
+      VpcId: !Ref VpcId
+      Tags:
+        - Key: Name
+          Value: Deployment Target Security Group

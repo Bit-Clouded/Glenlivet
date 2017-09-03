@@ -257,6 +257,30 @@ Resources:
                 - /AWSLogs/*
             Principal:
               Service: cloudtrail.amazonaws.com
+          - Action:
+              - 's3:PutObject'
+            Effect: Allow
+            Resource: !Join 
+              - ''
+              - - 'arn:aws:s3:::'
+                - !Ref Raw
+                - /AWSLogs/*
+            Principal:
+              AWS:
+                - '127311923021'
+                - '033677994240'
+                - '027434742980'
+                - '797873946194'
+                - '985666609251'
+                - '156460612806'
+                - '054676820928'
+                - '652711504416'
+                - '582318560864'
+                - '600734575887'
+                - '114774131450'
+                - '783225319266'
+                - '718504428378'
+                - '507241528517'
 
   RawBucketNotification:
     Type: 'AWS::SNS::Topic'

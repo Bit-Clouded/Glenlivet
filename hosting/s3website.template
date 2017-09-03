@@ -1,201 +1,137 @@
-{
-    "AWSTemplateFormatVersion" : "2010-09-09",
-
-    "Description" : "S3 Static Website Hosting with CloudFront",
-
-    "Parameters": {
-        "SubDomain" : {
-            "Description" : "Site Subdomain",
-            "Type" : "String",
-            "Default" : "www"
-        },
-        "Domain" : {
-            "Description" : "Site Domain",
-            "Type" : "String"
-        },
-        "AcmCertificateArn": {
-            "Type": "String",
-            "Default": ""
-        },
-        "CloudFrontLogBucketName": {
-            "Description" : "Name of bucket for aws cloudfront access logs.",
-            "Type": "String"
-        },
-        "S3AccessLogBucketName" : {
-            "Description" : "Name of bucket for aws s3 access logs.",
-            "Type" : "String"
-        }
-    },
-
-    "Metadata": {
-        "DefaultName": "S3WebHosting",
-        "Dependencies": [
-            {
-                "TemplatePath": "analytics/logs-store",
-                "Resources": {
-                    "CloudFrontLogBucketName": "AccessCfLog",
-                    "S3AccessLogBucketName": "AccessS3Log"
-                }
-            }
-        ]
-    },
-    "Conditions": {
-        "HasSsl": {
-            "Fn::Not": [
-                {
-                    "Fn::Equals": [
-                        {
-                            "Ref": "AcmCertificateArn"
-                        },
-                        ""
-                    ]
-                }
-            ]
-        }
-    },
-
-    "Resources" : {
-        "Website" : {
-            "Type" : "AWS::S3::Bucket",
-            "Properties" : {
-                "AccessControl" : "PublicRead",
-                "WebsiteConfiguration" : {
-                    "IndexDocument" : "index.html",
-                    "ErrorDocument" : "error.html"
-                },
-				"LoggingConfiguration": {
-					"DestinationBucketName" : { "Ref": "S3AccessLogBucketName"},
-					"LogFilePrefix" : {"Fn::Join": ["",[
-						{"Ref":"AWS::StackName"}, "-Website/"
-					]]}
-				}
-            }
-        },
-		"BucketPolicy" : {
-			"Type" : "AWS::S3::BucketPolicy",
-			"Properties" : {
-				"Bucket" : {"Ref" : "Website"},
-				"PolicyDocument": {
-					"Statement":[
-					{
-						"Action":["s3:GetObject"],
-						"Effect":"Allow",
-						"Resource": { "Fn::Join" : ["", ["arn:aws:s3:::", { "Ref" : "Website" } , "/*" ]]},
-						"Principal":"*"
-					}]
-				}
-			}
-  		},
-        "WebsiteCloudfront": {
-            "Type": "AWS::CloudFront::Distribution",
-            "Properties": {
-                "DistributionConfig": {
-                    "Comment": "Cloudfront Distribution pointing to S3 bucket",
-                    "Origins": [
-                        {
-                            "DomainName": {
-                                "Fn::GetAtt": [
-                                    "Website",
-                                    "DomainName"
-                                ]
-                            },
-                            "Id": "S3Origin",
-                            "CustomOriginConfig": {
-                                "HTTPPort": "80",
-                                "HTTPSPort": "443",
-                                "OriginProtocolPolicy": "http-only"
-                            }
-                        }
-                    ],
-                    "Enabled": true,
-                    "HttpVersion": "http2",
-                    "DefaultRootObject": "index.html",
-                    "Aliases": [
-                        {
-                            "Fn::Join": [
-                                "",
-                                [
-                                    {
-                                        "Ref": "SubDomain"
-                                    },
-                                    ".",
-                                    {
-                                        "Ref": "Domain"
-                                    }
-                                ]
-                            ]
-                        }
-                    ],
-                    "DefaultCacheBehavior": {
-                        "AllowedMethods": [
-                            "GET",
-                            "HEAD"
-                        ],
-                        "Compress": true,
-                        "TargetOriginId": "S3Origin",
-                        "ForwardedValues": {
-                            "QueryString": true,
-                            "Cookies": {
-                                "Forward": "none"
-                            }
-                        },
-                        "ViewerProtocolPolicy": {
-                            "Fn::If": [
-                                "HasSsl",
-                                "redirect-to-https",
-                                "allow-all"
-                            ]
-                        }
-                    },
-                    "PriceClass": "PriceClass_All",
-                    "ViewerCertificate": {
-                        "Fn::If": [
-                            "HasSsl",
-                            {
-                                "AcmCertificateArn": {
-                                    "Ref": "AcmCertificateArn"
-                                },
-                                "SslSupportMethod": "sni-only"
-                            },
-                            {
-                                "Ref": "AWS::NoValue"
-                            }
-                        ]
-                    }
-                }
-            }
-        },
-        "Route53": {
-            "Type" : "AWS::Route53::RecordSet",
-            "DependsOn" : "Website",
-            "Properties": {
-                "HostedZoneName": { "Fn::Join" : ["", [
-                    { "Ref": "Domain" }, "."
-                ]]},
-                "Name": { "Fn::Join" : ["", [
-                    { "Ref": "SubDomain" }, ".", { "Ref": "Domain" }, "."
-                ]]},
-                "Type": "A",
-                "AliasTarget": {
-                    "HostedZoneId": "Z2FDTNDATAQYW2",
-                            "DNSName": {
-                                "Fn::GetAtt": [
-                                    "WebsiteCloudfront",
-                                    "DomainName"
-                                ]
-                            }
-                }
-            }
-        }
-    },
-    "Outputs" : {
-        "WebsiteURL" : {
-            "Value" : { "Fn::GetAtt" : [ "Website", "WebsiteURL" ] },
-            "Description" : "URL for website hosted on S3"
-        },
-        "S3BucketSecureURL" : {
-            "Value" : { "Fn::Join" : [ "", [ "http://", { "Fn::GetAtt" : [ "Website", "DomainName" ] } ] ] },
-            "Description" : "Name of S3 bucket to hold website content"
-        }
-    }
-}
+AWSTemplateFormatVersion: 2010-09-09
+Description: S3 Static Website Hosting with CloudFront
+Parameters:
+  SubDomain:
+    Description: Site Subdomain
+    Type: String
+    Default: www
+  Domain:
+    Description: Site Domain
+    Type: String
+  AcmCertificateArn:
+    Type: String
+    Default: ''
+  CloudFrontLogBucketName:
+    Description: Name of bucket for aws cloudfront access logs.
+    Type: String
+  S3AccessLogBucketName:
+    Description: Name of bucket for aws s3 access logs.
+    Type: String
+Metadata:
+  DefaultName: S3WebHosting
+  Dependencies:
+    - TemplatePath: analytics/logs-store
+      Resources:
+        CloudFrontLogBucketName: AccessCfLog
+        S3AccessLogBucketName: AccessS3Log
+Conditions:
+  HasSsl: !Not 
+    - !Equals 
+      - !Ref AcmCertificateArn
+      - ''
+Resources:
+  Website:
+    Type: 'AWS::S3::Bucket'
+    Properties:
+      AccessControl: PublicRead
+      WebsiteConfiguration:
+        IndexDocument: index.html
+        ErrorDocument: error.html
+      LoggingConfiguration:
+        DestinationBucketName: !Ref S3AccessLogBucketName
+        LogFilePrefix: !Join 
+          - ''
+          - - !Ref 'AWS::StackName'
+            - '-Website/'
+  BucketPolicy:
+    Type: 'AWS::S3::BucketPolicy'
+    Properties:
+      Bucket: !Ref Website
+      PolicyDocument:
+        Statement:
+          - Action:
+              - 's3:GetObject'
+            Effect: Allow
+            Resource: !Join 
+              - ''
+              - - 'arn:aws:s3:::'
+                - !Ref Website
+                - /*
+            Principal: '*'
+  WebsiteCloudfront:
+    Type: 'AWS::CloudFront::Distribution'
+    Properties:
+      DistributionConfig:
+        Comment: Cloudfront Distribution pointing to S3 bucket
+        Origins:
+          - DomainName: !GetAtt 
+              - Website
+              - DomainName
+            Id: S3Origin
+            CustomOriginConfig:
+              HTTPPort: '80'
+              HTTPSPort: '443'
+              OriginProtocolPolicy: http-only
+        Enabled: true
+        HttpVersion: http2
+        DefaultRootObject: index.html
+        Aliases:
+          - !Join 
+            - ''
+            - - !Ref SubDomain
+              - .
+              - !Ref Domain
+        DefaultCacheBehavior:
+          AllowedMethods:
+            - GET
+            - HEAD
+          Compress: true
+          TargetOriginId: S3Origin
+          ForwardedValues:
+            QueryString: true
+            Cookies:
+              Forward: none
+          ViewerProtocolPolicy: !If 
+            - HasSsl
+            - redirect-to-https
+            - allow-all
+        PriceClass: PriceClass_All
+        ViewerCertificate: !If 
+          - HasSsl
+          - AcmCertificateArn: !Ref AcmCertificateArn
+            SslSupportMethod: sni-only
+          - !Ref 'AWS::NoValue'
+  Route53:
+    Type: 'AWS::Route53::RecordSet'
+    DependsOn: Website
+    Properties:
+      HostedZoneName: !Join 
+        - ''
+        - - !Ref Domain
+          - .
+      Name: !Join 
+        - ''
+        - - !Ref SubDomain
+          - .
+          - !Ref Domain
+          - .
+      Type: A
+      AliasTarget:
+        HostedZoneId: Z2FDTNDATAQYW2
+        DNSName: !GetAtt 
+          - WebsiteCloudfront
+          - DomainName
+Outputs:
+  WebsiteURL:
+    Value: !GetAtt 
+      - Website
+      - WebsiteURL
+    Description: URL for website hosted on S3
+  S3BucketSecureURL:
+    Value: !Join 
+      - ''
+      - - 'http://'
+        - !GetAtt 
+          - Website
+          - DomainName
+    Description: Name of S3 bucket to hold website content

@@ -1,421 +1,418 @@
-{
-    "AWSTemplateFormatVersion" : "2010-09-09",
+AWSTemplateFormatVersion: 2010-09-09
+Description: 2 Data Member and 1 Witness MongoDB Replica Set
+Metadata:
+  DefaultName: MongoDb
+  Dependencies:
+    - TemplatePath: networking/nat-subnets
+      Parameters:
+        VpcId: VpcId
+      Resources:
+        Subnet1Id: Subnet1
+        Subnet2Id: Subnet2
+        Subnet3Id: Subnet3
+      NestedDependency: networking/vpc.template
+    - TemplatePath: analytics/logs-store
+      Resources:
+        CwlPolicy: LinuxLogPolicy
+      Outputs:
+        CwlLinuxParams: LxDockerLogParams
+        CwlDockerParams: DockerCwlParams
+Parameters:
+  VpcId:
+    Description: 'VPCid associated with the subnets. [nat-subnets.parameters.VpcId]'
+    Type: 'AWS::EC2::VPC::Id'
+  Subnet1Id:
+    Description: 'Subnet to run HA web cluster on. [nat-subnets.resources.Subnet1]'
+    Type: 'AWS::EC2::Subnet::Id'
+  Subnet2Id:
+    Description: 'Subnet to run HA web cluster on. [nat-subnets.resources.Subnet2]'
+    Type: 'AWS::EC2::Subnet::Id'
+  Subnet3Id:
+    Description: 'Subnet to run HA web cluster on. [nat-subnets.resources.Subnet3]'
+    Type: String
+    Default: ''
+  KeyPairName:
+    Description: Name of an existing EC2 KeyPair to enable SSH access
+    Type: String
+    Default: ''
+  BcUbuntuBaseAmiId:
+    Description: AMI to use. Note Ubuntu is prefered.
+    Type: 'AWS::EC2::Image::Id'
+  DataNodeInstanceType:
+    Type: String
+    Default: t2.medium
+    AllowedValues:
+      - t2.micro
+      - t2.small
+      - t2.medium
+      - t2.large
+      - m3.medium
+      - m4.large
+      - m4.xlarge
+      - m4.2xlarge
+      - r3.large
+      - r3.xlarge
+      - r3.2xlarge
+      - r3.4xlarge
+      - r3.8xlarge
+    Description: EC2 instance type
+  ArbiterNodeInstanceType:
+    Type: String
+    Default: t2.micro
+    AllowedValues:
+      - t2.micro
+      - t2.small
+      - t2.medium
+      - t2.large
+      - m3.medium
+      - m4.large
+      - m4.xlarge
+      - m4.2xlarge
+      - r3.large
+      - r3.xlarge
+      - r3.2xlarge
+      - r3.4xlarge
+      - r3.8xlarge
+    Description: EC2 instance type
+  VolumeSize:
+    Description: Volume size for each EBS volume
+    Type: Number
+    Default: '100'
+  MongoDbContainer:
+    Description: ''
+    Default: 'mongo:3.3.15'
+    Type: String
+  ReplicaSetName:
+    Description: Name of the MongoDB replica set
+    Type: String
+    Default: MongoDbRepSet
+  CwlUbuntuAgentDocker:
+    Description: Name of cluster. This is used for discovery.
+    Type: String
+    Default: 'bitclouded/aws-cwl-agent:4.1'
+  CwlLinuxParams:
+    Description: >-
+      Environment variables for syslog and authlog cwl group names
+      [logs-store.outputs.LxDockerLogParams]
+    Type: String
+  CwlDockerParams:
+    Description: 'Docker log driver params [logs-store.outputs.DockerCwlParams]'
+    Type: String
+  CwlPolicy:
+    Description: 'Managed policy for linux logging. [logs-store.resources.LinuxLogPolicy]'
+    Type: String
+Conditions:
+  IsThreeAz: !Not 
+    - !Equals 
+      - !Ref Subnet3Id
+      - ''
+  HasNoKeypair: !Equals 
+    - !Ref KeyPairName
+    - ''
+Resources:
+  MongoDBConsumer:
+    Type: 'AWS::EC2::SecurityGroup'
+    Properties:
+      GroupDescription: Allow inbound access to MongoDB Replica Set.
+      Tags:
+        - Key: Name
+          Value: MongoDB Consumer
+      VpcId: !Ref VpcId
+  EnableInterMongoDB:
+    Type: 'AWS::EC2::SecurityGroup'
+    Properties:
+      GroupDescription: Enable inter MongoDB member communication.
+      SecurityGroupIngress:
+        - IpProtocol: '-1'
+          SourceSecurityGroupId: !Ref MongoDBConsumer
+      Tags:
+        - Key: Name
+          Value: Inter MongoDB Communication
+      VpcId: !Ref VpcId
+  EnableInterMongoDBIngress:
+    Type: 'AWS::EC2::SecurityGroupIngress'
+    Properties:
+      GroupId: !Ref EnableInterMongoDB
+      IpProtocol: '-1'
+      SourceSecurityGroupId: !Ref EnableInterMongoDB
+  MongoDataVolume1:
+    Type: 'AWS::EC2::Volume'
+    Properties:
+      Size: !Ref VolumeSize
+      Tags:
+        - Key: Name
+          Value: Mongo Data Volume 1
+      AvailabilityZone: !GetAtt 
+        - FirstDataMember
+        - AvailabilityZone
+  MongoDataVolume1Mount:
+    Type: 'AWS::EC2::VolumeAttachment'
+    Properties:
+      InstanceId: !Ref FirstDataMember
+      VolumeId: !Ref MongoDataVolume1
+      Device: /dev/xvdb
+  FirstDataMemberEni:
+    Type: 'AWS::EC2::NetworkInterface'
+    Properties:
+      Tags:
+        - Key: Name
+          Value: MongoDB Member 1
+      GroupSet:
+        - !Ref EnableInterMongoDB
+      SubnetId: !Ref Subnet1Id
+  FirstDataMember:
+    Type: 'AWS::EC2::Instance'
+    Properties:
+      InstanceType: !Ref DataNodeInstanceType
+      ImageId: !Ref BcUbuntuBaseAmiId
+      IamInstanceProfile: !Ref WebServersInstanceProfile
+      Tags:
+        - Key: Name
+          Value: MongoDB Replica Set - First
+      KeyName: !If 
+        - HasNoKeypair
+        - !Ref 'AWS::NoValue'
+        - !Ref KeyPairName
+      NetworkInterfaces:
+        - NetworkInterfaceId: !Ref FirstDataMemberEni
+          DeviceIndex: '0'
+      UserData: !Base64 
+        'Fn::Join':
+          - ''
+          - - |
+              #!/bin/bash
+            - |
+              ECID=$(curl http://169.254.169.254/latest/meta-data/instance-id)
+            - |
+              CWLA=cwlagent_$ECID
+            - 'docker run -d --restart=always '
+            - '--name $CWLA --log-opt awslogs-stream=$CWLA '
+            - '-v /var/log:/var/log-host:ro '
+            - !Ref CwlLinuxParams
+            - ' '
+            - !Ref CwlDockerParams
+            - ' '
+            - !Ref CwlUbuntuAgentDocker
+            - |+
 
-    "Description" : "2 Data Member and 1 Witness MongoDB Replica Set",
+            - 'docker run -d --restart=always --name cwlcron '
+            - !Ref CwlUbuntuAgentDocker
+            - |2
+               cron
+            - |
+              MONGONAME=mongodb-data_$ECID
+            - 'docker run -p 27017:27017 '
+            - '--name $MONGONAME --log-opt awslogs-stream=$MONGONAME '
+            - '-d --restart=always '
+            - !Ref CwlLinuxParams
+            - ' '
+            - !Ref MongoDbContainer
+            - ' --replSet "'
+            - !Ref ReplicaSetName
+            - |
+              " --bind_ip "0.0.0.0"
+            - |
+              sleep 20s
+            - docker exec -i $MONGONAME mongo --eval "
+            - rs.initiate();sleep(1000);
+            - cfg = rs.conf();
+            - 'cfg.members[0].host = '''
+            - !GetAtt 
+              - FirstDataMemberEni
+              - PrimaryPrivateIpAddress
+            - ''';'
+            - rs.reconfig(cfg);
+            - rs.add('
+            - !GetAtt 
+              - SecondDataMemberEni
+              - PrimaryPrivateIpAddress
+            - ''');'
+            - rs.addArb('
+            - !GetAtt 
+              - ArbiterEni
+              - PrimaryPrivateIpAddress
+            - ''');"'
+  MongoDataVolume2Mount:
+    Type: 'AWS::EC2::VolumeAttachment'
+    Properties:
+      InstanceId: !Ref SecondDataMember
+      VolumeId: !Ref MongoDataVolume2
+      Device: /dev/xvdb
+  MongoDataVolume2:
+    Type: 'AWS::EC2::Volume'
+    Properties:
+      Size: !Ref VolumeSize
+      Tags:
+        - Key: Name
+          Value: Mongo Data Volume 2
+      AvailabilityZone: !GetAtt 
+        - SecondDataMember
+        - AvailabilityZone
+  SecondDataMemberEni:
+    Type: 'AWS::EC2::NetworkInterface'
+    Properties:
+      Tags:
+        - Key: Name
+          Value: MongoDB Member 1
+      GroupSet:
+        - !Ref EnableInterMongoDB
+      SubnetId: !Ref Subnet2Id
+  SecondDataMember:
+    Type: 'AWS::EC2::Instance'
+    DependsOn: FirstDataMember
+    Properties:
+      InstanceType: !Ref DataNodeInstanceType
+      ImageId: !Ref BcUbuntuBaseAmiId
+      IamInstanceProfile: !Ref WebServersInstanceProfile
+      Tags:
+        - Key: Name
+          Value: MongoDB Replica Set - Second
+      KeyName: !If 
+        - HasNoKeypair
+        - !Ref 'AWS::NoValue'
+        - !Ref KeyPairName
+      NetworkInterfaces:
+        - NetworkInterfaceId: !Ref SecondDataMemberEni
+          DeviceIndex: '0'
+      UserData: !Base64 
+        'Fn::Join':
+          - ''
+          - - |
+              #!/bin/bash
+            - |
+              ECID=$(curl http://169.254.169.254/latest/meta-data/instance-id)
+            - |
+              CWLA=cwlagent_$ECID
+            - 'docker run -d --restart=always '
+            - '--name $CWLA --log-opt awslogs-stream=$CWLA '
+            - '-v /var/log:/var/log-host:ro '
+            - !Ref CwlLinuxParams
+            - ' '
+            - !Ref CwlDockerParams
+            - ' '
+            - !Ref CwlUbuntuAgentDocker
+            - |+
 
-    "Metadata" : {
-        "DefaultName" : "MongoDb",
-        "Dependencies": [
-            {
-                "TemplatePath": "networking/nat-subnets",
-                "Parameters": {
-                    "VpcId": "VpcId"
-                },
-                "Resources": {
-                    "Subnet1Id": "Subnet1",
-                    "Subnet2Id": "Subnet2",
-                    "Subnet3Id": "Subnet3"
-                },
-                "NestedDependency": "networking/vpc.template"
-            },
-            {
-                "TemplatePath": "analytics/logs-store",
-                "Resources": {
-                    "CwlPolicy": "LinuxLogPolicy"
-                },
-                "Outputs": {
-                    "CwlLinuxParams": "LxDockerLogParams",
-                    "CwlDockerParams": "DockerCwlParams"
-                }
-            }
-        ]
-    },
+            - 'docker run -d --restart=always --name cwlcron '
+            - !Ref CwlUbuntuAgentDocker
+            - |2
+               cron
+            - |
+              MONGONAME=mongodb-data_$ECID
+            - 'docker run -p 27017:27017 '
+            - '--name $MONGONAME --log-opt awslogs-stream=$MONGONAME '
+            - '-d --restart=always '
+            - !Ref CwlLinuxParams
+            - ' '
+            - !Ref MongoDbContainer
+            - ' --replSet "'
+            - !Ref ReplicaSetName
+            - |
+              " --bind_ip "0.0.0.0"
+  MongoArbiterVolume:
+    Type: 'AWS::EC2::Volume'
+    Properties:
+      Size: !Ref VolumeSize
+      Tags:
+        - Key: Name
+          Value: Mongo Artiber Volume
+      AvailabilityZone: !GetAtt 
+        - Arbiter
+        - AvailabilityZone
+  MongoArbiterVolumeMount:
+    Type: 'AWS::EC2::VolumeAttachment'
+    Properties:
+      InstanceId: !Ref Arbiter
+      VolumeId: !Ref MongoArbiterVolume
+      Device: /dev/xvdb
+  ArbiterEni:
+    Type: 'AWS::EC2::NetworkInterface'
+    Properties:
+      Tags:
+        - Key: Name
+          Value: MongoDB Member 1
+      GroupSet:
+        - !Ref EnableInterMongoDB
+      SubnetId: !If 
+        - IsThreeAz
+        - !Ref Subnet3Id
+        - !Ref Subnet2Id
+  Arbiter:
+    Type: 'AWS::EC2::Instance'
+    DependsOn: FirstDataMember
+    Properties:
+      InstanceType: !Ref ArbiterNodeInstanceType
+      ImageId: !Ref BcUbuntuBaseAmiId
+      IamInstanceProfile: !Ref WebServersInstanceProfile
+      Tags:
+        - Key: Name
+          Value: MongoDB Replica Set - Arbiter
+      NetworkInterfaces:
+        - NetworkInterfaceId: !Ref ArbiterEni
+          DeviceIndex: '0'
+      KeyName: !If 
+        - HasNoKeypair
+        - !Ref 'AWS::NoValue'
+        - !Ref KeyPairName
+      UserData: !Base64 
+        'Fn::Join':
+          - ''
+          - - |
+              #!/bin/bash
+            - |
+              ECID=$(curl http://169.254.169.254/latest/meta-data/instance-id)
+            - |
+              CWLA=cwlagent_$ECID
+            - 'docker run -d --restart=always '
+            - '--name $CWLA --log-opt awslogs-stream=$CWLA '
+            - '-v /var/log:/var/log-host:ro '
+            - !Ref CwlLinuxParams
+            - ' '
+            - !Ref CwlDockerParams
+            - ' '
+            - !Ref CwlUbuntuAgentDocker
+            - |+
 
-    "Parameters" : {
-		"VpcId": {
-			"Description" : "VPCid associated with the subnets. [nat-subnets.parameters.VpcId]",
-			"Type": "AWS::EC2::VPC::Id"
-		},
-		"Subnet1Id": {
-			"Description" : "Subnet to run HA web cluster on. [nat-subnets.resources.Subnet1]",
-			"Type": "AWS::EC2::Subnet::Id"
-		},
-		"Subnet2Id": {
-			"Description" : "Subnet to run HA web cluster on. [nat-subnets.resources.Subnet2]",
-			"Type": "AWS::EC2::Subnet::Id"
-		},
-		"Subnet3Id": {
-			"Description" : "Subnet to run HA web cluster on. [nat-subnets.resources.Subnet3]",
-			"Type": "String",
-			"Default": ""
-		},
-
-        "KeyPairName" : {
-            "Description" : "Name of an existing EC2 KeyPair to enable SSH access",
-            "Type" : "String",
-            "Default": ""
-        },
-		"BcUbuntuBaseAmiId": {
-			"Description": "AMI to use. Note Ubuntu is prefered.",
-			"Type": "AWS::EC2::Image::Id"
-		},
-
-        "DataNodeInstanceType" : {
-            "Type" : "String",
-            "Default" : "t2.medium",
-            "AllowedValues" : [
-				"t2.micro",
-				"t2.small",
-				"t2.medium",
-				"t2.large",
-				"m3.medium",
-				"m4.large",
-				"m4.xlarge",
-				"m4.2xlarge",
-				"r3.large",
-				"r3.xlarge",
-				"r3.2xlarge",
-				"r3.4xlarge",
-				"r3.8xlarge"
-            ],
-            "Description" : "EC2 instance type"
-        },
-        "ArbiterNodeInstanceType" : {
-            "Type" : "String",
-            "Default" : "t2.micro",
-            "AllowedValues" : [
-				"t2.micro",
-				"t2.small",
-				"t2.medium",
-				"t2.large",
-				"m3.medium",
-				"m4.large",
-				"m4.xlarge",
-				"m4.2xlarge",
-				"r3.large",
-				"r3.xlarge",
-				"r3.2xlarge",
-				"r3.4xlarge",
-				"r3.8xlarge"
-            ],
-            "Description" : "EC2 instance type"
-        },
-
-        "VolumeSize" : {
-            "Description" : "Volume size for each EBS volume",
-            "Type" : "Number",
-            "Default" : "100"
-        },
-
-        "MongoDbContainer": {
-			"Description": "",
-			"Default": "mongo:3.3.15",
-			"Type": "String"
-		},
-
-        "ReplicaSetName" : {
-            "Description" : "Name of the MongoDB replica set",
-            "Type" : "String",
-            "Default" : "MongoDbRepSet"
-        },
-
-		"CwlUbuntuAgentDocker": {
-			"Description": "Name of cluster. This is used for discovery.",
-			"Type": "String",
-			"Default": "bitclouded/aws-cwl-agent:4.1"
-		},
-		"CwlLinuxParams" : {
-			"Description": "Environment variables for syslog and authlog cwl group names [logs-store.outputs.LxDockerLogParams]",
-			"Type": "String"
-		},
-		"CwlDockerParams" : {
-			"Description": "Docker log driver params [logs-store.outputs.DockerCwlParams]",
-			"Type": "String"
-		},
-		"CwlPolicy" : {
-			"Description": "Managed policy for linux logging. [logs-store.resources.LinuxLogPolicy]",
-			"Type": "String"
-		}
-    },
-
-    "Conditions" : {
-		"IsThreeAz" : { "Fn::Not" : [{ "Fn::Equals" : [{"Ref" : "Subnet3Id"}, ""]}]},
-        "HasNoKeypair" : { "Fn::Equals" : [{"Ref" : "KeyPairName"}, ""]}
-    },
-
-    "Resources" : {
-        "MongoDBConsumer" : {
-            "Type" : "AWS::EC2::SecurityGroup",
-            "Properties" : {
-                "GroupDescription" : "Allow inbound access to MongoDB Replica Set.",
-                "Tags" : [ {"Key":"Name", "Value":"MongoDB Consumer"} ],
-                "VpcId" : {"Ref":"VpcId"}
-            }
-        },
-        "EnableInterMongoDB" : {
-            "Type" : "AWS::EC2::SecurityGroup",
-            "Properties" : {
-                "GroupDescription" : "Enable inter MongoDB member communication.",
-                "SecurityGroupIngress" : [{
-                    "IpProtocol" : "-1",
-                    "SourceSecurityGroupId" : { "Ref" : "MongoDBConsumer" }
-                }],
-                "Tags" : [ {"Key":"Name", "Value":"Inter MongoDB Communication"} ],
-                "VpcId" : {"Ref":"VpcId"}
-            }
-        },
-        "EnableInterMongoDBIngress" : {
-            "Type" : "AWS::EC2::SecurityGroupIngress",
-            "Properties" : {
-                "GroupId" : { "Ref" : "EnableInterMongoDB" },
-                "IpProtocol" : "-1",
-                "SourceSecurityGroupId" : { "Ref" : "EnableInterMongoDB" }
-            }
-        },
-
-        "MongoDataVolume1" : {
-            "Type" : "AWS::EC2::Volume",
-            "Properties" : {
-                "Size" : { "Ref" : "VolumeSize" },
-                "Tags" : [{ "Key" : "Name", "Value" : "Mongo Data Volume 1" }],
-                "AvailabilityZone" : { "Fn::GetAtt" : [ "FirstDataMember", "AvailabilityZone" ]}
-            }
-        },
-
-        "MongoDataVolume1Mount" : {
-            "Type" : "AWS::EC2::VolumeAttachment",
-            "Properties" : {
-                "InstanceId" : { "Ref" : "FirstDataMember" },
-                "VolumeId" : { "Ref" : "MongoDataVolume1" },
-                "Device" : "/dev/xvdb"
-            }
-        },
-        "FirstDataMemberEni" : {
-            "Type" : "AWS::EC2::NetworkInterface",
-            "Properties" : {
-                "Tags": [{"Key":"Name","Value":"MongoDB Member 1"}],
-                "GroupSet": [{ "Ref" : "EnableInterMongoDB" }],
-                "SubnetId": {"Ref":"Subnet1Id"}
-            }
-        },
-
-        "FirstDataMember" : {
-            "Type" : "AWS::EC2::Instance",
-            "Properties" : {
-                "InstanceType" : { "Ref" : "DataNodeInstanceType" },
-                "ImageId" : { "Ref":"BcUbuntuBaseAmiId" },
-                "IamInstanceProfile" : {"Ref":"WebServersInstanceProfile"},
-                "Tags" : [{ "Key" : "Name", "Value" : "MongoDB Replica Set - First" }],
-                "KeyName" : {"Fn::If": [
-                    "HasNoKeypair",
-                    { "Ref": "AWS::NoValue" },
-                    { "Ref": "KeyPairName" }
-                ]},
-                "NetworkInterfaces" : [{
-                    "NetworkInterfaceId" : {"Ref" : "FirstDataMemberEni"}, "DeviceIndex" : "0" }
-                ],
-                "UserData" : { "Fn::Base64" : { "Fn::Join" : ["", [
-                    "#!/bin/bash\n",
-					"ECID=$(curl http://169.254.169.254/latest/meta-data/instance-id)\n",
-					"CWLA=cwlagent_$ECID\n",
-					"docker run -d --restart=always ",
-						"--name $CWLA --log-opt awslogs-stream=$CWLA ",
-						"-v /var/log:/var/log-host:ro ",
-						{"Ref":"CwlLinuxParams"}," ",
-						{"Ref":"CwlDockerParams"}," ",
-						{"Ref":"CwlUbuntuAgentDocker"},"\n",
-					"docker run -d --restart=always --name cwlcron ",
-						{"Ref":"CwlUbuntuAgentDocker"}," cron\n",
-
-					"MONGONAME=mongodb-data_$ECID\n",
-                    "docker run -p 27017:27017 ",
-                        "--name $MONGONAME --log-opt awslogs-stream=$MONGONAME ",
-                        "-d --restart=always ",
-                        {"Ref":"CwlLinuxParams"}," ",
-                        {"Ref":"MongoDbContainer"},
-                        " --replSet \"", {"Ref":"ReplicaSetName"}, "\" --bind_ip \"0.0.0.0\"\n",
-                    "sleep 20s\n",
-                    "docker exec -i $MONGONAME mongo --eval \"",
-                        "rs.initiate();sleep(1000);",
-                        "cfg = rs.conf();",
-                        "cfg.members[0].host = '", {"Fn::GetAtt" : ["FirstDataMemberEni","PrimaryPrivateIpAddress"]} ,"';",
-                        "rs.reconfig(cfg);",
-                        "rs.add('", {"Fn::GetAtt" : ["SecondDataMemberEni","PrimaryPrivateIpAddress"]} ,"');",
-                        "rs.addArb('", {"Fn::GetAtt" : ["ArbiterEni","PrimaryPrivateIpAddress"]} ,"');\""
-                ] ] } }
-            }
-        },
-
-        "MongoDataVolume2Mount" : {
-            "Type" : "AWS::EC2::VolumeAttachment",
-            "Properties" : {
-                "InstanceId" : { "Ref" : "SecondDataMember" },
-                "VolumeId" : { "Ref" : "MongoDataVolume2" },
-                "Device" : "/dev/xvdb"
-            }
-        },
-
-        "MongoDataVolume2" : {
-            "Type" : "AWS::EC2::Volume",
-            "Properties" : {
-                "Size" : { "Ref" : "VolumeSize" },
-                "Tags" : [{ "Key" : "Name", "Value" : "Mongo Data Volume 2" }],
-                "AvailabilityZone" : { "Fn::GetAtt" : [ "SecondDataMember", "AvailabilityZone" ]}
-            }
-        },
-
-        "SecondDataMemberEni" : {
-            "Type" : "AWS::EC2::NetworkInterface",
-            "Properties" : {
-                "Tags": [{"Key":"Name","Value":"MongoDB Member 1"}],
-                "GroupSet": [{ "Ref" : "EnableInterMongoDB" }],
-                "SubnetId": {"Ref":"Subnet2Id"}
-            }
-        },
-
-        "SecondDataMember" : {
-            "Type" : "AWS::EC2::Instance",
-            "DependsOn" : "FirstDataMember",
-            "Properties" : {
-                "InstanceType" : { "Ref" : "DataNodeInstanceType" },
-                "ImageId" : { "Ref":"BcUbuntuBaseAmiId" },
-                "IamInstanceProfile" : {"Ref":"WebServersInstanceProfile"},
-                "Tags" : [{ "Key" : "Name", "Value" : "MongoDB Replica Set - Second" }],
-                "KeyName" : {"Fn::If": [
-                    "HasNoKeypair",
-                    { "Ref": "AWS::NoValue" },
-                    { "Ref": "KeyPairName" }
-                ]},
-                "NetworkInterfaces" : [{
-                    "NetworkInterfaceId" : {"Ref" : "SecondDataMemberEni"}, "DeviceIndex" : "0" }
-                ],
-                "UserData" : { "Fn::Base64" : { "Fn::Join" : ["", [
-                    "#!/bin/bash\n",
-					"ECID=$(curl http://169.254.169.254/latest/meta-data/instance-id)\n",
-					"CWLA=cwlagent_$ECID\n",
-					"docker run -d --restart=always ",
-						"--name $CWLA --log-opt awslogs-stream=$CWLA ",
-						"-v /var/log:/var/log-host:ro ",
-						{"Ref":"CwlLinuxParams"}," ",
-						{"Ref":"CwlDockerParams"}," ",
-						{"Ref":"CwlUbuntuAgentDocker"},"\n",
-					"docker run -d --restart=always --name cwlcron ",
-						{"Ref":"CwlUbuntuAgentDocker"}," cron\n",
-
-					"MONGONAME=mongodb-data_$ECID\n",
-                    "docker run -p 27017:27017 ",
-                        "--name $MONGONAME --log-opt awslogs-stream=$MONGONAME ",
-                        "-d --restart=always ",
-                        {"Ref":"CwlLinuxParams"}," ",
-                        {"Ref":"MongoDbContainer"},
-                        " --replSet \"", {"Ref":"ReplicaSetName"}, "\" --bind_ip \"0.0.0.0\"\n"
-                ] ] } }
-            }
-        },
-
-        "MongoArbiterVolume" : {
-            "Type" : "AWS::EC2::Volume",
-            "Properties" : {
-                "Size" : { "Ref" : "VolumeSize" },
-                "Tags" : [{ "Key" : "Name", "Value" : "Mongo Artiber Volume" }],
-                "AvailabilityZone" : { "Fn::GetAtt" : [ "Arbiter", "AvailabilityZone" ]}
-            }
-        },
-
-
-        "MongoArbiterVolumeMount" : {
-            "Type" : "AWS::EC2::VolumeAttachment",
-            "Properties" : {
-                "InstanceId" : { "Ref" : "Arbiter" },
-                "VolumeId" : { "Ref" : "MongoArbiterVolume" },
-                "Device" : "/dev/xvdb"
-            }
-        },
-        "ArbiterEni" : {
-            "Type" : "AWS::EC2::NetworkInterface",
-            "Properties" : {
-                "Tags": [{"Key":"Name","Value":"MongoDB Member 1"}],
-                "GroupSet": [{ "Ref" : "EnableInterMongoDB" }],
-                "SubnetId": { "Fn::If" : ["IsThreeAz",
-					{"Ref":"Subnet3Id"},
-					{"Ref":"Subnet2Id"}]
-                }
-            }
-        },
-
-        "Arbiter" : {
-            "Type" : "AWS::EC2::Instance",
-            "DependsOn" : "FirstDataMember",
-            "Properties" : {
-                "InstanceType" : { "Ref" : "ArbiterNodeInstanceType" },
-                "ImageId" : { "Ref":"BcUbuntuBaseAmiId" },
-                "IamInstanceProfile" : {"Ref":"WebServersInstanceProfile"},
-                "Tags" : [{ "Key" : "Name", "Value" : "MongoDB Replica Set - Arbiter" }],
-                "NetworkInterfaces" : [{
-                    "NetworkInterfaceId" : {"Ref" : "ArbiterEni"}, "DeviceIndex" : "0" }
-                ],
-                "KeyName" : {"Fn::If": [
-                    "HasNoKeypair",
-                    { "Ref": "AWS::NoValue" },
-                    { "Ref": "KeyPairName" }
-                ]},
-                "UserData" : { "Fn::Base64" : { "Fn::Join" : ["", [
-                    "#!/bin/bash\n",
-					"ECID=$(curl http://169.254.169.254/latest/meta-data/instance-id)\n",
-					"CWLA=cwlagent_$ECID\n",
-					"docker run -d --restart=always ",
-						"--name $CWLA --log-opt awslogs-stream=$CWLA ",
-						"-v /var/log:/var/log-host:ro ",
-						{"Ref":"CwlLinuxParams"}," ",
-						{"Ref":"CwlDockerParams"}," ",
-						{"Ref":"CwlUbuntuAgentDocker"},"\n",
-					"docker run -d --restart=always --name cwlcron ",
-						{"Ref":"CwlUbuntuAgentDocker"}," cron\n",
-
-					"MONGONAME=mongodb-arbiter_$ECID\n",
-                    "docker run -p 27017:27017 ",
-                        "--name $MONGONAME --log-opt awslogs-stream=$MONGONAME ",
-                        "-d --restart=always ",
-                        {"Ref":"CwlLinuxParams"}," ",
-                        {"Ref":"MongoDbContainer"},
-                        " --replSet \"", {"Ref":"ReplicaSetName"}, "\" --bind_ip \"0.0.0.0\"\n"
-                ] ] } }
-            }
-        },
-
-        "WebServersRole" : {
-			"Type": "AWS::IAM::Role",
-			"Properties": {
-				"AssumeRolePolicyDocument": {
-					"Version": "2012-10-17",
-					"Statement": [{
-						"Effect": "Allow",
-						"Principal": {
-							"Service": [ "ec2.amazonaws.com" ]
-						},
-						"Action": [ "sts:AssumeRole" ]
-					}]
-				},
-				"Path": "/datastore/mongodb/",
-				"ManagedPolicyArns" : [
-					{"Ref":"CwlPolicy"}
-				]
-			}
-		},
-		"WebServersInstanceProfile" : {
-			"Type": "AWS::IAM::InstanceProfile",
-			"Properties": {
-				"Path": "/datastore/mongodb/",
-				"Roles": [{"Ref" : "WebServersRole"}]
-			}
-		}
-
-    },
-
-    "Outputs" : {
-        "ReplicaSetMemberName" : {
-            "Value" : { "Fn::GetAtt" : [ "SecondDataMember", "PublicDnsName" ] },
-            "Description" : "public DNS name of the MongoDB Replica Set Member Instance"
-        }
-    }
-}
+            - 'docker run -d --restart=always --name cwlcron '
+            - !Ref CwlUbuntuAgentDocker
+            - |2
+               cron
+            - |
+              MONGONAME=mongodb-arbiter_$ECID
+            - 'docker run -p 27017:27017 '
+            - '--name $MONGONAME --log-opt awslogs-stream=$MONGONAME '
+            - '-d --restart=always '
+            - !Ref CwlLinuxParams
+            - ' '
+            - !Ref MongoDbContainer
+            - ' --replSet "'
+            - !Ref ReplicaSetName
+            - |
+              " --bind_ip "0.0.0.0"
+  WebServersRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - ec2.amazonaws.com
+            Action:
+              - 'sts:AssumeRole'
+      Path: /datastore/mongodb/
+      ManagedPolicyArns:
+        - !Ref CwlPolicy
+  WebServersInstanceProfile:
+    Type: 'AWS::IAM::InstanceProfile'
+    Properties:
+      Path: /datastore/mongodb/
+      Roles:
+        - !Ref WebServersRole
+Outputs:
+  ReplicaSetMemberName:
+    Value: !GetAtt 
+      - SecondDataMember
+      - PublicDnsName
+    Description: public DNS name of the MongoDB Replica Set Member Instance
