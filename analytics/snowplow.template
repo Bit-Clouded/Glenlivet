@@ -51,6 +51,10 @@ Parameters:
     Description: Container image for elasticsearch sink
     Type: String
     Default: 'bitclouded/snowplow-stream-es-sink:1-1'
+  ContainerAwsUtil:
+    Description: Container image for awscli and cfn-signal
+    Type: String
+    Default: 'bitclouded/aws-util:2-1'
   InstanceType:
     Description: Type of EC2 instance to launch for snowplow servers. c4 family is usually recommended.
     Type: String
@@ -376,6 +380,15 @@ Resources:
         - PropagateAtLaunch: 'true'
           Key: Name
           Value: Snowplow Collector
+    CreationPolicy:
+      ResourceSignal:
+        Count: 2
+        Timeout: PT10M
+    UpdatePolicy:
+      AutoScalingRollingUpdate:
+        MinInstancesInService: 1
+        WaitOnResourceSignals: 'true'
+        PauseTime: PT10M
   EventCollectionLc:
     Type: 'AWS::AutoScaling::LaunchConfiguration'
     Properties:
@@ -397,6 +410,10 @@ Resources:
             --log-opt awslogs-stream=${AWS::StackName}/ssc/$ECID \
             -e STREAM_GOOD=${RawStream} -e STREAM_BAD=${RawStreamBad} \
             ${ContainerSssc}
+          docker run -t --rm ${ContainerAwsUtil} cfn-signal -e $? --stack ${AWS::StackName} --resource EventCollectionGroup --region ${AWS::Region}
+    UpdatePolicy:
+      AutoScalingReplacingUpdate:
+        WillReplace: 'true'
   EventCollectionPermission:
     Type: 'AWS::IAM::ManagedPolicy'
     Properties:
@@ -456,6 +473,15 @@ Resources:
         - PropagateAtLaunch: 'true'
           Key: Name
           Value: Snowplow Enrich
+    CreationPolicy:
+      ResourceSignal:
+        Count: '1'
+        Timeout: PT10M
+    UpdatePolicy:
+      AutoScalingRollingUpdate:
+        MinInstancesInService: 1
+        WaitOnResourceSignals: 'true'
+        PauseTime: PT10M
   EnrichStreamLc:
     Type: 'AWS::AutoScaling::LaunchConfiguration'
     Properties:
@@ -479,6 +505,11 @@ Resources:
             -e STREAM_GOOD=${EnrichedStream} \
             -e STREAM_BAD=${EnrichedStreamBad} \
             ${ContainerSse}
+          docker run -t --rm ${ContainerAwsUtil} cfn-signal -e $? --stack ${AWS::StackName} --resource EnrichStreamGroup --region ${AWS::Region}
+    UpdatePolicy:
+      AutoScalingReplacingUpdate:
+        WillReplace: 'true'
+
   # Start Autoscaling for Stream Enrich
   EnrichScaleUpPolicy:
     Type: 'AWS::AutoScaling::ScalingPolicy'
@@ -559,6 +590,15 @@ Resources:
         - PropagateAtLaunch: 'true'
           Key: Name
           Value: Snowplow Enriched
+    CreationPolicy:
+      ResourceSignal:
+        Count: '1'
+        Timeout: PT10M
+    UpdatePolicy:
+      AutoScalingRollingUpdate:
+        MinInstancesInService: 1
+        WaitOnResourceSignals: 'true'
+        PauseTime: PT10M
   EnrichedStreamLc:
     Type: 'AWS::AutoScaling::LaunchConfiguration'
     Properties:
@@ -594,6 +634,10 @@ Resources:
                     -e ES_HOST=${EsHost} \
                     ${ContainerSess}
               - ''
+            - !Sub docker run -t --rm ${ContainerAwsUtil} cfn-signal -e $? --stack ${AWS::StackName} --resource EnrichedStreamGroup --region ${AWS::Region}
+    UpdatePolicy:
+      AutoScalingReplacingUpdate:
+        WillReplace: 'true'
 
   # Start Autoscaling for Event Collectors
   EnrichedScaleUpPolicy:
