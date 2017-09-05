@@ -91,6 +91,21 @@ Parameters:
     Description: Memory in MB to Reserve
     Type: Number
     Default: 1000
+
+  # Domain
+  HostedZoneName:
+    Description: >-
+      Hosted Zone for the url (Without '.'). You need to fill in Subdomain as
+      well for custom domain to work.
+    Type: String
+    Default: ''
+  Subdomain:
+    Description: >-
+      Subdomain (Without '.'). You need to fill in HostedZoneName as well for
+      custom domain to work.
+    Type: String
+    Default: ''
+
 Conditions:
   HasNoEfsPath: !Equals 
     - !Ref EfsPath
@@ -98,7 +113,27 @@ Conditions:
   HasNoDbName: !Equals 
     - !Ref DbName
     - ''
+  HasHostname: !And 
+    - !Not 
+      - !Equals 
+        - !Ref Subdomain
+        - ''
+    - !Not 
+      - !Equals 
+        - !Ref HostedZoneName
+        - ''
 Resources:
+  Route53:
+    Type: 'AWS::Route53::RecordSet'
+    Condition: HasHostname
+    Properties:
+      HostedZoneName: !Sub '${HostedZoneName}.'
+      Comment: Hostname
+      Name: !Sub ${Subdomain}.${HostedZoneName}.
+      Type: A
+      AliasTarget:
+        DNSName: !GetAtt [HttpGateway, DNSName]
+        HostedZoneId: !GetAtt [HttpGateway, CanonicalHostedZoneID]
   HttpGateway:
     Type: 'AWS::ElasticLoadBalancingV2::LoadBalancer'
     Properties:
@@ -213,7 +248,7 @@ Resources:
                   - HasNoEfsPath
                   - !Select 
                     - '2'
-                    - !Split 
+                    - !Split
                       - /
                       - !Ref 'AWS::StackId'
                   - !Ref EfsPath
@@ -231,23 +266,17 @@ Resources:
       TaskDefinition: !Ref TaskDef
 Outputs:
   Service:
-    Value: !Join 
-      - ''
-      - - 'https://'
-        - !Ref 'AWS::Region'
-        - .console.aws.amazon.com/ecs/home?region=
-        - !Ref 'AWS::Region'
-        - '#/clusters/'
-        - !Ref EcsCluster
-        - /services/
-        - !GetAtt 
-          - EcsService
-          - Name
-        - /tasks
+    Value: !Sub https://${AWS::Region}.console.aws.amazon.com/ecs/home?region=${AWS::Region}#/clusters/${EcsCluster}/services/${EcsService.Name}/tasks
     Description: ECS service that manages the containers running wordpress.
   BackofficeUrl:
-    Value: ''
+    Value: !If
+      - HasHostname
+      - !Sub http://${Subdomain}.${HostedZoneName}/wp-admin/
+      - !Sub http://${HttpGateway.DNSName}/wp-admin/
     Description: Url to the admin page.
   PublicUrl:
-    Value: ''
+    Value: !If
+      - HasHostname
+      - !Sub http://${Subdomain}.${HostedZoneName}/
+      - !Sub http://${HttpGateway.DNSName}/
     Description: Url to the public facing site.
