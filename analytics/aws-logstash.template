@@ -28,7 +28,6 @@ Metadata:
         AccessCfLogSns: AccessCfLogBucketNotification
         CwlPolicy: LinuxLogPolicy
       Outputs:
-        CwlLinuxParams: LxDockerLogParams
         CwlDockerParams: DockerCwlParams
     - TemplatePath: datastore/elasticsearch
       Outputs:
@@ -52,11 +51,16 @@ Parameters:
       - m4.large
       - m4.xlarge
       - m4.2xlarge
-      - r3.large
-      - r3.xlarge
-      - r3.2xlarge
-      - r3.4xlarge
-      - r3.8xlarge
+      - c4.large
+      - c4.xlarge
+      - c4.2xlarge
+      - c4.4xlarge
+      - c4.8xlarge
+      - r4.large
+      - r4.xlarge
+      - r4.2xlarge
+      - r4.4xlarge
+      - r4.8xlarge
     ConstraintDescription: must be a valid EC2 instance type.
   BcUbuntuBaseAmiId:
     Description: AMI to use
@@ -114,13 +118,10 @@ Parameters:
     Description: Name of cluster. This is used for discovery.
     Type: String
     Default: 'bitclouded/ls-aws-sqs3:2-1'
-  CwlUbuntuAgentDocker:
-    Description: Name of cluster. This is used for discovery.
+  ContainerAwsUtil:
+    Description: Container image for awscli and cfn-signal
     Type: String
-    Default: 'bitclouded/aws-cwl-agent:4.1'
-  CwlLinuxParams:
-    Description: Environment variables for syslog and authlog cwl group names
-    Type: String
+    Default: 'bitclouded/aws-util:2-1'
   CwlDockerParams:
     Description: Docker log driver params
     Type: String
@@ -160,6 +161,7 @@ Conditions:
     - !Ref KeyPairName
     - ''
 Resources:
+  # First section, processing the logs from the kinesis stream.
   LogStreamKclLeasesTable:
     Type: 'AWS::DynamoDB::Table'
     Properties:
@@ -173,6 +175,112 @@ Resources:
       KeySchema:
         - AttributeName: leaseKey
           KeyType: HASH
+  LogstashAsg:
+    Type: 'AWS::AutoScaling::AutoScalingGroup'
+    Properties:
+      VPCZoneIdentifier: !Ref Subnets
+      LaunchConfigurationName: !Ref LogstashLc
+      MinSize: '1'
+      MaxSize: '5'
+      Tags:
+        - Key: Name
+          Value: Logstash Kinesis
+          PropagateAtLaunch: 'True'
+    CreationPolicy:
+      ResourceSignal:
+        Count: 1
+        Timeout: PT10M
+    UpdatePolicy:
+      AutoScalingRollingUpdate:
+        MinInstancesInService: 1
+        WaitOnResourceSignals: 'true'
+        PauseTime: PT10M
+  LogstashLc:
+    Type: 'AWS::AutoScaling::LaunchConfiguration'
+    Properties:
+      InstanceType: !Ref LogstashNodeType
+      ImageId: !Ref BcUbuntuBaseAmiId
+      KeyName: !If 
+        - HasNoKeypair
+        - !Ref 'AWS::NoValue'
+        - !Ref KeyPairName
+      SecurityGroups:
+        - !Ref LogstashSg
+      IamInstanceProfile: !Ref LogstashInstanceProfile
+      UserData: !Base64 
+        'Fn::Sub': |
+          #!/bin/bash
+          docker run -d --name logstash-kinesis --restart=always \
+            -e KINESIS=${LogStream} \
+            -e DDB_CHECKPOINT=${AWS::StackName} \
+            -e ES_HOST=${EsHost} \
+            -e VPC_LOG=${VpcTrafficLogGroupName} \
+            -e CLOUDTRAIL=${CloudTrailLogGroupName} \
+            -e DOCKER_LOG=${LinuxDockerLogGroupName} \
+            -e SYSLOG=${LinuxSysLogGroupName} \
+            -e AUTHLOG=${LinuxAuthLogGroupName} \
+            ${LogstashDocker}
+          docker run -t --rm ${ContainerAwsUtil} cfn-signal -e $? --stack ${AWS::StackName} --resource LogstashAsg --region ${AWS::Region}
+      BlockDeviceMappings:
+        - DeviceName: /dev/xvda
+          Ebs:
+            VolumeSize: '50'
+            VolumeType: gp2
+    UpdatePolicy:
+      AutoScalingReplacingUpdate:
+        WillReplace: 'true'
+  LogstashInstanceProfile:
+    Type: 'AWS::IAM::InstanceProfile'
+    Properties:
+      Path: /analytics/logstash/
+      Roles:
+        - !Ref LogstashRole
+  LogstashRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - ec2.amazonaws.com
+            Action:
+              - 'sts:AssumeRole'
+      Path: /analytics/logstash/
+      ManagedPolicyArns:
+        - !Ref CwlPolicy
+  LogstashRolePolicies:
+    Type: 'AWS::IAM::Policy'
+    Properties:
+      PolicyName: LogstashKinesisAccessPolicy
+      PolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Action: 'dynamodb:*'
+            Resource: !Join 
+              - ''
+              - - 'arn:aws:dynamodb:'
+                - !Ref 'AWS::Region'
+                - ':'
+                - !Ref 'AWS::AccountId'
+                - ':table/'
+                - !Ref LogStreamKclLeasesTable
+          - Effect: Allow
+            Action:
+              - 'kinesis:Get*'
+              - 'kinesis:List*'
+              - 'kinesis:Describe*'
+            Resource: !Join 
+              - ''
+              - - 'arn:aws:kinesis:*:'
+                - !Ref 'AWS::AccountId'
+                - ':stream/'
+                - !Ref LogStream
+      Roles:
+        - !Ref LogstashRole
+
   RawSubscription:
     Type: 'AWS::SNS::Subscription'
     Properties:
@@ -240,98 +348,6 @@ Resources:
       Tags:
         - Key: Name
           Value: Ls Nodes
-  LogstashAsg:
-    Type: 'AWS::AutoScaling::AutoScalingGroup'
-    Properties:
-      VPCZoneIdentifier: !Ref Subnets
-      LaunchConfigurationName: !Ref LogstashLc
-      MinSize: '1'
-      MaxSize: '5'
-      Tags:
-        - Key: Name
-          Value: Logstash Kinesis
-          PropagateAtLaunch: 'True'
-  LogstashLc:
-    Type: 'AWS::AutoScaling::LaunchConfiguration'
-    Properties:
-      InstanceType: !Ref LogstashNodeType
-      ImageId: !Ref BcUbuntuBaseAmiId
-      KeyName: !If 
-        - HasNoKeypair
-        - !Ref 'AWS::NoValue'
-        - !Ref KeyPairName
-      SecurityGroups:
-        - !Ref LogstashSg
-      IamInstanceProfile: !Ref LogstashInstanceProfile
-      UserData: !Base64 
-        'Fn::Sub': |
-          #!/bin/bash
-          docker run -d --name logstash-kinesis --restart=always \
-            -e KINESIS=${LogStream} \
-            -e DDB_CHECKPOINT=${AWS::StackName} \
-            -e ES_HOST=${EsHost} \
-            -e VPC_LOG=${VpcTrafficLogGroupName} \
-            -e CLOUDTRAIL=${CloudTrailLogGroupName} \
-            -e DOCKER_LOG=${LinuxDockerLogGroupName} \
-            -e SYSLOG=${LinuxSysLogGroupName} \
-            -e AUTHLOG=${LinuxAuthLogGroupName} \
-            ${LogstashDocker}
-      BlockDeviceMappings:
-        - DeviceName: /dev/xvda
-          Ebs:
-            VolumeSize: '50'
-            VolumeType: gp2
-  LogstashInstanceProfile:
-    Type: 'AWS::IAM::InstanceProfile'
-    Properties:
-      Path: /analytics/logstash/
-      Roles:
-        - !Ref LogstashRole
-  LogstashRole:
-    Type: 'AWS::IAM::Role'
-    Properties:
-      AssumeRolePolicyDocument:
-        Version: 2012-10-17
-        Statement:
-          - Effect: Allow
-            Principal:
-              Service:
-                - ec2.amazonaws.com
-            Action:
-              - 'sts:AssumeRole'
-      Path: /analytics/logstash/
-      ManagedPolicyArns:
-        - !Ref CwlPolicy
-  LogstashRolePolicies:
-    Type: 'AWS::IAM::Policy'
-    Properties:
-      PolicyName: LogstashKinesisAccessPolicy
-      PolicyDocument:
-        Version: 2012-10-17
-        Statement:
-          - Effect: Allow
-            Action: 'dynamodb:*'
-            Resource: !Join 
-              - ''
-              - - 'arn:aws:dynamodb:'
-                - !Ref 'AWS::Region'
-                - ':'
-                - !Ref 'AWS::AccountId'
-                - ':table/'
-                - !Ref LogStreamKclLeasesTable
-          - Effect: Allow
-            Action:
-              - 'kinesis:Get*'
-              - 'kinesis:List*'
-              - 'kinesis:Describe*'
-            Resource: !Join 
-              - ''
-              - - 'arn:aws:kinesis:*:'
-                - !Ref 'AWS::AccountId'
-                - ':stream/'
-                - !Ref LogStream
-      Roles:
-        - !Ref LogstashRole
   LogstashSqsAsg:
     Type: 'AWS::AutoScaling::AutoScalingGroup'
     Properties:
@@ -343,6 +359,15 @@ Resources:
         - Key: Name
           Value: Logstash Sqs
           PropagateAtLaunch: 'True'
+    CreationPolicy:
+      ResourceSignal:
+        Count: 1
+        Timeout: PT10M
+    UpdatePolicy:
+      AutoScalingRollingUpdate:
+        MinInstancesInService: 1
+        WaitOnResourceSignals: 'true'
+        PauseTime: PT10M
   LogstashSqsLc:
     Type: 'AWS::AutoScaling::LaunchConfiguration'
     Properties:
@@ -355,6 +380,11 @@ Resources:
       SecurityGroups:
         - !Ref LogstashSg
       IamInstanceProfile: !Ref LogstashSqsInstanceProfile
+      BlockDeviceMappings:
+        - DeviceName: /dev/xvda
+          Ebs:
+            VolumeSize: '50'
+            VolumeType: gp2
       UserData: !Base64 
         'Fn::Sub': |
           #!/bin/bash
@@ -365,11 +395,10 @@ Resources:
             -e S3_BUCKET=${AccessS3LogBucketName} \
             -e CF_BUCKET=${AccessCfLogBucketName} \
             ${LogstashSqsDocker}
-      BlockDeviceMappings:
-        - DeviceName: /dev/xvda
-          Ebs:
-            VolumeSize: '50'
-            VolumeType: gp2
+          docker run -t --rm ${ContainerAwsUtil} cfn-signal -e $? --stack ${AWS::StackName} --resource LogstashSqsAsg --region ${AWS::Region}
+    UpdatePolicy:
+      AutoScalingReplacingUpdate:
+        WillReplace: 'true'
   LogstashSqsInstanceProfile:
     Type: 'AWS::IAM::InstanceProfile'
     Properties:
