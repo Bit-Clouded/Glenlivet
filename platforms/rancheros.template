@@ -188,41 +188,24 @@ Resources:
       InstanceType: !Ref WebInstanceType
       ImageId: !Ref RancherAmiId
       UserData: !Base64 
-        'Fn::Join':
-          - ''
-          - - |
-              #cloud-config
-            - |
-              rancher:
-            - |2
-                services:
-            - |2
-                  rancher-server:
-            - |2
-                    image: rancher/server
-            - |2
-                    ports:
-            - |2
-                    - 8080:8080
-            - |2
-                    - 9345:9345
-            - |2
-                    restart: always
-            - '      command: --db-name rancher'
-            - ' --advertise-address $private_ipv4'
-            - ' --db-host '
-            - !GetAtt 
-              - Database
-              - Endpoint.Address
-            - ' --db-port '
-            - !GetAtt 
-              - Database
-              - Endpoint.Port
-            - ' --db-user '
-            - !Ref DbUsername
-            - ' --db-pass '
-            - !Ref DbPassword
-            - |+
+        'Fn::Sub': |
+          #cloud-config
+          rancher:
+            services:
+              rancher-server:
+                image: rancher/server
+                ports:
+                  - 8080:8080
+                  - 9345:9345
+                restart: always
+                command: [
+                  "--db-name","rancher",
+                  "--advertise-address","$private_ipv4",
+                  "--db-host","${Database.Endpoint.Address}",
+                  "--db-port","${Database.Endpoint.Port}",
+                  "--db-user","${DbUsername}",
+                  "--db-pass","${DbPassword}"
+                ]
 
   WorkerAsg:
     Type: 'AWS::AutoScaling::AutoScalingGroup'
@@ -246,31 +229,18 @@ Resources:
         - !Ref WebServerSg
       InstanceType: !Ref WebInstanceType
       ImageId: !Ref RancherAmiId
-      UserData: !Base64 
-        'Fn::Join':
-          - ''
-          - - |
-              #cloud-config
-            - |
-              rancher:
-            - |2
-                services:
-            - |2
-                  register:
-            - |2
-                    priviledged: true
-            - |2
-                    volumes:
-            - |2
-                    - /var/run/docker.sock:/var/run/docker.sock
-            - |2
-                    image: rancher/agent
-            - |2
-                    command:
-            - '      - http://'
-            - !GetAtt 
-              - AdminGateway
-              - DNSName
+      UserData: !Base64
+        'Fn::Sub': |
+          #cloud-config
+          rancher:
+            services:
+              register:
+                priviledged: true
+                volumes:
+                - /var/run/docker.sock:/var/run/docker.sock
+                image: rancher/agent
+                command:
+                  - http://${AdminGateway.DNSName}
     DependsOn: AdminAsg
   WebServerSg:
     Type: 'AWS::EC2::SecurityGroup'
