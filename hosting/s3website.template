@@ -64,9 +64,9 @@ Resources:
       DistributionConfig:
         Comment: Cloudfront Distribution pointing to S3 bucket
         Origins:
-          - DomainName: !GetAtt 
-              - Website
-              - DomainName
+          - DomainName: !Select 
+            - '2'
+            - !Split ['/', !GetAtt Website.WebsiteURL]
             Id: S3Origin
             CustomOriginConfig:
               HTTPPort: '80'
