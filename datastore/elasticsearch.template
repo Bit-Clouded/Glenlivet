@@ -20,6 +20,28 @@ Parameters:
     Description: Name of an existing EC2 KeyPair to enable SSH access to the instances
     Type: String
     Default: ''
+  CertificateArn:
+    Description: 'ARN of the imported SSL certificate'
+    Type: String
+    Default: ''
+  HostedZoneName:
+    Description: >-
+      Hosted Zone for the url (Without '.' at the end). You need to fill in
+      Subdomain as well for custom domain to work.
+    Type: String
+    Default: ''
+  EsSubdomain:
+    Description: >-
+      Subdomain (Without '.'  at the end). You need to fill in HostedZoneName as
+      well for custom domain to work.
+    Type: String
+    Default: ''
+  KibanaSubdomain:
+    Description: >-
+      Subdomain (Without '.'  at the end). You need to fill in HostedZoneName as
+      well for custom domain to work.
+    Type: String
+    Default: ''
   KibanaInstanceType:
     Description: WebServer EC2 instance type
     Type: String
@@ -170,6 +192,30 @@ Conditions:
   HasNoKeypair: !Equals 
     - !Ref KeyPairName
     - ''
+  
+  HasSsl: !Not 
+    - !Equals 
+      - !Ref CertificateArn
+      - ''
+  
+  HasEsHostname: !And 
+    - !Not 
+      - !Equals 
+        - !Ref EsSubdomain
+        - ''
+    - !Not 
+      - !Equals 
+        - !Ref HostedZoneName
+        - ''
+  HasKibanaHostname: !And 
+    - !Not 
+      - !Equals 
+        - !Ref KibanaSubdomain
+        - ''
+    - !Not 
+      - !Equals 
+        - !Ref HostedZoneName
+        - ''
 Mappings:
   InstanceVariables:
     t2.micro:
@@ -197,6 +243,54 @@ Mappings:
     r3.8xlarge:
       ram: '120000'
 Resources:
+
+  # Optional Domains
+  EsDomain:
+    Type: 'AWS::Route53::RecordSet'
+    Condition: HasEsHostname
+    Properties:
+      HostedZoneName: !Join 
+        - .
+        - - !Ref HostedZoneName
+          - ''
+      Comment: Hostname
+      Name: !Join 
+        - .
+        - - !Ref EsSubdomain
+          - !Ref HostedZoneName
+          - ''
+      Type: A
+      AliasTarget:
+        DNSName: !GetAtt 
+          - ClusterGateway
+          - DNSName
+        HostedZoneId: !GetAtt 
+          - ClusterGateway
+          - CanonicalHostedZoneNameID
+  KibanaDomain:
+    Type: 'AWS::Route53::RecordSet'
+    Condition: HasKibanaHostname
+    Properties:
+      HostedZoneName: !Join 
+        - .
+        - - !Ref HostedZoneName
+          - ''
+      Comment: Hostname
+      Name: !Join 
+        - .
+        - - !Ref KibanaSubdomain
+          - !Ref HostedZoneName
+          - ''
+      Type: A
+      AliasTarget:
+        DNSName: !GetAtt 
+          - KibanaGateway
+          - DNSName
+        HostedZoneId: !GetAtt 
+          - KibanaGateway
+          - CanonicalHostedZoneNameID
+  # /Optional Domains
+
   EsDataNodeGroupOneLc:
     Type: 'AWS::AutoScaling::LaunchConfiguration'
     Properties:
@@ -545,7 +639,7 @@ Resources:
           - |
             #!/bin/bash
             ECID=$(curl http://169.254.169.254/latest/meta-data/instance-id)
-            docker run -p 80:5601 -d --restart=always '
+            docker run -p 80:5601 -d --restart=always \
               --name kibana --log-opt awslogs-stream=${AWS::StackName}/kibana/$ECID \
               ${CwlLinuxParams} \
               -e ELASTICSEARCH_URL=http://${ClusterGateway.DNSName}:9200 \
@@ -710,4 +804,26 @@ Outputs:
     Value: !GetAtt 
       - ClusterGateway
       - DNSName
-    Description: Private A record for ES Master Node ELB
+    Description: LoadBalancer Url of the ES Gateway
+  KibanaUrl:
+    Value: !If 
+      - HasKibanaHostname
+      - !Join 
+        - ''
+        - - http
+          - !If 
+            - HasSsl
+            - s
+            - ''
+          - '://'
+          - !Ref KibanaSubdomain
+          - .
+          - !Ref HostedZoneName
+          - /
+      - !Join 
+        - ''
+        - - 'http://'
+          - !GetAtt 
+            - KibanaGateway
+            - DNSName
+    Description: Kibana URL
