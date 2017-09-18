@@ -422,6 +422,7 @@ Resources:
         - AttributeName: leaseKey
           KeyType: HASH
   EnrichedToESWriteScalableTarget:
+    Condition: HasEsHost
     Type: 'AWS::ApplicationAutoScaling::ScalableTarget'
     Properties:
       MaxCapacity: 200
@@ -431,6 +432,7 @@ Resources:
       ScalableDimension: 'dynamodb:table:WriteCapacityUnits'
       ServiceNamespace: dynamodb
   EnrichedToESWriteScalingPolicy:
+    Condition: HasEsHost
     Type: 'AWS::ApplicationAutoScaling::ScalingPolicy'
     Properties:
       PolicyName: EnrichedToESWritePolicy
@@ -443,6 +445,7 @@ Resources:
         PredefinedMetricSpecification:
           PredefinedMetricType: DynamoDBWriteCapacityUtilization
   EnrichedToESReadScalableTarget:
+    Condition: HasEsHost
     Type: 'AWS::ApplicationAutoScaling::ScalableTarget'
     Properties:
       MaxCapacity: 200
@@ -452,6 +455,7 @@ Resources:
       ScalableDimension: 'dynamodb:table:ReadCapacityUnits'
       ServiceNamespace: dynamodb
   EnrichedToESReadScalingPolicy:
+    Condition: HasEsHost
     Type: 'AWS::ApplicationAutoScaling::ScalingPolicy'
     Properties:
       PolicyName: EnrichedToESReadPolicy
