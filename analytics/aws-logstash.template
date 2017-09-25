@@ -117,7 +117,7 @@ Parameters:
   LogstashSqsDocker:
     Description: Name of cluster. This is used for discovery.
     Type: String
-    Default: 'bitclouded/ls-aws-sqs3:2-1'
+    Default: 'bitclouded/ls-aws-sqs3:4-1'
   ContainerAwsUtil:
     Description: Container image for awscli and cfn-signal
     Type: String
