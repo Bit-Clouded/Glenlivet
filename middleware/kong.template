@@ -228,6 +228,11 @@ Parameters:
   CwlPolicy:
     Description: 'Managed policy for linux logging. [logs-store.resources.LinuxLogPolicy]'
     Type: String
+  ContainerAwsUtil:
+    Description: Container image for awscli and cfn-signal
+    Type: String
+    Default: 'bitclouded/aws-util:2-1'
+
 Conditions:
   UseDbSnapshot: !Not 
     - !Equals 
@@ -251,6 +256,9 @@ Resources:
       Listeners:
         - LoadBalancerPort: '80'
           InstancePort: '8080'
+          Protocol: HTTP
+        - LoadBalancerPort: '1337'
+          InstancePort: '1337'
           Protocol: HTTP
         - !If 
           - HasSsl
@@ -291,6 +299,10 @@ Resources:
           ToPort: '443'
           CidrIp: !Ref ProxyAccess
         - IpProtocol: tcp
+          FromPort: '1337'
+          ToPort: '1337'
+          CidrIp: !Ref ProxyAccess
+        - IpProtocol: tcp
           FromPort: '8000'
           ToPort: '8001'
           CidrIp: !Ref AdminAccess
@@ -307,6 +319,15 @@ Resources:
         - Key: Name
           Value: Kong Web Server
           PropagateAtLaunch: 'true'
+    CreationPolicy:
+      ResourceSignal:
+        Count: 2
+        Timeout: PT10M
+    UpdatePolicy:
+      AutoScalingRollingUpdate:
+        MinInstancesInService: 1
+        WaitOnResourceSignals: 'true'
+        PauseTime: PT10M
   KongLaunchConfig:
     Type: 'AWS::AutoScaling::LaunchConfiguration'
     Properties:
@@ -320,70 +341,45 @@ Resources:
       SecurityGroups:
         - !Ref KongSecurityGroup
       UserData: !Base64 
-        'Fn::Join':
-          - ''
-          - - |
-              #!/bin/bash
-            - |
-              ECID=$(curl http://169.254.169.254/latest/meta-data/instance-id)
-            - |
-              CWLA=cwlagent_$ECID
-            - 'docker run -d --restart=always '
-            - '--name $CWLA --log-opt awslogs-stream=$CWLA '
-            - '-v /var/log:/var/log-host:ro '
-            - !Ref CwlLinuxParams
-            - ' '
-            - !Ref CwlDockerParams
-            - ' '
-            - !Ref CwlUbuntuAgentDocker
-            - |+
+        'Fn::Sub': |
+          #!/bin/bash
+          ECID=$(curl http://169.254.169.254/latest/meta-data/instance-id)
+          docker run -d --restart=always ${CwlLinuxParams} \
+            --name kong --log-opt awslogs-stream=${AWS::StackName}/kong/$ECID \
+            -e KONG_LOG_LEVEL=info \
+            -e KONG_DATABASE=postgres \
+            -e KONG_PG_HOST=${PostgresDB.Endpoint.Address} \
+            -e KONG_PG_PORT=${PostgresDB.Endpoint.Port} \
+            -e KONG_PG_USER=${DbUsername} \
+            -e KONG_PG_PASSWORD=${DbPassword} \
+            -e KONG_PG_DATABASE=${DbName} \
+            -p 8000:8000 -p 8443:8443 -p 8001:8001 -p 7946:7946 -p 7946:7946/udp \
+            ${KongDockerImage}
 
-            - 'docker run -d --restart=always --name cwlcron '
-            - !Ref CwlUbuntuAgentDocker
-            - |2
-               cron
-            - |
-              MAIN=kong_$ECID
-            - 'docker run -d --restart=always '
-            - !Ref CwlLinuxParams
-            - ' '
-            - '--name $MAIN --log-opt awslogs-stream=$MAIN '
-            - '-e KONG_LOG_LEVEL=info '
-            - '-e KONG_DATABASE=postgres '
-            - '-e KONG_PG_HOST='
-            - !GetAtt 
-              - PostgresDB
-              - Endpoint.Address
-            - ' '
-            - '-e KONG_PG_PORT='
-            - !GetAtt 
-              - PostgresDB
-              - Endpoint.Port
-            - ' '
-            - '-e KONG_PG_USER='
-            - !Ref DbUsername
-            - ' '
-            - '-e KONG_PG_PASSWORD='
-            - !Ref DbPassword
-            - ' '
-            - '-e KONG_PG_DATABASE='
-            - !Ref DbName
-            - ' '
-            - '-p 8000:8000 '
-            - '-p 8443:8443 '
-            - '-p 8001:8001 '
-            - '-p 7946:7946 '
-            - '-p 7946:7946/udp '
-            - !Ref KongDockerImage
-            - |+
+          docker run -d --restart=always -p 8080:8080 ${CwlLinuxParams} \
+            --name kong-web-ui --log-opt awslogs-stream=${AWS::StackName}/kong-web-ui/$ECID \
+            pgbi/kong-dashboard
+          docker run -d --restart=always ${CwlLinuxParams} \
+            --name konga --log-opt awslogs-stream=${AWS::StackName}/konga/$ECID \
+            --link kong:kong \
+            -p 1337:1337 \
+            -e "DB_ADAPTER=postgres" \
+            -e "DB_HOST=${PostgresDB.Endpoint.Address}" \
+            -e "DB_PORT=${PostgresDB.Endpoint.Port}" \
+            -e "DB_USER=${DbUsername}" \
+            -e "DB_PASSWORD=${DbPassword}" \
+            -e "DB_DATABASE=${DbName}" \
+            -e "NODE_ENV=development" \
+            pantsel/konga
 
-            - |
-              KUI=kong-web-ui_$ECID
-            - 'docker run -d --restart=always -p 8080:8080 '
-            - !Ref CwlLinuxParams
-            - ' '
-            - '--name $KUI --log-opt awslogs-stream=$KUI '
-            - pgbi/kong-dashboard
+          docker run -t --rm ${ContainerAwsUtil} \
+            cfn-signal -e $? --stack ${AWS::StackName} \
+            --resource ServerScalingGroup \
+            --region ${AWS::Region}
+    UpdatePolicy:
+      AutoScalingReplacingUpdate:
+        WillReplace: 'true'
+
   WebServersRole:
     Type: 'AWS::IAM::Role'
     Properties:
@@ -418,6 +414,10 @@ Resources:
         - IpProtocol: tcp
           FromPort: '8000'
           ToPort: '8001'
+          SourceSecurityGroupId: !Ref LoadBalancerSecurityGroup
+        - IpProtocol: tcp
+          FromPort: '1337'
+          ToPort: '1337'
           SourceSecurityGroupId: !Ref LoadBalancerSecurityGroup
   Ingress7946:
     Type: 'AWS::EC2::SecurityGroupIngress'
@@ -481,6 +481,15 @@ Outputs:
           - HttpGateway
           - DNSName
         - ':8001'
+  KongaUi:
+    Description: Konga admin panel. Default user/pass is admin/adminadminadmin.
+    Value: !Join 
+      - ''
+      - - 'http://'
+        - !GetAtt 
+          - HttpGateway
+          - DNSName
+        - ':1337'
   AdminUi:
     Description: Kong Admin Web UI
     Value: !Join 
