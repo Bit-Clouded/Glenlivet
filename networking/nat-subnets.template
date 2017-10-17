@@ -62,10 +62,23 @@ Parameters:
     Description: Comma-delimited list of three IP blocks
     Type: CommaDelimitedList
     Default: ''
+  IsMultiAz:
+    Description: Enables multi AZ deployment of NAT Gateway. The default is true.
+    Type: String
+    Default: 'true'
+    AllowedValues:
+      - 'true'
+      - 'false'
 Conditions:
   IsThreeAz: !Equals 
     - !Ref AzCount
     - '3'
+  IsMultiAzActive: !Equals 
+    - !Ref IsMultiAz
+    - 'true'
+  IsThreeMultiAz: !And
+    - !Condition IsThreeAz
+    - !Condition IsMultiAzActive
   IsAzSupplied: !Not 
     - !Equals 
       - !Select 
@@ -73,16 +86,14 @@ Conditions:
         - !Ref AvailableAzs
       - ''
 Resources:
+
+  # Primary Subnet. This is the subnet that holds the
+  # NAT gateway when non-multi az deployment is chosen.
   Subnet1:
     Type: 'AWS::EC2::Subnet'
     Properties:
       VpcId: !Ref VpcId
-      CidrBlock: !Join 
-        - ''
-        - - !Ref VpcPrefix
-          - .
-          - !Ref Subnet1Suffix
-          - .0/24
+      CidrBlock: !Sub '${VpcPrefix}.${Subnet1Suffix}.0/24' 
       AvailabilityZone: !Select 
         - '0'
         - !If 
@@ -95,9 +106,7 @@ Resources:
   Nat1:
     Type: 'AWS::EC2::NatGateway'
     Properties:
-      AllocationId: !GetAtt 
-        - Eip1
-        - AllocationId
+      AllocationId: !GetAtt Eip1.AllocationId
       SubnetId: !Ref NatServerSubnet1
   Eip1:
     Type: 'AWS::EC2::EIP'
@@ -124,16 +133,14 @@ Resources:
     Properties:
       SubnetId: !Ref Subnet1
       NetworkAclId: !Ref Acl
+
+  # Second subnet would use the first subnet's NAT gateway if
+  # non-multiaz configuration is chosen.
   Subnet2:
     Type: 'AWS::EC2::Subnet'
     Properties:
       VpcId: !Ref VpcId
-      CidrBlock: !Join 
-        - ''
-        - - !Ref VpcPrefix
-          - .
-          - !Ref Subnet2Suffix
-          - .0/24
+      CidrBlock: !Sub '${VpcPrefix}.${Subnet2Suffix}.0/24' 
       AvailabilityZone: !Select 
         - '1'
         - !If 
@@ -145,13 +152,13 @@ Resources:
           Value: Private
   Nat2:
     Type: 'AWS::EC2::NatGateway'
+    Condition: IsMultiAzActive
     Properties:
-      AllocationId: !GetAtt 
-        - Eip2
-        - AllocationId
+      AllocationId: !GetAtt Eip2.AllocationId
       SubnetId: !Ref NatServerSubnet2
   Eip2:
     Type: 'AWS::EC2::EIP'
+    Condition: IsMultiAzActive
     Properties:
       Domain: vpc
   RouteTable2:
@@ -164,7 +171,7 @@ Resources:
     Properties:
       RouteTableId: !Ref RouteTable2
       DestinationCidrBlock: 0.0.0.0/0
-      NatGatewayId: !Ref Nat2
+      NatGatewayId: !If ["IsMultiAzActive", !Ref Nat2, !Ref Nat1]
   RouteTableAssociation2:
     Type: 'AWS::EC2::SubnetRouteTableAssociation'
     Properties:
@@ -175,17 +182,16 @@ Resources:
     Properties:
       SubnetId: !Ref Subnet2
       NetworkAclId: !Ref Acl
+
+  # Third subnet is optional for zones where there's only 2 subnets.
+  # It uses a combinational condition that depends on both whether
+  # there's 2 or 3 subnets and whether multiaz configuration is selected
   Subnet3:
     Type: 'AWS::EC2::Subnet'
     Condition: IsThreeAz
     Properties:
       VpcId: !Ref VpcId
-      CidrBlock: !Join 
-        - ''
-        - - !Ref VpcPrefix
-          - .
-          - !Ref Subnet3Suffix
-          - .0/24
+      CidrBlock: !Sub '${VpcPrefix}.${Subnet3Suffix}.0/24' 
       AvailabilityZone: !Select 
         - '2'
         - !If 
@@ -197,15 +203,13 @@ Resources:
           Value: Private
   Nat3:
     Type: 'AWS::EC2::NatGateway'
-    Condition: IsThreeAz
+    Condition: IsThreeMultiAz
     Properties:
-      AllocationId: !GetAtt 
-        - Eip3
-        - AllocationId
+      AllocationId: !GetAtt Eip3.AllocationId
       SubnetId: !Ref NatServerSubnet3
   Eip3:
     Type: 'AWS::EC2::EIP'
-    Condition: IsThreeAz
+    Condition: IsThreeMultiAz
     Properties:
       Domain: vpc
   RouteTable3:
@@ -220,7 +224,7 @@ Resources:
     Properties:
       RouteTableId: !Ref RouteTable3
       DestinationCidrBlock: 0.0.0.0/0
-      NatGatewayId: !Ref Nat3
+      NatGatewayId: !If ["IsThreeMultiAz", !Ref Nat3, !Ref Nat1]
   RouteTableAssociation3:
     Type: 'AWS::EC2::SubnetRouteTableAssociation'
     Condition: IsThreeAz
@@ -233,6 +237,8 @@ Resources:
     Properties:
       SubnetId: !Ref Subnet3
       NetworkAclId: !Ref Acl
+
+  # The ACL is shared across all two or three subnets.
   Acl:
     Type: 'AWS::EC2::NetworkAcl'
     Properties:
@@ -292,6 +298,8 @@ Resources:
       PortRange:
         From: '32768'
         To: '65535'
+  
+  # S3 endpoint for effeciency.
   S3Endpoint:
     Type: 'AWS::EC2::VPCEndpoint'
     Properties:
@@ -317,7 +325,12 @@ Resources:
           - !Ref 'AWS::Region'
           - .s3
       VpcId: !Ref VpcId
+
 Outputs:
+  # This comma delimited string helps piece together
+  # a list of subnets. Used for ASG in depending templates
+  # where they just need to spared to maximum number of
+  # availability zones.
   Subnets:
     Description: The list of subnets for the ELBs
     Value: !Join 
