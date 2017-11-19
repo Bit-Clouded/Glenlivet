@@ -1,0 +1,396 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: Cassandra Cluster
+Metadata:
+  DefaultName: Cassandra
+  Dependencies:
+    - TemplatePath: networking/vpc
+      Resources:
+        ElbSg: ElbSecGroup
+        ElbTargetSg: ElbTargetSecGroup
+        HttpSg: HttpNsSecGroup
+    - TemplatePath: networking/elb-subnets
+      Parameters:
+        VpcId: VpcId
+      Outputs:
+        ElbSubnets: ElbSubnets
+        ServerSubnets: WebServerSubnets
+      NestedDependency: networking/vpc
+    - TemplatePath: analytics/logs-store
+      Resources:
+        AccessLogBucket: Raw
+        CwlPolicy: LinuxLogPolicy
+      Outputs:
+        CwlLinuxParams: LxDockerLogParams
+        CwlDockerParams: DockerCwlParams
+
+Parameters:
+  KeyPairName:
+    Type: String
+    Description: Name of an existing EC2 KeyPair to enable SSH access to the ECS instances.
+    Default: ''
+  VpcId:
+    Description: 'VPCid associated with the subnets. [elb-subnets.parameters.VpcId]'
+    Type: 'AWS::EC2::VPC::Id'
+  ElbSubnets:
+    Description: Subnets for the database servers
+    Type: 'List<AWS::EC2::Subnet::Id>'
+  ServerSubnets:
+    Description: Subnets for the load balancers
+    Type: 'List<AWS::EC2::Subnet::Id>'
+  ElbSg:
+    Description: Elb Security Group.
+    Type: String
+  ElbTargetSg:
+    Description: Elb Target Security Group.
+    Type: String
+  HttpSg:
+    Description: Elb Target Security Group.
+    Type: String
+  ElbTargetSg:
+    Description: 'Elb Target Security Group. [vpc.resources.ElbTargetSecGroup]'
+    Type: String
+  SeedInstanceType:
+    Description: Phabricator server instance type
+    Type: String
+    Default: t2.medium
+    AllowedValues:
+      - i3.large
+      - i3.xlarge
+      - i3.2xlarge
+      - i3.4xlarge
+      - i3.8xlarge
+      - i3.16xlarge
+      - d2.xlarge
+      - d2.2xlarge
+      - d2.4xlarge
+      - d2.8xlarge
+      - t2.nano
+      - t2.micro
+      - t2.small
+      - t2.medium
+      - t2.large
+      - t2.xlarge
+      - t2.2xlarge
+      - m4.large
+      - m4.xlarge
+      - m4.2xlarge
+      - m4.4xlarge
+      - m4.8xlarge
+      - m4.16xlarge
+      - c5.large
+      - c5.xlarge
+      - c5.2xlarge
+      - c5.4xlarge
+      - c5.9xlarge
+      - c5.18xlarge
+      - r4.large
+      - r4.xlarge
+      - r4.2xlarge
+      - r4.4xlarge
+      - r4.8xlarge
+      - r4.16xlarge
+      - x1.16xlarge
+      - x1.32xlarge
+      - x1e.xlarge
+      - x1e.2xlarge
+      - x1e.4xlarge
+      - x1e.8xlarge
+      - x1e.16xlarge
+      - x1e.32xlarge
+  DataInstanceType:
+    Description: Phabricator server instance type
+    Type: String
+    Default: t2.medium
+    AllowedValues:
+      - i3.large
+      - i3.xlarge
+      - i3.2xlarge
+      - i3.4xlarge
+      - i3.8xlarge
+      - i3.16xlarge
+      - d2.xlarge
+      - d2.2xlarge
+      - d2.4xlarge
+      - d2.8xlarge
+      - t2.nano
+      - t2.micro
+      - t2.small
+      - t2.medium
+      - t2.large
+      - t2.xlarge
+      - t2.2xlarge
+      - m4.large
+      - m4.xlarge
+      - m4.2xlarge
+      - m4.4xlarge
+      - m4.8xlarge
+      - m4.16xlarge
+      - c5.large
+      - c5.xlarge
+      - c5.2xlarge
+      - c5.4xlarge
+      - c5.9xlarge
+      - c5.18xlarge
+      - r4.large
+      - r4.xlarge
+      - r4.2xlarge
+      - r4.4xlarge
+      - r4.8xlarge
+      - r4.16xlarge
+      - x1.16xlarge
+      - x1.32xlarge
+      - x1e.xlarge
+      - x1e.2xlarge
+      - x1e.4xlarge
+      - x1e.8xlarge
+      - x1e.16xlarge
+      - x1e.32xlarge
+    ConstraintDescription: Must be a valid EC2 instance type.
+  BcUbuntuBaseAmiId:
+    Description: Image id of the frontend
+    Type: 'AWS::EC2::Image::Id'
+  DiskSize:
+    Description: 'Size of data disk. Note this value is not used for storage optimised instances (i or d)'
+    Type: String
+    Default: '100'
+
+  AccessLogBucket:
+    Description: 'Image id of the frontend [logs-store.resources.Raw]'
+    Type: String
+  ContainerAwsUtil:
+    Description: Container image for awscli and cfn-signal
+    Type: String
+    Default: 'bitclouded/aws-util:3-1'
+  CwlUbuntuAgentDocker:
+    Description: Name of cluster. This is used for discovery.
+    Type: String
+    Default: 'bitclouded/aws-cwl-agent:4.1'
+  CwlLinuxParams:
+    Description: Environment variables for syslog and authlog cwl group names
+    Type: String
+  CwlDockerParams:
+    Description: Docker log driver params
+    Type: String
+  CwlPolicy:
+    Description: Managed policy for linux logging.
+    Type: String
+
+  HostedZoneName:
+    Description: >-
+      Hosted Zone for the url (Without '.'). You need to fill in Subdomain as
+      well for custom domain to work.
+    Type: String
+    Default: ''
+  AdminSubdomain:
+    Description: >-
+      Subdomain (Without '.'). You need to fill in HostedZoneName as well for
+      custom domain to work.
+    Type: String
+    Default: ''
+  AdminElbScheme:
+    Type: String
+    Default: internal
+    AllowedValues:
+      - internet-facing
+      - internal
+    Description: Whether the site has a public ip address and is publicly available.
+
+Conditions:
+  HasNoKeypair: !Equals 
+    - !Ref KeyPairName
+    - ''
+  HasHostname: !And 
+    - !Not 
+      - !Equals 
+        - !Ref AdminSubdomain
+        - ''
+    - !Not 
+      - !Equals 
+        - !Ref HostedZoneName
+        - ''
+
+Resources:
+  SeedServerGroup:
+    Type: 'AWS::AutoScaling::AutoScalingGroup'
+    Properties:
+      LoadBalancerNames: [!Ref AdminGateway]
+      VPCZoneIdentifier: !Ref ServerSubnets
+      LaunchConfigurationName: !Ref SeedServerConfiguration
+      MinSize: '2'
+      MaxSize: '5'
+      Tags:
+        - Key: Name
+          Value: !Sub 'Cassandra Seed - ${AWS::StackName}'
+          PropagateAtLaunch: 'true'
+    CreationPolicy:
+      ResourceSignal:
+        Count: 2
+        Timeout: PT10M
+    UpdatePolicy:
+      AutoScalingRollingUpdate:
+        MinInstancesInService: 1
+        WaitOnResourceSignals: 'true'
+        PauseTime: PT10M
+  SeedServerConfiguration:
+    Type: 'AWS::AutoScaling::LaunchConfiguration'
+    Properties:
+      ImageId: !Ref BcUbuntuBaseAmiId
+      InstanceType: !Ref SeedInstanceType
+      IamInstanceProfile: !Ref Ec2InstanceProfile
+      KeyName: !If 
+        - HasNoKeypair
+        - !Ref 'AWS::NoValue'
+        - !Ref KeyPairName
+      SecurityGroups:
+        - !Ref ElbTargetSg
+        - !Ref ServerSg
+      UserData: !Base64
+        'Fn::Sub': |
+          #!/bin/bash
+          ECID=$(curl http://169.254.169.254/latest/meta-data/instance-id)
+          SEEDS=$(docker run -e AWS_DEFAULT_REGION=${AWS::Region} --rm ${ContainerAwsUtil} get-asg-peers)
+          docker run --name cassandra-seed -d --restart=always --net=host \
+            ${CwlLinuxParams} \
+            --log-opt awslogs-stream=${AWS::StackName}/cassandra-seed/$ECID \
+            -e CASSANDRA_LISTEN_ADDRESS=$(ec2metadata --local-ipv4) \
+            -e CASSANDRA_SEEDS=$SEEDS -p 7000:7000 \
+            cassandra:3.11.1
+          docker run --name cassandra-admin -d --restart=always -p 3000:3000 \
+            ${CwlLinuxParams} \
+            --log-opt awslogs-stream=${AWS::StackName}/cassandra-admin/$ECID \
+            -e CASSANDRA_HOST=$(ec2metadata --local-ipv4) \
+            -e CASSANDRA_USER=cassandra \
+            -e CASSANDRA_PASSWORD=cassandra \
+            metavige/cassandra-web
+          docker run -t --rm ${ContainerAwsUtil} cfn-signal -e $? --stack ${AWS::StackName} --resource SeedServerGroup --region ${AWS::Region}
+
+      BlockDeviceMappings:
+        - DeviceName: /dev/sda1
+          Ebs:
+            VolumeSize: !Ref DiskSize
+            VolumeType: gp2
+  DataServerGroup:
+    Type: 'AWS::AutoScaling::AutoScalingGroup'
+    Properties:
+      VPCZoneIdentifier: !Ref ServerSubnets
+      LaunchConfigurationName: !Ref DataServerConfiguration
+      MinSize: '2'
+      MaxSize: '5'
+      Tags:
+        - Key: Name
+          Value: !Sub 'Cassandra Data - ${AWS::StackName}'
+          PropagateAtLaunch: 'true'
+    CreationPolicy:
+      ResourceSignal:
+        Count: 2
+        Timeout: PT10M
+    UpdatePolicy:
+      AutoScalingRollingUpdate:
+        MinInstancesInService: 1
+        WaitOnResourceSignals: 'true'
+        PauseTime: PT10M
+  DataServerConfiguration:
+    Type: 'AWS::AutoScaling::LaunchConfiguration'
+    Properties:
+      ImageId: !Ref BcUbuntuBaseAmiId
+      InstanceType: !Ref DataInstanceType
+      IamInstanceProfile: !Ref Ec2InstanceProfile
+      KeyName: !If 
+        - HasNoKeypair
+        - !Ref 'AWS::NoValue'
+        - !Ref KeyPairName
+      SecurityGroups:
+        - !Ref ElbTargetSg
+        - !Ref ServerSg
+      UserData: !Base64
+        'Fn::Sub': |
+          #!/bin/bash
+          ECID=$(curl http://169.254.169.254/latest/meta-data/instance-id)
+          SEEDS=$(docker run -e AWS_DEFAULT_REGION=${AWS::Region} --rm ${ContainerAwsUtil} get-asg-peers ${SeedServerGroup})
+          docker run --name cassandra-data -d --restart=always --net=host \
+            ${CwlLinuxParams} \
+            --log-opt awslogs-stream=${AWS::StackName}/cassandra-data/$ECID \
+            -e CASSANDRA_LISTEN_ADDRESS=$(ec2metadata --local-ipv4) \
+            -e CASSANDRA_SEEDS=$SEEDS -p 7000:7000 \
+            cassandra:3.11.1
+          docker run -t --rm ${ContainerAwsUtil} cfn-signal -e $? --stack ${AWS::StackName} --resource DataServerGroup --region ${AWS::Region}
+      BlockDeviceMappings:
+        - DeviceName: /dev/sda1
+          Ebs:
+            VolumeSize: !Ref DiskSize
+            VolumeType: gp2
+  Ec2Role:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - ec2.amazonaws.com
+            Action:
+              - 'sts:AssumeRole'
+      Path: /datastore/cassandra/
+      Policies:
+        - PolicyName: seed-describe
+          PolicyDocument:
+            Statement:
+              - Effect: Allow
+                Action:
+                  - 'ec2:DescribeInstances'
+                  - 'autoscaling:DescribeAutoScalingGroups'
+                  - 'autoscaling:DescribeAutoScalingInstances'
+                Resource: '*'
+      ManagedPolicyArns:
+        - !Ref CwlPolicy
+  Ec2InstanceProfile:
+    Type: 'AWS::IAM::InstanceProfile'
+    Properties:
+      Path: /datastore/cassandra/
+      Roles:
+        - !Ref Ec2Role
+  ServerSg:
+    Type: 'AWS::EC2::SecurityGroup'
+    Properties:
+      SecurityGroupIngress: []
+      VpcId: !Ref VpcId
+      GroupDescription: Security group for database security to allow ingress from.
+  ClusterSelfIngress:
+    Type: 'AWS::EC2::SecurityGroupIngress'
+    Properties:
+      GroupId: !Ref ServerSg
+      IpProtocol: '-1'
+      SourceSecurityGroupId: !Ref ServerSg
+  AdminGateway:
+    Type: 'AWS::ElasticLoadBalancing::LoadBalancer'
+    Properties:
+      Subnets: !Ref ElbSubnets
+      Scheme: !Ref AdminElbScheme
+      Listeners:
+        - InstancePort: 3000
+          LoadBalancerPort: 80
+          Protocol: tcp
+          InstanceProtocol: tcp
+      SecurityGroups:
+        - !Ref ElbSg
+        - !Ref HttpSg
+      HealthCheck:
+        HealthyThreshold: 2
+        Interval: 30
+        Target: 'HTTP:3000/'
+        Timeout: 10
+        UnhealthyThreshold: 5
+      ConnectionDrainingPolicy:
+        Enabled: 'true'
+        Timeout: '60'
+      AccessLoggingPolicy:
+        EmitInterval: '5'
+        Enabled: 'true'
+        S3BucketName: !Ref AccessLogBucket
+Outputs:
+  AdminPanel:
+    Value: !If 
+      - HasHostname
+      - !Sub http://${AdminSubdomain}.${HostedZoneName}/
+      - !Sub http://${AdminGateway.DNSName}/
+    Description: Admin panel url.
