@@ -150,7 +150,7 @@ Parameters:
   EsContainerName:
     Description: Name of container to run elasticsearch.
     Type: String
-    Default: 'bitcloudedci/elasticsearch:2-1'
+    Default: 'bitclouded/elasticsearch:2-1'
   KibanaContainerName:
     Description: Name of container to run elasticsearch.
     Type: String
@@ -171,59 +171,15 @@ Parameters:
     Type: String
 
 Conditions:
-  HasNoKeypair: !Equals 
-    - !Ref KeyPairName
-    - ''
-  
-  HasSsl: !Not 
-    - !Equals 
-      - !Ref CertificateArn
-      - ''
-  
+  HasNoKeypair: !Equals [!Ref KeyPairName, '']
+  HasSsl: !Not [!Equals [!Ref CertificateArn, '']]
   HasEsHostname: !And 
-    - !Not 
-      - !Equals 
-        - !Ref EsSubdomain
-        - ''
-    - !Not 
-      - !Equals 
-        - !Ref HostedZoneName
-        - ''
+    - !Not [!Equals [!Ref EsSubdomain, '']]
+    - !Not [!Equals [!Ref HostedZoneName, '']]
   HasKibanaHostname: !And 
-    - !Not 
-      - !Equals 
-        - !Ref KibanaSubdomain
-        - ''
-    - !Not 
-      - !Equals 
-        - !Ref HostedZoneName
-        - ''
-Mappings:
-  InstanceVariables:
-    t2.micro:
-      ram: '450'
-    t2.small:
-      ram: '950'
-    t2.medium:
-      ram: '1950'
-    m3.medium:
-      ram: '1800'
-    m4.large:
-      ram: '3600'
-    m4.xlarge:
-      ram: '7000'
-    m4.2xlarge:
-      ram: '14500'
-    r3.large:
-      ram: '7500'
-    r3.xlarge:
-      ram: '15000'
-    r3.2xlarge:
-      ram: '30000'
-    r3.4xlarge:
-      ram: '60000'
-    r3.8xlarge:
-      ram: '120000'
+    - !Not [!Equals [!Ref KibanaSubdomain, '']]
+    - !Not [!Equals [!Ref HostedZoneName, '']]
+
 Resources:
 
   # Optional Domains
@@ -231,46 +187,24 @@ Resources:
     Type: 'AWS::Route53::RecordSet'
     Condition: HasEsHostname
     Properties:
-      HostedZoneName: !Join 
-        - .
-        - - !Ref HostedZoneName
-          - ''
+      HostedZoneName: !Sub '${HostedZoneName}.'
       Comment: Hostname
-      Name: !Join 
-        - .
-        - - !Ref EsSubdomain
-          - !Ref HostedZoneName
-          - ''
+      Name: !Sub '${EsSubdomain}.${HostedZoneName}.'
       Type: A
       AliasTarget:
-        DNSName: !GetAtt 
-          - ClusterGateway
-          - DNSName
-        HostedZoneId: !GetAtt 
-          - ClusterGateway
-          - CanonicalHostedZoneNameID
+        DNSName: !GetAtt ClusterGateway.DNSName
+        HostedZoneId: !GetAtt ClusterGateway.CanonicalHostedZoneNameID
   KibanaDomain:
     Type: 'AWS::Route53::RecordSet'
     Condition: HasKibanaHostname
     Properties:
-      HostedZoneName: !Join 
-        - .
-        - - !Ref HostedZoneName
-          - ''
+      HostedZoneName: !Sub '${HostedZoneName}.'
       Comment: Hostname
-      Name: !Join 
-        - .
-        - - !Ref KibanaSubdomain
-          - !Ref HostedZoneName
-          - ''
+      Name: !Sub '${KibanaSubdomain}.${HostedZoneName}.'
       Type: A
       AliasTarget:
-        DNSName: !GetAtt 
-          - KibanaGateway
-          - DNSName
-        HostedZoneId: !GetAtt 
-          - KibanaGateway
-          - CanonicalHostedZoneNameID
+        DNSName: !GetAtt KibanaGateway.DNSName
+        HostedZoneId: !GetAtt KibanaGateway.CanonicalHostedZoneNameID
   # /Optional Domains
 
   EsDataNodeLc:
@@ -282,39 +216,37 @@ Resources:
         - HasNoKeypair
         - !Ref 'AWS::NoValue'
         - !Ref KeyPairName
-      SecurityGroups:
+      SecurityGroups: 
         - !Ref EsClusterNodeSg
       IamInstanceProfile: !Ref EsDataNodeInstanceProfile
       UserData: !Base64 
-          Fn::Sub:
-            - |
-              #!/bin/bash
-              umount /mnt/
-              mkfs -t ext4 /dev/xvdk
-              mkdir /mnt/xvdk
-              cp /etc/fstab /etc/fstab.bak && rm /etc/fstab
-              cat /etc/fstab.bak | grep -v ^/dev/xvdk | tee /etc/fstab
-              echo -e "/dev/xvdk\t/mnt/xvdk\tauto\tdefaults\t0\t2" >> /etc/fstab
-              mount -a
-              chown 1000:1000 /mnt/xvdk -R
-              sysctl -w vm.max_map_count=262144
+        Fn::Sub: |
+          #!/bin/bash
+          umount /mnt/
+          mkfs -t ext4 /dev/xvdk
+          mkdir /mnt/xvdk
+          cp /etc/fstab /etc/fstab.bak && rm /etc/fstab
+          cat /etc/fstab.bak | grep -v ^/dev/xvdk | tee /etc/fstab
+          echo -e "/dev/xvdk\t/mnt/xvdk\tauto\tdefaults\t0\t2" >> /etc/fstab
+          mount -a
+          chown 1000:1000 /mnt/xvdk -R
+          sysctl -w vm.max_map_count=262144
 
-              ECID=$(curl http://169.254.169.254/latest/meta-data/instance-id)
-              docker run --restart=always -p 9200:9200 -p 9300:9300 -d \
-                -v /mnt/xvdk:/usr/share/elasticsearch/data \
-                -e ES_JAVA_OPTS="-Xms${MemAllocation}m -Xmx${MemAllocation}m" \
-                --cap-add=IPC_LOCK --ulimit memlock=-1:-1 \
-                --name es-data --log-opt awslogs-stream=${AWS::StackName}/es-data/$ECID \
-                ${CwlLinuxParams} \
-                -e HOST_IP=$(curl http://169.254.169.254/latest/meta-data/local-ipv4)\
-                -e INSTANCE_ID=$ECID \
-                -e CLUSTER_NAME=${EsConfClusterName} \
-                -e DISC_SECGROUP=${EsClusterNodeSg} \
-                -e IS_MASTER=false -e IS_DATA=true \
-                -e AWS_REGION=${AWS::Region} \
-                ${EsContainerName}
-            - MemAllocation:
-                Fn::FindInMap: [InstanceVariables, !Ref DataNodeInstanceType, ram]
+          ECID=$(curl http://169.254.169.254/latest/meta-data/instance-id)
+          HEAP_SIZE=$(($(grep MemTotal /proc/meminfo | awk '{print $2}') / 2000))
+          docker run --restart=always -p 9200:9200 -p 9300:9300 -d \
+            -v /mnt/xvdk:/usr/share/elasticsearch/data \
+            -e ES_JAVA_OPTS="-Xms${!HEAP_SIZE}m -Xmx${!HEAP_SIZE}m" \
+            --cap-add=IPC_LOCK --ulimit memlock=-1:-1 \
+            --name es-data --log-opt awslogs-stream=${AWS::StackName}/es-data/$ECID \
+            ${CwlLinuxParams} \
+            -e HOST_IP=$(curl http://169.254.169.254/latest/meta-data/local-ipv4)\
+            -e INSTANCE_ID=$ECID \
+            -e CLUSTER_NAME=${EsConfClusterName} \
+            -e DISC_SECGROUP=${EsClusterNodeSg} \
+            -e IS_MASTER=false -e IS_DATA=true \
+            -e AWS_REGION=${AWS::Region} \
+            ${EsContainerName}
 
       BlockDeviceMappings:
         - DeviceName: /dev/xvda
@@ -325,6 +257,7 @@ Resources:
           Ebs:
             VolumeSize: !Ref EsDataDiskSize
             VolumeType: gp2
+
   EsDataNodeGroupOneAsg:
     Type: 'AWS::AutoScaling::AutoScalingGroup'
     Properties:
@@ -339,7 +272,6 @@ Resources:
         - Key: Name
           Value: Elasticsearch Cluster Data Node Grp One
           PropagateAtLaunch: 'True'
-
   EsDataNodeGroupTwoAsg:
     Type: 'AWS::AutoScaling::AutoScalingGroup'
     Properties:
@@ -354,6 +286,7 @@ Resources:
         - Key: Name
           Value: Elasticsearch Cluster Data Node Grp Two
           PropagateAtLaunch: 'True'
+
   EsMasterNodeLc:
     Type: 'AWS::AutoScaling::LaunchConfiguration'
     Properties:
@@ -363,29 +296,27 @@ Resources:
         - HasNoKeypair
         - !Ref 'AWS::NoValue'
         - !Ref KeyPairName
-      AssociatePublicIpAddress: 'false'
       SecurityGroups:
         - !Ref EsClusterNodeSg
       IamInstanceProfile: !Ref EsDataNodeInstanceProfile
       UserData: !Base64 
-        Fn::Sub:
-          - |
-            #!/bin/bash
-            sysctl -w vm.max_map_count=262144
-            ECID=$(curl http://169.254.169.254/latest/meta-data/instance-id)
-            docker run --restart=always -p 9200:9200 -p 9300:9300 -d \
-              -e ES_JAVA_OPTS="-Xms${MemAllocation}m -Xmx${MemAllocation}m" \
-              --cap-add=IPC_LOCK --ulimit memlock=-1:-1 \
-              --name es-master --log-opt awslogs-stream=${AWS::StackName}/es-master/$ECID \
-              ${CwlLinuxParams} \
-              -e HOST_IP=$(curl http://169.254.169.254/latest/meta-data/local-ipv4)\
-              -e INSTANCE_ID=$ECID \
-              -e CLUSTER_NAME=${EsConfClusterName} \
-              -e DISC_SECGROUP=${EsClusterNodeSg} \
-              -e IS_MASTER=true -e IS_DATA=false \
-              -e AWS_REGION=${AWS::Region} \
-              ${EsContainerName}
-          - MemAllocation: !FindInMap [InstanceVariables, !Ref MasterNodeInstanceType, ram]
+        Fn::Sub: |
+          #!/bin/bash
+          sysctl -w vm.max_map_count=262144
+          ECID=$(curl http://169.254.169.254/latest/meta-data/instance-id)
+          HEAP_SIZE=$(($(grep MemTotal /proc/meminfo | awk '{print $2}') / 2000))
+          docker run --restart=always -p 9200:9200 -p 9300:9300 -d \
+            -e ES_JAVA_OPTS="-Xms${!HEAP_SIZE}m -Xmx${!HEAP_SIZE}m" \
+            --cap-add=IPC_LOCK --ulimit memlock=-1:-1 \
+            --name es-master --log-opt awslogs-stream=${AWS::StackName}/es-master/$ECID \
+            ${CwlLinuxParams} \
+            -e HOST_IP=$(curl http://169.254.169.254/latest/meta-data/local-ipv4)\
+            -e INSTANCE_ID=$ECID \
+            -e CLUSTER_NAME=${EsConfClusterName} \
+            -e DISC_SECGROUP=${EsClusterNodeSg} \
+            -e IS_MASTER=true -e IS_DATA=false \
+            -e AWS_REGION=${AWS::Region} \
+            ${EsContainerName}
 
       BlockDeviceMappings:
         - DeviceName: /dev/xvda
@@ -412,30 +343,28 @@ Resources:
         - HasNoKeypair
         - !Ref 'AWS::NoValue'
         - !Ref KeyPairName
-      AssociatePublicIpAddress: 'false'
       SecurityGroups:
         - !Ref EsClusterNodeSg
         - !Ref EsClusterGatewayNodeSg
       IamInstanceProfile: !Ref EsDataNodeInstanceProfile
       UserData: !Base64 
-          Fn::Sub:
-            - |
-              #!/bin/bash
-              sysctl -w vm.max_map_count=262144
-              ECID=$(curl http://169.254.169.254/latest/meta-data/instance-id)
-              docker run --restart=always -p 9200:9200 -p 9300:9300 -d \
-                -e ES_JAVA_OPTS="-Xms${MemAllocation}m -Xmx${MemAllocation}m" \
-                --cap-add=IPC_LOCK --ulimit memlock=-1:-1 \
-                --name es-master --log-opt awslogs-stream=${AWS::StackName}/es-gateway/$ECID \
-                ${CwlLinuxParams} \
-                -e HOST_IP=$(curl http://169.254.169.254/latest/meta-data/local-ipv4)\
-                -e CLUSTER_NAME=${EsConfClusterName} \
-                -e INSTANCE_ID=$ECID \
-                -e DISC_SECGROUP=${EsClusterNodeSg} \
-                -e IS_MASTER=false -e IS_DATA=false \
-                -e AWS_REGION=${AWS::Region} \
-                ${EsContainerName}
-            - MemAllocation: !FindInMap [InstanceVariables, !Ref GatewayNodeInstanceType, ram]
+        Fn::Sub: |
+          #!/bin/bash
+          sysctl -w vm.max_map_count=262144
+          ECID=$(curl http://169.254.169.254/latest/meta-data/instance-id)
+          HEAP_SIZE=$(($(grep MemTotal /proc/meminfo | awk '{print $2}') / 2000))
+          docker run --restart=always -p 9200:9200 -p 9300:9300 -d \
+            -e ES_JAVA_OPTS="-Xms${!HEAP_SIZE}m -Xmx${!HEAP_SIZE}m" \
+            --cap-add=IPC_LOCK --ulimit memlock=-1:-1 \
+            --name es-master --log-opt awslogs-stream=${AWS::StackName}/es-gateway/$ECID \
+            ${CwlLinuxParams} \
+            -e HOST_IP=$(curl http://169.254.169.254/latest/meta-data/local-ipv4)\
+            -e CLUSTER_NAME=${EsConfClusterName} \
+            -e INSTANCE_ID=$ECID \
+            -e DISC_SECGROUP=${EsClusterNodeSg} \
+            -e IS_MASTER=false -e IS_DATA=false \
+            -e AWS_REGION=${AWS::Region} \
+            ${EsContainerName}
 
       BlockDeviceMappings:
         - DeviceName: /dev/xvda
@@ -487,7 +416,6 @@ Resources:
         - HasNoKeypair
         - !Ref 'AWS::NoValue'
         - !Ref KeyPairName
-      AssociatePublicIpAddress: 'false'
       SecurityGroups:
         - !Ref EsClusterNodeSg
         - !Ref EsClusterGatewayNodeSg
@@ -539,7 +467,7 @@ Resources:
   EsDataNodeInstanceProfile:
     Type: 'AWS::IAM::InstanceProfile'
     Properties:
-      Path: /analytics/elasticsearch/
+      Path: /datastore/elasticsearch/
       Roles:
         - !Ref EsDataNodeRole
   EsDataNodeRole:
@@ -554,7 +482,7 @@ Resources:
                 - ec2.amazonaws.com
             Action:
               - 'sts:AssumeRole'
-      Path: /analytics/elasticsearch/
+      Path: /datastore/elasticsearch/
       Policies:
         - PolicyName: root
           PolicyDocument:
@@ -569,15 +497,8 @@ Resources:
                   - 's3:PutObject'
                   - 's3:DeleteObject'
                 Resource:
-                  - !Join 
-                    - ''
-                    - - 'arn:aws:s3:::'
-                      - !Ref UtilityBucket
-                      - /*
-                  - !Join 
-                    - ''
-                    - - 'arn:aws:s3:::'
-                      - !Ref UtilityBucket
+                  - !Sub 'arn:aws:s3:::${UtilityBucket}/*'
+                  - !Sub 'arn:aws:s3:::${UtilityBucket}'
       ManagedPolicyArns:
         - !Ref CwlPolicy
   EsClusterNodeSg:
@@ -656,29 +577,11 @@ Resources:
     DeletionPolicy: Retain
 Outputs:
   EsElb:
-    Value: !GetAtt 
-      - ClusterGateway
-      - DNSName
+    Value: !GetAtt ClusterGateway.DNSName
     Description: LoadBalancer Url of the ES Gateway
   KibanaUrl:
     Value: !If 
       - HasKibanaHostname
-      - !Join 
-        - ''
-        - - http
-          - !If 
-            - HasSsl
-            - s
-            - ''
-          - '://'
-          - !Ref KibanaSubdomain
-          - .
-          - !Ref HostedZoneName
-          - /
-      - !Join 
-        - ''
-        - - 'http://'
-          - !GetAtt 
-            - KibanaGateway
-            - DNSName
+      - !Sub 'http://${KibanaSubdomain}.${HostedZoneName}/'
+      - !Sub 'http://${KibanaGateway.DNSName}/'
     Description: Kibana URL
