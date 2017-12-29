@@ -113,7 +113,7 @@ Parameters:
   LogstashDocker:
     Description: Name of cluster. This is used for discovery.
     Type: String
-    Default: 'bitcloudedci/ls-aws-kinesis:3-2'
+    Default: 'bitclouded/ls-aws-kinesis:3-2'
   LogstashSqsDocker:
     Description: Name of cluster. This is used for discovery.
     Type: String
