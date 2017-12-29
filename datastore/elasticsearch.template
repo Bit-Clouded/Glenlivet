@@ -139,37 +139,22 @@ Parameters:
     Type: String
     Default: EsCluster
   VpcId:
-    Description: 'VPCid associated with the subnets. [elb-subnets.parameters.VpcId]'
+    Description: 'VPCid associated with the subnets'
     Type: 'AWS::EC2::VPC::Id'
   ElbSubnets:
-    Description: 'VPCid associated with the subnets. [elb-subnets.outputs.ElbSubnets]'
+    Description: 'VPCid associated with the subnets'
     Type: 'List<AWS::EC2::Subnet::Id>'
   ServerSubnets:
-    Description: 'VPCid associated with the subnets. [elb-subnets.outputs.WebServerSubnets]'
+    Description: 'VPCid associated with the subnets'
     Type: 'List<AWS::EC2::Subnet::Id>'
-  EsFiveContainerName:
+  EsContainerName:
     Description: Name of container to run elasticsearch.
     Type: String
-    Default: 'bitclouded/elasticsearch-5.x:2.1'
-  EsTwoContainerName:
+    Default: 'bitcloudedci/elasticsearch:2-1'
+  KibanaContainerName:
     Description: Name of container to run elasticsearch.
     Type: String
-    Default: 'bitclouded/elasticsearch-2.x:1.1'
-  EsVersion:
-    Description: Name of container to run elasticsearch.
-    Type: String
-    Default: '2'
-    AllowedValues:
-      - '2'
-      - '5'
-  KFiveContainerName:
-    Description: Name of container to run elasticsearch.
-    Type: String
-    Default: 'kibana:5.0.0'
-  KFourContainerName:
-    Description: Name of container to run elasticsearch.
-    Type: String
-    Default: 'kibana:4.6.3'
+    Default: 'docker.elastic.co/kibana/kibana:6.1.1'
   CwlUbuntuAgentDocker:
     Description: Name of cluster. This is used for discovery.
     Type: String
@@ -177,18 +162,15 @@ Parameters:
   CwlLinuxParams:
     Description: >-
       Environment variables for syslog and authlog cwl group names
-      [logs-store.outputs.LxDockerLogParams]
     Type: String
   CwlDockerParams:
-    Description: 'Docker log driver params [logs-store.outputs.DockerCwlParams]'
+    Description: 'Docker log driver params'
     Type: String
   CwlPolicy:
-    Description: 'Managed policy for linux logging. [logs-store.resources.LinuxLogPolicy]'
+    Description: 'Managed policy for linux logging'
     Type: String
+
 Conditions:
-  IsVersionFive: !Equals 
-    - !Ref EsVersion
-    - '5'
   HasNoKeypair: !Equals 
     - !Ref KeyPairName
     - ''
@@ -291,7 +273,7 @@ Resources:
           - CanonicalHostedZoneNameID
   # /Optional Domains
 
-  EsDataNodeGroupOneLc:
+  EsDataNodeLc:
     Type: 'AWS::AutoScaling::LaunchConfiguration'
     Properties:
       InstanceType: !Ref DataNodeInstanceType
@@ -304,53 +286,36 @@ Resources:
         - !Ref EsClusterNodeSg
       IamInstanceProfile: !Ref EsDataNodeInstanceProfile
       UserData: !Base64 
-        'Fn::Join':
-          - ''
-          - - !Sub
-                - |
-                  #!/bin/bash
-                  sysctl -w vm.max_map_count=262144
-                  umount /mnt/
-                  mkfs -t ext4 /dev/xvdk
-                  mkdir /mnt/xvdk
-                  cp /etc/fstab /etc/fstab.bak && rm /etc/fstab
-                  cat /etc/fstab.bak | grep -v ^/dev/xvdk | tee /etc/fstab
-                  echo -e "/dev/xvdk\t/mnt/xvdk\tauto\tdefaults\t0\t2" >> /etc/fstab
-                  mount -a
+          Fn::Sub:
+            - |
+              #!/bin/bash
+              umount /mnt/
+              mkfs -t ext4 /dev/xvdk
+              mkdir /mnt/xvdk
+              cp /etc/fstab /etc/fstab.bak && rm /etc/fstab
+              cat /etc/fstab.bak | grep -v ^/dev/xvdk | tee /etc/fstab
+              echo -e "/dev/xvdk\t/mnt/xvdk\tauto\tdefaults\t0\t2" >> /etc/fstab
+              mount -a
+              chown 1000:1000 /mnt/xvdk -R
+              sysctl -w vm.max_map_count=262144
 
-                  ECID=$(curl http://169.254.169.254/latest/meta-data/instance-id)
-                  docker run --restart=always -p 9200:9200 -p 9300:9300 -d \
-                    -v /mnt/xvdk:/usr/share/elasticsearch/data \
-                    -e ES_JAVA_OPTS="-Xms${MemAllocation}m -Xmx${MemAllocation}m" \
-                    --cap-add=IPC_LOCK --ulimit memlock=-1:-1 \
-                    --name es-data --log-opt awslogs-stream=${AWS::StackName}/es-data/$ECID \
-                    ${CwlLinuxParams} \
-                - MemAllocation:
-                    Fn::FindInMap: [InstanceVariables, !Ref DataNodeInstanceType, ram]
-            - !If 
-              - IsVersionFive
-              - !Sub | 
-                  ${EsFiveContainerName} \
-                    -E bootstrap.memory_lock=true \
-                    -E network.publish_host=$(curl http://169.254.169.254/latest/meta-data/local-ipv4) \
-                    -E cluster.name=${EsConfClusterName} \
-                    -E cloud.aws.region=${AWS::Region} \
-                    -E discovery.ec2.groups=${EsClusterNodeSg} \
-                    -E node.attr.rack_id=grp_one \
-                    -E node.master=false \
-                    -E node.data=true
-              - !Sub |
-                  ${EsTwoContainerName} \
-                    --bootstrap.mlockall=true \
-                    --index.number_of_replicas=1 \
-                    --index.number_of_shards=5 \
-                    --network.publish_host=$(curl http://169.254.169.254/latest/meta-data/local-ipv4) \
-                    --cluster.name=${EsConfClusterName} \
-                    --cloud.aws.region=${AWS::Region} \
-                    --discovery.ec2.groups=${EsClusterNodeSg} \
-                    --node.rack_id=grp_one \
-                    --node.master=false \
-                    --node.data=true
+              ECID=$(curl http://169.254.169.254/latest/meta-data/instance-id)
+              docker run --restart=always -p 9200:9200 -p 9300:9300 -d \
+                -v /mnt/xvdk:/usr/share/elasticsearch/data \
+                -e ES_JAVA_OPTS="-Xms${MemAllocation}m -Xmx${MemAllocation}m" \
+                --cap-add=IPC_LOCK --ulimit memlock=-1:-1 \
+                --name es-data --log-opt awslogs-stream=${AWS::StackName}/es-data/$ECID \
+                ${CwlLinuxParams} \
+                -e HOST_IP=$(curl http://169.254.169.254/latest/meta-data/local-ipv4)\
+                -e INSTANCE_ID=$ECID \
+                -e CLUSTER_NAME=${EsConfClusterName} \
+                -e DISC_SECGROUP=${EsClusterNodeSg} \
+                -e IS_MASTER=false -e IS_DATA=true \
+                -e AWS_REGION=${AWS::Region} \
+                ${EsContainerName}
+            - MemAllocation:
+                Fn::FindInMap: [InstanceVariables, !Ref DataNodeInstanceType, ram]
+
       BlockDeviceMappings:
         - DeviceName: /dev/xvda
           Ebs:
@@ -367,82 +332,14 @@ Resources:
         - !Select 
           - '0'
           - !Ref ServerSubnets
-      LaunchConfigurationName: !Ref EsDataNodeGroupOneLc
+      LaunchConfigurationName: !Ref EsDataNodeLc
       MinSize: '1'
       MaxSize: '10'
       Tags:
         - Key: Name
           Value: Elasticsearch Cluster Data Node Grp One
           PropagateAtLaunch: 'True'
-  EsDataNodeGroupTwoLc:
-    Type: 'AWS::AutoScaling::LaunchConfiguration'
-    Properties:
-      InstanceType: !Ref DataNodeInstanceType
-      ImageId: !Ref BcUbuntuBaseAmiId
-      KeyName: !If 
-        - HasNoKeypair
-        - !Ref 'AWS::NoValue'
-        - !Ref KeyPairName
-      SecurityGroups:
-        - !Ref EsClusterNodeSg
-      IamInstanceProfile: !Ref EsDataNodeInstanceProfile
-      UserData: !Base64 
-        'Fn::Join':
-          - ''
-          - - !Sub
-                - |
-                  #!/bin/bash
-                  sysctl -w vm.max_map_count=262144
-                  umount /mnt/
-                  mkfs -t ext4 /dev/xvdk
-                  mkdir /mnt/xvdk
-                  cp /etc/fstab /etc/fstab.bak && rm /etc/fstab
-                  cat /etc/fstab.bak | grep -v ^/dev/xvdk | tee /etc/fstab
-                  echo -e "/dev/xvdk\t/mnt/xvdk\tauto\tdefaults\t0\t2" >> /etc/fstab
-                  mount -a
 
-                  ECID=$(curl http://169.254.169.254/latest/meta-data/instance-id)
-                  docker run --restart=always -p 9200:9200 -p 9300:9300 -d \
-                    -v /mnt/xvdk:/usr/share/elasticsearch/data \
-                    -e ES_JAVA_OPTS="-Xms${MemAllocation}m -Xmx${MemAllocation}m" \
-                    --cap-add=IPC_LOCK --ulimit memlock=-1:-1 \
-                    --name es-data --log-opt awslogs-stream=${AWS::StackName}/es-data/$ECID \
-                    ${CwlLinuxParams} \
-                - MemAllocation:
-                    Fn::FindInMap: [InstanceVariables, !Ref DataNodeInstanceType, ram]
-            - !If 
-              - IsVersionFive
-              - !Sub | 
-                  ${EsFiveContainerName} \
-                    -E bootstrap.memory_lock=true \
-                    -E network.publish_host=$(curl http://169.254.169.254/latest/meta-data/local-ipv4) \
-                    -E cluster.name=${EsConfClusterName} \
-                    -E cloud.aws.region=${AWS::Region} \
-                    -E discovery.ec2.groups=${EsClusterNodeSg} \
-                    -E node.attr.rack_id=grp_two \
-                    -E node.master=false \
-                    -E node.data=true
-              - !Sub |
-                  ${EsTwoContainerName} \
-                    --bootstrap.mlockall=true \
-                    --index.number_of_replicas=1 \
-                    --index.number_of_shards=5 \
-                    --network.publish_host=$(curl http://169.254.169.254/latest/meta-data/local-ipv4) \
-                    --cluster.name=${EsConfClusterName} \
-                    --cloud.aws.region=${AWS::Region} \
-                    --discovery.ec2.groups=${EsClusterNodeSg} \
-                    --node.rack_id=grp_two \
-                    --node.master=false \
-                    --node.data=true
-      BlockDeviceMappings:
-        - DeviceName: /dev/xvda
-          Ebs:
-            VolumeSize: '30'
-            VolumeType: gp2
-        - DeviceName: /dev/xvdk
-          Ebs:
-            VolumeSize: !Ref EsDataDiskSize
-            VolumeType: gp2
   EsDataNodeGroupTwoAsg:
     Type: 'AWS::AutoScaling::AutoScalingGroup'
     Properties:
@@ -450,7 +347,7 @@ Resources:
         - !Select 
           - '1'
           - !Ref ServerSubnets
-      LaunchConfigurationName: !Ref EsDataNodeGroupTwoLc
+      LaunchConfigurationName: !Ref EsDataNodeLc
       MinSize: '1'
       MaxSize: '10'
       Tags:
@@ -471,48 +368,29 @@ Resources:
         - !Ref EsClusterNodeSg
       IamInstanceProfile: !Ref EsDataNodeInstanceProfile
       UserData: !Base64 
-        'Fn::Join':
-          - ''
-          - - !Sub
-                - |
-                  #!/bin/bash
-                  ECID=$(curl http://169.254.169.254/latest/meta-data/instance-id)
-                  docker run --restart=always -p 9200:9200 -p 9300:9300 -d \
-                    -v /mnt/xvdk:/usr/share/elasticsearch/data \
-                    -e ES_JAVA_OPTS="-Xms${MemAllocation}m -Xmx${MemAllocation}m" \
-                    --cap-add=IPC_LOCK --ulimit memlock=-1:-1 \
-                    --name es-master --log-opt awslogs-stream=${AWS::StackName}/es-master/$ECID \
-                    ${CwlLinuxParams} \
-                - MemAllocation:
-                    Fn::FindInMap: [InstanceVariables, !Ref MasterNodeInstanceType, ram]
-            - !If 
-              - IsVersionFive
-              - !Sub | 
-                  ${EsFiveContainerName} \
-                    -E bootstrap.memory_lock=true \
-                    -E network.publish_host=$(curl http://169.254.169.254/latest/meta-data/local-ipv4) \
-                    -E cluster.name=${EsConfClusterName} \
-                    -E cloud.aws.region=${AWS::Region} \
-                    -E discovery.ec2.groups=${EsClusterNodeSg} \
-                    -E node.attr.rack_id=master \
-                    -E node.master=true \
-                    -E node.data=false
-              - !Sub |
-                  ${EsTwoContainerName} \
-                    --bootstrap.mlockall=true \
-                    --index.number_of_replicas=1 \
-                    --index.number_of_shards=5 \
-                    --network.publish_host=$(curl http://169.254.169.254/latest/meta-data/local-ipv4) \
-                    --cluster.name=${EsConfClusterName} \
-                    --cloud.aws.region=${AWS::Region} \
-                    --discovery.ec2.groups=${EsClusterNodeSg} \
-                    --node.rack_id=master \
-                    --node.master=true \
-                    --node.data=false
+        Fn::Sub:
+          - |
+            #!/bin/bash
+            sysctl -w vm.max_map_count=262144
+            ECID=$(curl http://169.254.169.254/latest/meta-data/instance-id)
+            docker run --restart=always -p 9200:9200 -p 9300:9300 -d \
+              -e ES_JAVA_OPTS="-Xms${MemAllocation}m -Xmx${MemAllocation}m" \
+              --cap-add=IPC_LOCK --ulimit memlock=-1:-1 \
+              --name es-master --log-opt awslogs-stream=${AWS::StackName}/es-master/$ECID \
+              ${CwlLinuxParams} \
+              -e HOST_IP=$(curl http://169.254.169.254/latest/meta-data/local-ipv4)\
+              -e INSTANCE_ID=$ECID \
+              -e CLUSTER_NAME=${EsConfClusterName} \
+              -e DISC_SECGROUP=${EsClusterNodeSg} \
+              -e IS_MASTER=true -e IS_DATA=false \
+              -e AWS_REGION=${AWS::Region} \
+              ${EsContainerName}
+          - MemAllocation: !FindInMap [InstanceVariables, !Ref MasterNodeInstanceType, ram]
+
       BlockDeviceMappings:
         - DeviceName: /dev/xvda
           Ebs:
-            VolumeSize: '30'
+            VolumeSize: '50'
             VolumeType: gp2
   EsMasterNodeAsg:
     Type: 'AWS::AutoScaling::AutoScalingGroup'
@@ -540,49 +418,29 @@ Resources:
         - !Ref EsClusterGatewayNodeSg
       IamInstanceProfile: !Ref EsDataNodeInstanceProfile
       UserData: !Base64 
-        'Fn::Join':
-          - ''
-          - - !Sub
-                - |
-                  #!/bin/bash
-                  ECID=$(curl http://169.254.169.254/latest/meta-data/instance-id)
-                  docker run --restart=always -p 9200:9200 -p 9300:9300 -d \
-                    -v /mnt/xvdk:/usr/share/elasticsearch/data \
-                    -e ES_JAVA_OPTS="-Xms${MemAllocation}m -Xmx${MemAllocation}m" \
-                    --cap-add=IPC_LOCK --ulimit memlock=-1:-1 \
-                    --name es-master --log-opt awslogs-stream=${AWS::StackName}/es-master/$ECID \
-                    ${CwlLinuxParams} \
-                - MemAllocation:
-                    Fn::FindInMap: [InstanceVariables, !Ref GatewayNodeInstanceType, ram]
-            - !If 
-              - IsVersionFive
-              - !Sub | 
-                  ${EsFiveContainerName} \
-                    -E bootstrap.memory_lock=true \
-                    -E network.publish_host=$(curl http://169.254.169.254/latest/meta-data/local-ipv4) \
-                    -E cluster.name=${EsConfClusterName} \
-                    -E cloud.aws.region=${AWS::Region} \
-                    -E discovery.ec2.groups=${EsClusterNodeSg} \
-                    -E node.attr.rack_id=master \
-                    -E node.master=false \
-                    -E node.data=false
-              - !Sub |
-                  ${EsTwoContainerName} \
-                    --bootstrap.mlockall=true \
-                    --index.number_of_replicas=1 \
-                    --index.number_of_shards=5 \
-                    --network.publish_host=$(curl http://169.254.169.254/latest/meta-data/local-ipv4) \
-                    --cluster.name=${EsConfClusterName} \
-                    --cloud.aws.region=${AWS::Region} \
-                    --discovery.ec2.groups=${EsClusterNodeSg} \
-                    --node.rack_id=master \
-                    --node.master=false \
-                    --node.data=false
+          Fn::Sub:
+            - |
+              #!/bin/bash
+              sysctl -w vm.max_map_count=262144
+              ECID=$(curl http://169.254.169.254/latest/meta-data/instance-id)
+              docker run --restart=always -p 9200:9200 -p 9300:9300 -d \
+                -e ES_JAVA_OPTS="-Xms${MemAllocation}m -Xmx${MemAllocation}m" \
+                --cap-add=IPC_LOCK --ulimit memlock=-1:-1 \
+                --name es-master --log-opt awslogs-stream=${AWS::StackName}/es-gateway/$ECID \
+                ${CwlLinuxParams} \
+                -e HOST_IP=$(curl http://169.254.169.254/latest/meta-data/local-ipv4)\
+                -e CLUSTER_NAME=${EsConfClusterName} \
+                -e INSTANCE_ID=$ECID \
+                -e DISC_SECGROUP=${EsClusterNodeSg} \
+                -e IS_MASTER=false -e IS_DATA=false \
+                -e AWS_REGION=${AWS::Region} \
+                ${EsContainerName}
+            - MemAllocation: !FindInMap [InstanceVariables, !Ref GatewayNodeInstanceType, ram]
 
       BlockDeviceMappings:
         - DeviceName: /dev/xvda
           Ebs:
-            VolumeSize: '30'
+            VolumeSize: '50'
             VolumeType: gp2
   EsGatewayNodeAsg:
     Type: 'AWS::AutoScaling::AutoScalingGroup'
@@ -635,17 +493,14 @@ Resources:
         - !Ref EsClusterGatewayNodeSg
       IamInstanceProfile: !Ref EsDataNodeInstanceProfile
       UserData: !Base64 
-        'Fn::Sub':
-          - |
-            #!/bin/bash
-            ECID=$(curl http://169.254.169.254/latest/meta-data/instance-id)
-            docker run -p 80:5601 -d --restart=always \
-              --name kibana --log-opt awslogs-stream=${AWS::StackName}/kibana/$ECID \
-              ${CwlLinuxParams} \
-              -e ELASTICSEARCH_URL=http://${ClusterGateway.DNSName}:9200 \
-              ${KibanaContainerName}
-          - KibanaContainerName:
-              !If [IsVersionFive, !Ref KFiveContainerName, !Ref KFourContainerName]
+        'Fn::Sub': |
+          #!/bin/bash
+          ECID=$(curl http://169.254.169.254/latest/meta-data/instance-id)
+          docker run -p 80:5601 -d --restart=always \
+            --name kibana --log-opt awslogs-stream=${AWS::StackName}/kibana/$ECID \
+            ${CwlLinuxParams} \
+            -e ELASTICSEARCH_URL=http://${ClusterGateway.DNSName}:9200 \
+            ${KibanaContainerName}
       BlockDeviceMappings:
         - DeviceName: /dev/xvda
           Ebs:

@@ -113,7 +113,7 @@ Parameters:
   LogstashDocker:
     Description: Name of cluster. This is used for discovery.
     Type: String
-    Default: 'bitclouded/ls-aws-kinesis:2.2'
+    Default: 'bitcloudedci/ls-aws-kinesis:3-2'
   LogstashSqsDocker:
     Description: Name of cluster. This is used for discovery.
     Type: String
@@ -128,34 +128,6 @@ Parameters:
   CwlPolicy:
     Description: Managed policy for linux logging.
     Type: String
-Mappings:
-  InstanceVariables:
-    t2.micro:
-      ram: '450'
-    t2.small:
-      ram: '950'
-    t2.medium:
-      ram: '1950'
-    t2.large:
-      ram: '3800'
-    m3.medium:
-      ram: '1800'
-    m4.large:
-      ram: '3600'
-    m4.xlarge:
-      ram: '7000'
-    m4.2xlarge:
-      ram: '14500'
-    r3.large:
-      ram: '7500'
-    r3.xlarge:
-      ram: '15000'
-    r3.2xlarge:
-      ram: '30000'
-    r3.4xlarge:
-      ram: '60000'
-    r3.8xlarge:
-      ram: '120000'
 Conditions:
   HasNoKeypair: !Equals 
     - !Ref KeyPairName
@@ -323,16 +295,11 @@ Resources:
           - Sid: RawLog
             Effect: Allow
             Principal: '*'
-            Action:
-              - 'sqs:SendMessage'
+            Action: ['sqs:SendMessage']
             Resource: '*'
             Condition:
               ArnEquals:
-                'aws:SourceArn': !Join 
-                  - ''
-                  - - 'arn:aws:sns:ap-southeast-2:'
-                    - !Ref 'AWS::AccountId'
-                    - ':*'
+                'aws:SourceArn': !Sub 'arn:aws:sns:ap-southeast-2:${AWS::AccountId}:*'
       Queues:
         - !Ref LogQueue
   LogstashSg:
