@@ -208,11 +208,12 @@ Parameters:
     Description: 'VPCid associated with the subnets. [elb-subnets.parameters.VpcId]'
     Type: 'AWS::EC2::VPC::Id'
   ElbSubnets:
-    Description: 'VPCid associated with the subnets. [elb-subnets.outputs.ElbSubnets]'
+    Description: 'Subnets for AWS ELBs.'
     Type: 'List<AWS::EC2::Subnet::Id>'
   ServerSubnets:
-    Description: 'VPCid associated with the subnets. [elb-subnets.outputs.WebServerSubnets]'
+    Description: 'Subnets for AWS ELB targets.'
     Type: 'List<AWS::EC2::Subnet::Id>'
+
   CwlUbuntuAgentDocker:
     Description: Name of cluster. This is used for discovery.
     Type: String
@@ -334,10 +335,7 @@ Resources:
       IamInstanceProfile: !Ref WebServersInstanceProfile
       ImageId: !Ref BcUbuntuBaseAmiId
       InstanceType: !Ref InstanceType
-      KeyName: !If 
-        - HasNoKeypair
-        - !Ref 'AWS::NoValue'
-        - !Ref KeyPairName
+      KeyName: !If [HasNoKeypair, !Ref 'AWS::NoValue', !Ref KeyPairName]
       SecurityGroups:
         - !Ref KongSecurityGroup
       UserData: !Base64 
