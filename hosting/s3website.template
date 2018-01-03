@@ -4,7 +4,7 @@ Parameters:
   SubDomain:
     Description: Site Subdomain
     Type: String
-    Default: www
+    Default: ''
   Domain:
     Description: Site Domain
     Type: String
@@ -29,6 +29,8 @@ Conditions:
     - !Equals 
       - !Ref AcmCertificateArn
       - ''
+  HasSubdomain: !Not 
+    - !Equals [!Ref SubDomain, '']
 Resources:
   Website:
     Type: 'AWS::S3::Bucket'
@@ -76,11 +78,10 @@ Resources:
         HttpVersion: http2
         DefaultRootObject: index.html
         Aliases:
-          - !Join 
-            - ''
-            - - !Ref SubDomain
-              - .
-              - !Ref Domain
+          - !If
+            - HasSubdomain
+            - !Sub '${SubDomain}.${Domain}'
+            - !Ref Domain
         DefaultCacheBehavior:
           AllowedMethods:
             - GET
@@ -105,16 +106,11 @@ Resources:
     Type: 'AWS::Route53::RecordSet'
     DependsOn: Website
     Properties:
-      HostedZoneName: !Join 
-        - ''
-        - - !Ref Domain
-          - .
-      Name: !Join 
-        - ''
-        - - !Ref SubDomain
-          - .
-          - !Ref Domain
-          - .
+      HostedZoneName: !Sub '${Domain}.'
+      Name: !If
+        - HasSubdomain
+        - !Sub '${SubDomain}.${Domain}.'
+        - !Sub '${Domain}.'
       Type: A
       AliasTarget:
         HostedZoneId: Z2FDTNDATAQYW2

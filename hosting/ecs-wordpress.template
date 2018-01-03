@@ -203,11 +203,7 @@ Resources:
             - Name: WORDPRESS_DB_NAME
               Value: !If 
                 - HasNoDbName
-                - !Select 
-                  - '2'
-                  - !Split 
-                    - /
-                    - !Ref 'AWS::StackId'
+                - !Select ['2', !Split ['/', !Ref 'AWS::StackId']]
                 - !Ref DbName
             - Name: WORDPRESS_AUTH_KEY
               Value: !Ref DbPassword
@@ -246,11 +242,7 @@ Resources:
               - - /mnt/efs/
                 - !If 
                   - HasNoEfsPath
-                  - !Select 
-                    - '2'
-                    - !Split
-                      - /
-                      - !Ref 'AWS::StackId'
+                  - !Select ['2', !Split ['/', !Ref 'AWS::StackId']]
                   - !Ref EfsPath
   EcsService:
     Type: 'AWS::ECS::Service'
