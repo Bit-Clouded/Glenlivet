@@ -54,14 +54,14 @@ Parameters:
       - t2.xlarge
       - t2.2xlarge
       - m3.medium
-      - m4.large
-      - m4.xlarge
-      - m4.2xlarge
-      - r3.large
-      - r3.xlarge
-      - r3.2xlarge
-      - r3.4xlarge
-      - r3.8xlarge
+      - m5.large
+      - m5.xlarge
+      - m5.2xlarge
+      - r4.large
+      - r4.xlarge
+      - r4.2xlarge
+      - r4.4xlarge
+      - r4.8xlarge
     ConstraintDescription: must be a valid EC2 instance type.
   GatewayNodeInstanceType:
     Description: WebServer EC2 instance type
@@ -72,14 +72,14 @@ Parameters:
       - t2.small
       - t2.medium
       - m3.medium
-      - m4.large
-      - m4.xlarge
-      - m4.2xlarge
-      - r3.large
-      - r3.xlarge
-      - r3.2xlarge
-      - r3.4xlarge
-      - r3.8xlarge
+      - m5.large
+      - m5.xlarge
+      - m5.2xlarge
+      - r4.large
+      - r4.xlarge
+      - r4.2xlarge
+      - r4.4xlarge
+      - r4.8xlarge
     ConstraintDescription: must be a valid EC2 instance type.
   DataNodeInstanceType:
     Description: WebServer EC2 instance type
@@ -90,14 +90,20 @@ Parameters:
       - t2.small
       - t2.medium
       - m3.medium
-      - m4.large
-      - m4.xlarge
-      - m4.2xlarge
-      - r3.large
-      - r3.xlarge
-      - r3.2xlarge
-      - r3.4xlarge
-      - r3.8xlarge
+      - m5.large
+      - m5.xlarge
+      - m5.2xlarge
+      - r4.large
+      - r4.xlarge
+      - r4.2xlarge
+      - r4.4xlarge
+      - r4.8xlarge
+      - i3.large
+      - i3.xlarge
+      - i3.2xlarge
+      - i3.4xlarge
+      - i3.8xlarge
+      - i3.16xlarge
     ConstraintDescription: must be a valid EC2 instance type.
   MasterNodeInstanceType:
     Description: WebServer EC2 instance type
@@ -108,14 +114,14 @@ Parameters:
       - t2.small
       - t2.medium
       - m3.medium
-      - m4.large
-      - m4.xlarge
-      - m4.2xlarge
-      - r3.large
-      - r3.xlarge
-      - r3.2xlarge
-      - r3.4xlarge
-      - r3.8xlarge
+      - m5.large
+      - m5.xlarge
+      - m5.2xlarge
+      - r4.large
+      - r4.xlarge
+      - r4.2xlarge
+      - r4.4xlarge
+      - r4.8xlarge
     ConstraintDescription: must be a valid EC2 instance type.
   BcUbuntuBaseAmiId:
     Description: Custom AMI Baked by BitClouded Software
@@ -179,6 +185,8 @@ Conditions:
   HasKibanaHostname: !And 
     - !Not [!Equals [!Ref KibanaSubdomain, '']]
     - !Not [!Equals [!Ref HostedZoneName, '']]
+  AttachEphemeral:
+    !Equals [!Select [0, !Split ['.', !Ref DataNodeInstanceType]], 'i3']
 
 Resources:
 
@@ -220,43 +228,48 @@ Resources:
         - !Ref EsClusterNodeSg
       IamInstanceProfile: !Ref EsDataNodeInstanceProfile
       UserData: !Base64 
-        Fn::Sub: |
-          #!/bin/bash
-          umount /mnt/
-          mkfs -t ext4 /dev/xvdk
-          mkdir /mnt/xvdk
-          cp /etc/fstab /etc/fstab.bak && rm /etc/fstab
-          cat /etc/fstab.bak | grep -v ^/dev/xvdk | tee /etc/fstab
-          echo -e "/dev/xvdk\t/mnt/xvdk\tauto\tdefaults\t0\t2" >> /etc/fstab
-          mount -a
-          chown 1000:1000 /mnt/xvdk -R
-          sysctl -w vm.max_map_count=262144
+        Fn::Sub:
+          - |
+            #!/bin/bash
+            umount /mnt/
+            mkfs -t ext4 /dev/${DataDisk}
+            mkdir /mnt/xvdk
+            cp /etc/fstab /etc/fstab.bak && rm /etc/fstab
+            cat /etc/fstab.bak | grep -v ^/dev/${DataDisk} | tee /etc/fstab
+            echo -e "/dev/${DataDisk}\t/mnt/xvdk\tauto\tdefaults\t0\t2" >> /etc/fstab
+            mount -a
+            chown 1000:1000 /mnt/xvdk -R
+            sysctl -w vm.max_map_count=262144
 
-          ECID=$(curl http://169.254.169.254/latest/meta-data/instance-id)
-          HEAP_SIZE=$(($(grep MemTotal /proc/meminfo | awk '{print $2}') / 2000))
-          docker run --restart=always -p 9200:9200 -p 9300:9300 -d \
-            -v /mnt/xvdk:/usr/share/elasticsearch/data \
-            -e ES_JAVA_OPTS="-Xms${!HEAP_SIZE}m -Xmx${!HEAP_SIZE}m" \
-            --cap-add=IPC_LOCK --ulimit memlock=-1:-1 \
-            --name es-data --log-opt awslogs-stream=${AWS::StackName}/es-data/$ECID \
-            ${CwlLinuxParams} \
-            -e HOST_IP=$(curl http://169.254.169.254/latest/meta-data/local-ipv4)\
-            -e INSTANCE_ID=$ECID \
-            -e CLUSTER_NAME=${EsConfClusterName} \
-            -e DISC_SECGROUP=${EsClusterNodeSg} \
-            -e IS_MASTER=false -e IS_DATA=true \
-            -e AWS_REGION=${AWS::Region} \
-            ${EsContainerName}
+            ECID=$(curl http://169.254.169.254/latest/meta-data/instance-id)
+            HEAP_SIZE=$(($(grep MemTotal /proc/meminfo | awk '{print $2}') / 2000))
+            docker run --restart=always -p 9200:9200 -p 9300:9300 -d \
+              -v /mnt/xvdk:/usr/share/elasticsearch/data \
+              -e ES_JAVA_OPTS="-Xms${!HEAP_SIZE}m -Xmx${!HEAP_SIZE}m" \
+              --cap-add=IPC_LOCK --ulimit memlock=-1:-1 \
+              --name es-data --log-opt awslogs-stream=${AWS::StackName}/es-data/$ECID \
+              ${CwlLinuxParams} \
+              -e HOST_IP=$(curl http://169.254.169.254/latest/meta-data/local-ipv4)\
+              -e INSTANCE_ID=$ECID \
+              -e CLUSTER_NAME=${EsConfClusterName} \
+              -e DISC_SECGROUP=${EsClusterNodeSg} \
+              -e IS_MASTER=false -e IS_DATA=true \
+              -e AWS_REGION=${AWS::Region} \
+              ${EsContainerName}
+          - DataDisk: !If ["AttachEphemeral", "nvme0n1", "xvdk"]
 
       BlockDeviceMappings:
         - DeviceName: /dev/xvda
           Ebs:
             VolumeSize: '30'
             VolumeType: gp2
-        - DeviceName: /dev/xvdk
-          Ebs:
-            VolumeSize: !Ref EsDataDiskSize
-            VolumeType: gp2
+        - !If
+          - "AttachEphemeral"
+          - !Ref "AWS::NoValue"
+          - DeviceName: /dev/xvdk
+            Ebs: 
+              VolumeSize: !Ref EsDataDiskSize
+              VolumeType: gp2
 
   EsDataNodeGroupOneAsg:
     Type: 'AWS::AutoScaling::AutoScalingGroup'
@@ -365,6 +378,8 @@ Resources:
             -e IS_MASTER=false -e IS_DATA=false \
             -e AWS_REGION=${AWS::Region} \
             ${EsContainerName}
+          
+          #docker run -d -p 9000:9000 dylanmei/cerebro bin/cerebro -Dhosts.0.host=http://internal-Test-Elas-ClusterG-W8Y38SYKBYRP-1423967256.ap-southeast-2.elb.amazonaws.com:9200
 
       BlockDeviceMappings:
         - DeviceName: /dev/xvda
