@@ -88,7 +88,11 @@ Parameters:
   EcsAgentImage:
     Description: 'AWS ECS Agent Name'
     Type: String
-    Default: amazon/amazon-ecs-agent:v1.14.3
+    Default: amazon/amazon-ecs-agent
+  EcsAgentVersion:
+    Description: 'AWS ECS Agent Name'
+    Type: String
+    Default: v1.16.0
 
   # Scaling Parameters
   ScaleTestPeriod:
@@ -158,9 +162,7 @@ Resources:
     Type: 'AWS::EFS::MountTarget'
     Properties:
       FileSystemId: !Ref SharedDiskGp
-      SubnetId: !Select 
-        - '1'
-        - !Ref ServerSubnets
+      SubnetId: !Select ['1', !Ref ServerSubnets]
       SecurityGroups:
         - !Ref DatabaseSg
   MountTarget3:
@@ -184,54 +186,10 @@ Resources:
       MaxSize: '100'
       Tags:
         - Key: Name
-          Value: !Join 
-            - ''
-            - - !Ref 'AWS::StackName'
-              - ' Windows Agent'
+          Value: !Sub '${AWS::StackName} Windows Agent'
           PropagateAtLaunch: 'true'
   WindowsAgentLc:
     Type: 'AWS::AutoScaling::LaunchConfiguration'
-    Metadata:
-      'AWS::CloudFormation::Init':
-        config:
-          files:
-            'c:\cfn\cfn-hup.conf':
-              content: !Join 
-                - ''
-                - - |
-                    [main]
-                  - stack=
-                  - !Ref 'AWS::StackId'
-                  - |+
-
-                  - region=
-                  - !Ref 'AWS::Region'
-                  - |+
-
-            'c:\cfn\hooks.d\cfn-auto-reloader.conf':
-              content: !Join 
-                - ''
-                - - |
-                    [cfn-auto-reloader-hook]
-                  - |
-                    triggers=post.update
-                  - >
-                    path=Resources.WindowsAgentLc.Metadata.AWS::CloudFormation::Init
-                  - 'action=cfn-init.exe -v -s '
-                  - !Ref 'AWS::StackId'
-                  - ' -r SharePointFoundation'
-                  - ' --region '
-                  - !Ref 'AWS::Region'
-                  - |+
-
-          services:
-            windows:
-              cfn-hup:
-                enabled: 'true'
-                ensureRunning: 'true'
-                files:
-                  - 'c:\cfn\cfn-hup.conf'
-                  - 'c:\cfn\hooks.d\cfn-auto-reloader.conf'
     Properties:
       ImageId: !Ref WindowsContainerAmiId
       SecurityGroups:
@@ -261,8 +219,7 @@ Resources:
             $ifIndex = (Get-NetAdapter -InterfaceDescription "Hyper-V Virtual Ethernet*" | Sort-Object | Select ifIndex).ifIndex
             New-NetRoute -DestinationPrefix 169.254.170.2/32 -InterfaceIndex $ifIndex -NextHop $gateway
 
-            $agentVersion = 'v1.14.1';
-            $agentZipUri = "https://s3.amazonaws.com/amazon-ecs-agent/ecs-agent-windows-$agentVersion.zip";
+            $agentZipUri = "https://s3.amazonaws.com/amazon-ecs-agent/ecs-agent-windows-${EcsAgentVersion}.zip";
             $ecsExeDir = "$env:ProgramFiles\Amazon\ECS";
             $zipFile = "$env:TEMP\ecs-agent.zip";
             Invoke-RestMethod -OutFile $zipFile -Uri $agentZipUri;
@@ -279,7 +236,6 @@ Resources:
             Register-ScheduledJob -Name $jobname -ScriptBlock $scriptblock -Trigger $trigger -ScheduledJobOption $options -RunNow;
 
             # end of script
-            cfn-init.exe -v -s ${AWS::StackId} -r WindowsAgentLc --region ${AWS::Region};
             cfn-signal.exe -e $lastexitcode --stack ${AWS::StackName} --resource ECSAutoScalingGroup --region ${AWS::Region};
             </powershell>
             <persist>true</persist>
@@ -292,10 +248,7 @@ Resources:
       MaxSize: '100'
       Tags:
         - Key: Name
-          Value: !Join 
-            - ''
-            - - !Ref 'AWS::StackName'
-              - ' Linux Agent'
+          Value: !Sub '${AWS::StackName} Linux Agent'
           PropagateAtLaunch: 'true'
     #CreationPolicy:
     #  ResourceSignal:
@@ -344,7 +297,7 @@ Resources:
             -v /var/lib/ecs/data:/data \
             -p 127.0.0.1:51678:51678 \
             -p 127.0.0.1:51679:51679 \
-            ${EcsAgentImage}
+            ${EcsAgentImage}:${EcsAgentVersion}
 
       BlockDeviceMappings:
         - DeviceName: /dev/sda1
@@ -571,12 +524,6 @@ Resources:
 Outputs:
   EcsAdminUrl:
     Description: Ec2 Container Service Cluster
-    Value: !Join 
-      - ''
-      - - 'https://'
-        - !Ref 'AWS::Region'
-        - .console.aws.amazon.com/ecs/home?region=
-        - !Ref 'AWS::Region'
-        - '#/clusters/'
-        - !Ref EcsCluster
-        - /containerInstances
+    Value: !Sub >-
+      https://${AWS::Region}.console.aws.amazon.com
+      /ecs/home?region=${AWS::Region}#/clusters/${EcsCluster}/containerInstances'
