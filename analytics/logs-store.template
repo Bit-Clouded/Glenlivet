@@ -654,6 +654,69 @@ Resources:
                 - !Ref 'AWS::AccountId'
                 - ':role/'
                 - !Ref LogStreamRole
+  BillingLog:
+    Type: 'AWS::S3::Bucket'
+    Properties:
+      AccessControl: LogDeliveryWrite
+      LoggingConfiguration:
+        DestinationBucketName: !Ref AccessS3Log
+        LogFilePrefix: !Join 
+          - ''
+          - - !Ref 'AWS::StackName'
+            - '-Billing/'
+      VersioningConfiguration:
+        Status: Enabled
+      NotificationConfiguration:
+        TopicConfigurations:
+          - Topic: !Ref BillingNotification
+            Event: 's3:ObjectCreated:*'
+    DeletionPolicy: Retain
+  BillingLogPolicy:
+    Type: 'AWS::S3::BucketPolicy'
+    Properties:
+      Bucket: !Ref BillingLog
+      PolicyDocument:
+        Statement:
+          - Effect: Allow
+            Action:
+              - 's3:GetBucketAcl'
+              - 's3:GetBucketPolicy'
+            Resource: !Sub 'arn:aws:s3:::${BillingLog}'
+            Principal: 
+              AWS:
+                - 'arn:aws:iam::386209384616:root'
+          - Effect: Allow
+            Action:
+              - 's3:PutObject'
+            Principal: 
+              AWS:
+                - 'arn:aws:iam::386209384616:root'
+            Resource: !Sub 'arn:aws:s3:::${BillingLog}/*'
+          - Effect: Deny
+            Action:
+              - 's3:DeleteObject'
+              - 's3:DeleteObjectVersion'            
+            Resource: !Sub 'arn:aws:s3:::${BillingLog}/*'
+            Principal: '*'  
+  BillingNotification:
+    Type: 'AWS::SNS::Topic'
+    Properties:
+      DisplayName: Billing
+  BillingNotificationPolicy:
+    Type: 'AWS::SNS::TopicPolicy'
+    Properties:
+      PolicyDocument:
+        Statement:
+          - Sid: Statement1            
+            Effect: Allow
+            Principal:
+              AWS: '*'
+            Action:
+              - 'SNS:Publish'
+            Resource:
+              - !Ref BillingNotification
+      Topics:
+        - !Ref BillingNotification                         
   LinuxMemoryAndLogShiping:
     Type: "AWS::SSM::Document"
     Properties: 
