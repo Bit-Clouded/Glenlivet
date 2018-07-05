@@ -1,618 +1,569 @@
-{
-	"AWSTemplateFormatVersion": "2010-09-09",
-	"Description": "Buckets to hold aws logs.",
-	"Metadata" : {
-		"DefaultName" : "LogStore"
-	},
-	"Parameters": {
-		"BucketPrefix" : {
-			"Description" : "Bucket name for raw logs from elastic load balancer and cloud trail.",
-			"Type" : "String",
-			"Default" : "bc"
-		},
-		"BucketSuffix" : {
-			"Description" : "Bucket name for raw logs from s3 bucket and cloud front.",
-			"Type" : "String",
-			"Default" : ""
-		}
-	},
-
-	"Resources" : {
-		"AccessS3Log" : {
-			"Type" : "AWS::S3::Bucket",
-			"DependsOn": "AccessS3LogBucketSnsPolicy",
-			"Properties" : {
-				"AccessControl" : "LogDeliveryWrite",
-				"BucketName" : {"Fn::Join": ["",[
-					{"Ref":"BucketPrefix"}, "-access-s3-log", {"Ref":"BucketSuffix"}
-				]]},
-				"VersioningConfiguration" : {
-					"Status": "Enabled"
-				},
-				"NotificationConfiguration" : {
-					"TopicConfigurations" : [{
-						"Topic": {"Ref":"AccessS3LogBucketNotification"},
-						"Event": "s3:ObjectCreated:*"
-					}]
-				}
-			},
-			"DeletionPolicy" : "Retain"
-		},
-		"AccessS3LogBucketPolicy" : {
-			"Type" : "AWS::S3::BucketPolicy",
-			"Properties" : {
-				"Bucket" : {"Ref" : "AccessS3Log"},
-				"PolicyDocument": {
-					"Statement":[{
-						"Action":["s3:DeleteObject","s3:DeleteObjectVersion"],
-						"Effect":"Deny",
-						"Resource": { "Fn::Join" : ["", ["arn:aws:s3:::", { "Ref" : "AccessS3Log" } , "/*" ]]},
-						"Principal":"*"
-					}]
-				}
-			}
-  		},
-		"AccessCfLog" : {
-			"Type" : "AWS::S3::Bucket",
-			"DependsOn": "AccessCfLogBucketSnsPolicy",
-			"Properties" : {
-				"AccessControl" : "LogDeliveryWrite",
-				"BucketName" : {"Fn::Join": ["",[
-					{"Ref":"BucketPrefix"}, "-access-cf-log", {"Ref":"BucketSuffix"}
-				]]},
-				"LoggingConfiguration": {
-					"DestinationBucketName" : { "Ref": "AccessS3Log"},
-					"LogFilePrefix" : {"Fn::Join": ["",[
-						{"Ref":"BucketPrefix"}, "-access-cf-log", {"Ref":"BucketSuffix"}, "/"
-					]]}
-				},
-				"VersioningConfiguration" : {
-					"Status": "Enabled"
-				},
-				"NotificationConfiguration" : {
-					"TopicConfigurations" : [{
-						"Topic": {"Ref":"AccessCfLogBucketNotification"},
-						"Event": "s3:ObjectCreated:*"
-					}]
-				}
-			},
-			"DeletionPolicy" : "Retain"
-		},
-		"AccessCfLogBucketPolicy" : {
-			"Type" : "AWS::S3::BucketPolicy",
-			"Properties" : {
-				"Bucket" : {"Ref" : "AccessCfLog"},
-				"PolicyDocument": {
-					"Statement":[{
-						"Action":["s3:DeleteObject","s3:DeleteObjectVersion"],
-						"Effect":"Deny",
-						"Resource": { "Fn::Join" : ["", ["arn:aws:s3:::", { "Ref" : "AccessCfLog" } , "/*" ]]},
-						"Principal":"*"
-					}]
-				}
-			}
-  		},
-		"Raw" : {
-			"Type" : "AWS::S3::Bucket",
-			"DependsOn": "RawBucketSnsPolicy",
-			"Properties" : {
-				"AccessControl" : "Private",
-				"BucketName" : {"Fn::Join": ["",[
-					{"Ref":"BucketPrefix"}, "-raw-log", {"Ref":"BucketSuffix"}
-				]]},
-				"LoggingConfiguration": {
-					"DestinationBucketName" : { "Ref": "AccessS3Log"},
-					"LogFilePrefix" : {"Fn::Join": ["",[
-						{"Ref":"BucketPrefix"}, "-raw-log", {"Ref":"BucketSuffix"}, "/"
-					]]}
-				},
-				"VersioningConfiguration" : {
-					"Status": "Enabled"
-				},
-				"NotificationConfiguration" : {
-					"TopicConfigurations" : [{
-						"Topic": {"Ref":"RawBucketNotification"},
-						"Event": "s3:ObjectCreated:*"
-					}]
-				}
-			},
-			"DeletionPolicy" : "Retain"
-		},
-		"RawBucketPolicy" : {
-			"Type" : "AWS::S3::BucketPolicy",
-			"Properties" : {
-				"Bucket" : {"Ref" : "Raw"},
-				"PolicyDocument": {
-					"Statement":[
-					{
-						"Action":["s3:DeleteObject","s3:DeleteObjectVersion"],
-						"Effect":"Deny",
-						"Resource": { "Fn::Join" : ["", ["arn:aws:s3:::", { "Ref" : "Raw" } , "/*" ]]},
-						"Principal":"*"
-					},
-					{
-						"Action":["s3:GetBucketAcl"],
-						"Effect":"Allow",
-						"Resource": { "Fn::Join" : ["", ["arn:aws:s3:::", { "Ref" : "Raw" } ]]},
-						"Principal":{
-							"AWS": [
-								"arn:aws:iam::216624486486:root",
-								"arn:aws:iam::903692715234:root",
-								"arn:aws:iam::284668455005:root",
-								"arn:aws:iam::035351147821:root",
-								"arn:aws:iam::859597730677:root",
-								"arn:aws:iam::814480443879:root",
-								"arn:aws:iam::086441151436:root",
-								"arn:aws:iam::388731089494:root",
-								"arn:aws:iam::113285607260:root"
-							]
-						}
-					},
-					{
-						"Action":["s3:PutObject"],
-						"Effect":"Allow",
-						"Resource": { "Fn::Join" : ["", ["arn:aws:s3:::", { "Ref" : "Raw" } , "/AWSLogs/*" ]]},
-						"Principal":{
-							"AWS": [
-								"arn:aws:iam::127311923021:root",
-								"arn:aws:iam::027434742980:root",
-								"arn:aws:iam::797873946194:root",
-								"arn:aws:iam::156460612806:root",
-								"arn:aws:iam::054676820928:root",
-								"arn:aws:iam::582318560864:root",
-								"arn:aws:iam::114774131450:root",
-								"arn:aws:iam::783225319266:root",
-								"arn:aws:iam::507241528517:root",
-
-								"arn:aws:iam::216624486486:root",
-								"arn:aws:iam::903692715234:root",
-								"arn:aws:iam::284668455005:root",
-								"arn:aws:iam::035351147821:root",
-								"arn:aws:iam::859597730677:root",
-								"arn:aws:iam::814480443879:root",
-								"arn:aws:iam::086441151436:root",
-								"arn:aws:iam::388731089494:root",
-								"arn:aws:iam::113285607260:root"
-							]
-						}
-					}]
-				}
-			}
-  		},
-
-		"RawBucketNotification" : {
-			"Type" : "AWS::SNS::Topic",
-			"Properties" : {
-				"DisplayName" : "CloudTrail and ELB Bucket Event Notification",
-				"TopicName" : { "Fn::Join": ["", [
-					"s3-event-", {"Ref":"BucketPrefix"}, "-raw-log", {"Ref":"BucketSuffix"}
-				]]}
-			}
-		},
-		"RawBucketSnsPolicy" : {
-			"Type" : "AWS::SNS::TopicPolicy",
-			"Properties" : {
-				"PolicyDocument": {
-					"Version": "2008-10-17",
-					"Statement": [
-					{
-						"Sid": "raw-log-file-created-sns",
-						"Effect": "Allow",
-						"Principal": {
-							"AWS" : "*"  
-						},
-						"Action": [
-							"SNS:Publish"
-						],
-						"Resource": [
-							{"Ref": "RawBucketNotification" }
-						],
-						"Condition": {
-							"ArnLike": {          
-								"aws:SourceArn": { "Fn::Join": ["", [
-									"arn:aws:s3:*:*:", {"Ref":"BucketPrefix"}, "-raw-log", {"Ref":"BucketSuffix"}
-								]]}
-							}
-						}
-					}]
-				},
-				"Topics": [
-					{"Ref": "RawBucketNotification" }
-				]
-			}
-		},
-
-		"AccessS3LogBucketNotification" : {
-			"Type" : "AWS::SNS::Topic",
-			"Properties" : {
-				"DisplayName" : "S3 and CloudFront Access Log Bucket Event Notification",
-				"TopicName" : { "Fn::Join": ["", [
-					"s3-event-", {"Ref":"BucketPrefix"}, "-access-s3-log", {"Ref":"BucketSuffix"}
-				]]}
-			}
-		},
-		"AccessS3LogBucketSnsPolicy" : {
-			"Type" : "AWS::SNS::TopicPolicy",
-			"Properties" :
-			{
-				"PolicyDocument": {
-					"Version": "2008-10-17",
-					"Statement": [
-					{
-						"Sid": "s3-access-file-created-sns",
-						"Effect": "Allow",
-						"Principal": {
-							"AWS" : "*"  
-						},
-						"Action": [
-							"SNS:Publish"
-						],
-						"Resource": [
-							{"Ref": "AccessS3LogBucketNotification" }
-						],
-						"Condition": {
-							"ArnLike": {          
-								"aws:SourceArn": { "Fn::Join": ["", [
-									"arn:aws:s3:*:*:", {"Ref":"BucketPrefix"}, "-access-s3-log", {"Ref":"BucketSuffix"}
-								]]}
-							}
-						}
-					}]
-				},
-				"Topics": [
-					{"Ref": "AccessS3LogBucketNotification" }
-				]
-			}
-		},
-		"AccessCfLogBucketNotification" : {
-			"Type" : "AWS::SNS::Topic",
-			"Properties" : {
-				"DisplayName" : "S3 and CloudFront Access Log Bucket Event Notification",
-				"TopicName" : { "Fn::Join": ["", [
-					"s3-event-", {"Ref":"BucketPrefix"}, "-access-cf-log", {"Ref":"BucketSuffix"}
-				]]}
-			}
-		},
-		"AccessCfLogBucketSnsPolicy" : {
-			"Type" : "AWS::SNS::TopicPolicy",
-			"Properties" :
-			{
-				"PolicyDocument": {
-					"Version": "2008-10-17",
-					"Statement": [
-					{
-						"Sid": "s3-access-file-created-sns",
-						"Effect": "Allow",
-						"Principal": {
-							"AWS" : "*"  
-						},
-						"Action": [
-							"SNS:Publish"
-						],
-						"Resource": [
-							{"Ref": "AccessCfLogBucketNotification" }
-						],
-						"Condition": {
-							"ArnLike": {          
-								"aws:SourceArn": { "Fn::Join": ["", [
-									"arn:aws:s3:*:*:", {"Ref":"BucketPrefix"}, "-access-cf-log", {"Ref":"BucketSuffix"}
-								]]}
-							}
-						}
-					}]
-				},
-				"Topics": [
-					{"Ref": "AccessCfLogBucketNotification" }
-				]
-			}
-		},
-
-        "GlobalCloudTrailLog" : {
-			"DependsOn" : ["LogStream", "LogStreamRole", "LogStreamRolePolicy"],
-            "Type" : "AWS::Logs::LogGroup",
-            "Properties" : {
-            }
-        },
-        "GlobalCloudTrail" : {
-            "Type" : "AWS::CloudTrail::Trail",
-            "Properties" : {
-                "CloudWatchLogsLogGroupArn" : { "Fn::GetAtt" : [ "GlobalCloudTrailLog", "Arn" ]},
-                "CloudWatchLogsRoleArn" : {"Fn::GetAtt" : ["GlobalCloudTrailLogRole", "Arn"] },
-                "EnableLogFileValidation" : "true",
-                "IncludeGlobalServiceEvents" : "true",
-                "IsLogging" : "true",
-                "IsMultiRegionTrail" : "true",
-                "S3BucketName" : {"Ref":"Raw"},
-                "SnsTopicName" : {"Ref":"GlobalCloudTrailNotification"}
-            }
-        },
-        "GlobalCloudTrailNotification" : {
-			"Type" : "AWS::SNS::Topic",
-			"Properties" : {
-				"DisplayName" : "CloudTrail notification",
-				"TopicName" : { "Fn::Join": ["", [
-					"cloudtrail-event-", {"Ref": "GlobalCloudTrailLog"}
-				]]}
-			}
-		},
-        "GlobalCloudTrailNotificationPolicy" : {
-			"Type" : "AWS::SNS::TopicPolicy",
-			"Properties" : {
-				"PolicyDocument": {
-                    "Statement": [
-                    {
-                        "Sid" : "Statement1",
-                        "Effect": "Allow",
-                        "Principal": { "AWS": "*" },
-                        "Action": [
-                            "SNS:GetTopicAttributes",
-                            "SNS:SetTopicAttributes",
-                            "SNS:AddPermission",
-                            "SNS:RemovePermission",
-                            "SNS:DeleteTopic",
-                            "SNS:Subscribe",
-                            "SNS:ListSubscriptionsByTopic",
-                            "SNS:Publish",
-                            "SNS:Receive"
-                        ],
-                        "Resource": {"Ref":"GlobalCloudTrailNotification"},
-                        "Condition": {
-                            "StringEquals": {
-                                "AWS:SourceOwner": "380048663093"
-                            }
-                        }
-                    },{
-                        "Sid" : "Statement2",
-                        "Effect": "Allow",
-                        "Principal": {
-                            "Service": "cloudtrail.amazonaws.com"
-                        },
-                        "Action": "SNS:Publish",
-                        "Resource": {"Ref":"GlobalCloudTrailNotification"}
-                    }]
-                },
-				"Topics": [
-					{"Ref": "GlobalCloudTrailNotification" }
-				]
-			}
-		},
-        "GlobalCloudTrailLogRole" : {
-            "Type": "AWS::IAM::Role",
-            "Properties": {
-                "AssumeRolePolicyDocument": {
-                    "Version": "2012-10-17",
-                    "Statement": [{
-                        "Effect": "Allow",
-                        "Principal": {
-                            "Service": "cloudtrail.amazonaws.com"
-                        },
-                        "Action": "sts:AssumeRole"
-                    }]
-                },
-                "Path": "/analytics/log-store/",
-                "Policies": [{
-                    "PolicyName": "root",
-                    "PolicyDocument": {
-                        "Version": "2012-10-17",
-                        "Statement": [{
-                            "Effect": "Allow",
-                            "Action": ["*"],
-                            "Resource": {"Fn::GetAtt" : ["GlobalCloudTrailLog", "Arn"] }
-                        }]
-                    }
-                }]
-            }
-        },
-		"GlobalCloudTrailLogSub" : {
-			"DependsOn" : ["GlobalCloudTrailLog"],
-			"Type" : "AWS::Logs::SubscriptionFilter",
-			"Properties" : {
-				"DestinationArn" : { "Fn::GetAtt" : ["LogStream","Arn"] },
-				"FilterPattern" : "",
-				"LogGroupName" : {"Ref":"GlobalCloudTrailLog"},
-				"RoleArn" : { "Fn::GetAtt" : [ "LogStreamRole", "Arn" ] }
-			}
-		},
-
-		"VpcTrafficLog" : {
-			"DependsOn" : ["LogStream", "LogStreamRole", "LogStreamRolePolicy"],
-            "Type" : "AWS::Logs::LogGroup",
-            "Properties" : {
-            }
-		},
-		"VpcTrafficLogSub" : {
-			"DependsOn" : ["VpcTrafficLog"],
-			"Type" : "AWS::Logs::SubscriptionFilter",
-			"Properties" : {
-				"DestinationArn" : { "Fn::GetAtt" : ["LogStream","Arn"] },
-				"FilterPattern" : "[version, account_id, interface_id, srcaddr, dstaddr, srcport, dstport, protocol, packets, bytes, start, end, action, log_status]",
-				"LogGroupName" : {"Ref":"VpcTrafficLog"},
-				"RoleArn" : { "Fn::GetAtt" : [ "LogStreamRole", "Arn" ] }
-			}
-		},
-		"VpcTrafficLogRole" : {
-            "Type": "AWS::IAM::Role",
-            "Properties": {
-                "AssumeRolePolicyDocument": {
-                    "Version": "2012-10-17",
-                    "Statement": [{
-						"Effect": "Allow",
-						"Principal": {
-							"Service": "vpc-flow-logs.amazonaws.com"
-						},
-						"Action": "sts:AssumeRole"
-					}]
-                },
-                "Path": "/analytics/log-store/",
-                "Policies": [{
-                    "PolicyName": "root",
-                    "PolicyDocument": {
-                        "Version": "2012-10-17",
-                        "Statement": [{
-                            "Effect": "Allow",
-                            "Action": [
-							    "logs:CreateLogStream",
-								"logs:DescribeLogGroups",
-								"logs:DescribeLogStreams",
-								"logs:PutLogEvents"
-							],
-                            "Resource": { "Fn::GetAtt" : ["VpcTrafficLog", "Arn"] }
-                        }]
-                    }
-                }]
-            }
-        },
-		
-        "LxSysLog" : {
-			"DependsOn" : ["LogStream", "LogStreamRole", "LogStreamRolePolicy"],
-            "Type" : "AWS::Logs::LogGroup",
-            "Properties" : {
-            }
-        },
-		"LxSysLogLogSub" : {
-			"DependsOn" : ["LxSysLog"],
-			"Type" : "AWS::Logs::SubscriptionFilter",
-			"Properties" : {
-				"DestinationArn" : { "Fn::GetAtt" : ["LogStream","Arn"] },
-				"FilterPattern" : "",
-				"LogGroupName" : {"Ref":"LxSysLog"},
-				"RoleArn" : { "Fn::GetAtt" : [ "LogStreamRole", "Arn" ] }
-			}
-		},
-
-		"LxAuthLog" : {
-			"DependsOn" : ["LogStream", "LogStreamRole", "LogStreamRolePolicy"],
-            "Type" : "AWS::Logs::LogGroup",
-            "Properties" : {
-            }
-		},
-		"LxAuthLogSub" : {
-			"DependsOn" : ["LxAuthLog"],
-			"Type" : "AWS::Logs::SubscriptionFilter",
-			"Properties" : {
-				"DestinationArn" : { "Fn::GetAtt" : ["LogStream","Arn"] },
-				"FilterPattern" : "",
-				"LogGroupName" : {"Ref":"LxAuthLog"},
-				"RoleArn" : { "Fn::GetAtt" : [ "LogStreamRole", "Arn" ] }
-			}
-		},
-
-		"LxDockerLog" : {
-			"DependsOn" : ["LogStream", "LogStreamRole", "LogStreamRolePolicy"],
-            "Type" : "AWS::Logs::LogGroup",
-            "Properties" : {
-            }
-		},
-		"LxDockerLogSub" : {
-			"DependsOn" : ["LxDockerLog"],
-			"Type" : "AWS::Logs::SubscriptionFilter",
-			"Properties" : {
-				"DestinationArn" : { "Fn::GetAtt" : ["LogStream","Arn"] },
-				"FilterPattern" : "",
-				"LogGroupName" : {"Ref":"LxDockerLog"},
-				"RoleArn" : { "Fn::GetAtt" : [ "LogStreamRole", "Arn" ] }
-			}
-		},
-
-		"LinuxLogPolicy" : {
-			"Type": "AWS::IAM::ManagedPolicy",
-			"Properties": {
-				"Path" : "/analytics/log-store/",
-				"PolicyDocument" : {
-					"Version": "2012-10-17",
-					"Statement": [{
-						"Effect": "Allow",
-						"Action": [
-							"cloudwatch:PutMetricData",
-							"ec2:DescribeTags"
-						],
-						"Resource": ["*"]
-					},{
-						"Effect": "Allow",
-						"Action": [
-							"logs:CreateLogGroup",
-							"logs:CreateLogStream",
-							"logs:PutLogEvents",
-							"logs:DescribeLogGroups",
-							"logs:DescribeLogStreams"
-						],
-						"Resource": [
-							{ "Fn::GetAtt" : ["LxSysLog","Arn"] },
-							{ "Fn::GetAtt" : ["LxAuthLog","Arn"] },
-							{ "Fn::GetAtt" : ["LxDockerLog","Arn"] }
-						]
-					}]
-				}
-			}
-		},
-
-		"LogStream" : {
-			"Type" : "AWS::Kinesis::Stream",
-			"Properties" : {
-				"ShardCount" : 1
-			}
-		},
-		"LogStreamRole" : {
-			"Type": "AWS::IAM::Role",
-			"Properties": {
-				"AssumeRolePolicyDocument" : {
-					"Version": "2012-10-17",
-					"Statement": [{
-						"Effect": "Allow",
-						"Principal": { 
-							"Service": { "Fn::Join": ["", [
-								"logs.", { "Ref": "AWS::Region" } ,".amazonaws.com"
-							]]}
-						},
-						"Action": "sts:AssumeRole"
-					}]
-				}
-			}
-		},
-		"LogStreamRolePolicy": {
-			"Type": "AWS::IAM::Policy",
-			"Properties": {
-				"PolicyName": "KinesisPutRecordPolicy",
-				"Roles": [ { "Ref": "LogStreamRole" } ],
-				"PolicyDocument": {
-					"Version": "2012-10-17",
-					"Statement": [
-						{
-							"Effect": "Allow",
-							"Action": "kinesis:PutRecord",
-							"Resource": { "Fn::GetAtt" : ["LogStream","Arn"] }
-						},
-						{
-							"Effect": "Allow",
-							"Action": "iam:PassRole",
-							"Resource": { "Fn::Join" : ["", [
-								"arn:aws:iam::", { "Ref": "AWS::AccountId" }, ":role/", { "Ref": "LogStreamRole" }
-							]]}
-						}
-					]
-				}
-			}
-		}
-
-
-	},
-	"Outputs" : {
-		"LxDockerLogParams" : {
-			"Value":{"Fn::Join":["",[
-				"--log-driver=awslogs ",
-				"--log-opt awslogs-group=", {"Ref":"LxDockerLog"}
-			]]}
-		},
-		"DockerCwlParams" : {
-			"Value":{"Fn::Join":["",[
-				"-e SYSLOG=", {"Ref":"LxSysLog"}, " ",
-				"-e AUTHLOG=", {"Ref":"LxAuthLog"}
-			]]}
-		},
-		"FlowLogRoleArn" : {
-			"Value" : 
-			{ "Fn::GetAtt" : [ "VpcTrafficLogRole", "Arn" ]}
-			
-		}
-	}
-}
+AWSTemplateFormatVersion: 2010-09-09
+Description: Buckets to hold aws logs.
+Metadata:
+  DefaultName: LogStore
+Parameters:
+  BucketPrefix:
+    Description: Bucket name for raw logs from elastic load balancer and cloud trail.
+    Type: String
+    Default: bc
+  BucketSuffix:
+    Description: Bucket name for raw logs from s3 bucket and cloud front.
+    Type: String
+    Default: ''
+Resources:
+  AccessS3Log:
+    Type: 'AWS::S3::Bucket'
+    DependsOn: AccessS3LogBucketSnsPolicy
+    Properties:
+      AccessControl: LogDeliveryWrite
+      BucketName: !Join 
+        - ''
+        - - !Ref BucketPrefix
+          - '-access-s3-log'
+          - !Ref BucketSuffix
+      VersioningConfiguration:
+        Status: Enabled
+      NotificationConfiguration:
+        TopicConfigurations:
+          - Topic: !Ref AccessS3LogBucketNotification
+            Event: 's3:ObjectCreated:*'
+    DeletionPolicy: Retain
+  AccessS3LogBucketPolicy:
+    Type: 'AWS::S3::BucketPolicy'
+    Properties:
+      Bucket: !Ref AccessS3Log
+      PolicyDocument:
+        Statement:
+          - Action:
+              - 's3:DeleteObject'
+              - 's3:DeleteObjectVersion'
+            Effect: Deny
+            Resource: !Join 
+              - ''
+              - - 'arn:aws:s3:::'
+                - !Ref AccessS3Log
+                - /*
+            Principal: '*'
+  AccessCfLog:
+    Type: 'AWS::S3::Bucket'
+    DependsOn: AccessCfLogBucketSnsPolicy
+    Properties:
+      AccessControl: LogDeliveryWrite
+      BucketName: !Join 
+        - ''
+        - - !Ref BucketPrefix
+          - '-access-cf-log'
+          - !Ref BucketSuffix
+      LoggingConfiguration:
+        DestinationBucketName: !Ref AccessS3Log
+        LogFilePrefix: !Join 
+          - ''
+          - - !Ref BucketPrefix
+            - '-access-cf-log'
+            - !Ref BucketSuffix
+            - /
+      VersioningConfiguration:
+        Status: Enabled
+      NotificationConfiguration:
+        TopicConfigurations:
+          - Topic: !Ref AccessCfLogBucketNotification
+            Event: 's3:ObjectCreated:*'
+    DeletionPolicy: Retain
+  AccessCfLogBucketPolicy:
+    Type: 'AWS::S3::BucketPolicy'
+    Properties:
+      Bucket: !Ref AccessCfLog
+      PolicyDocument:
+        Statement:
+          - Action:
+              - 's3:DeleteObject'
+              - 's3:DeleteObjectVersion'
+            Effect: Deny
+            Resource: !Join 
+              - ''
+              - - 'arn:aws:s3:::'
+                - !Ref AccessCfLog
+                - /*
+            Principal: '*'
+  Raw:
+    Type: 'AWS::S3::Bucket'
+    DependsOn: RawBucketSnsPolicy
+    Properties:
+      AccessControl: Private
+      BucketName: !Join 
+        - ''
+        - - !Ref BucketPrefix
+          - '-raw-log'
+          - !Ref BucketSuffix
+      LoggingConfiguration:
+        DestinationBucketName: !Ref AccessS3Log
+        LogFilePrefix: !Join 
+          - ''
+          - - !Ref BucketPrefix
+            - '-raw-log'
+            - !Ref BucketSuffix
+            - /
+      VersioningConfiguration:
+        Status: Enabled
+      NotificationConfiguration:
+        TopicConfigurations:
+          - Topic: !Ref RawBucketNotification
+            Event: 's3:ObjectCreated:*'
+    DeletionPolicy: Retain
+  RawBucketPolicy:
+    Type: 'AWS::S3::BucketPolicy'
+    Properties:
+      Bucket: !Ref Raw
+      PolicyDocument:
+        Statement:
+          - Action:
+              - 's3:DeleteObject'
+              - 's3:DeleteObjectVersion'
+            Effect: Deny
+            Resource: !Join 
+              - ''
+              - - 'arn:aws:s3:::'
+                - !Ref Raw
+                - /*
+            Principal: '*'
+          - Action:
+              - 's3:GetBucketAcl'
+            Effect: Allow
+            Resource: !Join 
+              - ''
+              - - 'arn:aws:s3:::'
+                - !Ref Raw
+            Principal:
+              AWS:
+                - 'arn:aws:iam::216624486486:root'
+                - 'arn:aws:iam::903692715234:root'
+                - 'arn:aws:iam::284668455005:root'
+                - 'arn:aws:iam::035351147821:root'
+                - 'arn:aws:iam::859597730677:root'
+                - 'arn:aws:iam::814480443879:root'
+                - 'arn:aws:iam::086441151436:root'
+                - 'arn:aws:iam::388731089494:root'
+                - 'arn:aws:iam::113285607260:root'
+          - Action:
+              - 's3:PutObject'
+            Effect: Allow
+            Resource: !Join 
+              - ''
+              - - 'arn:aws:s3:::'
+                - !Ref Raw
+                - /AWSLogs/*
+            Principal:
+              AWS:
+                - 'arn:aws:iam::127311923021:root'
+                - 'arn:aws:iam::027434742980:root'
+                - 'arn:aws:iam::797873946194:root'
+                - 'arn:aws:iam::156460612806:root'
+                - 'arn:aws:iam::054676820928:root'
+                - 'arn:aws:iam::582318560864:root'
+                - 'arn:aws:iam::114774131450:root'
+                - 'arn:aws:iam::783225319266:root'
+                - 'arn:aws:iam::507241528517:root'
+                - 'arn:aws:iam::216624486486:root'
+                - 'arn:aws:iam::903692715234:root'
+                - 'arn:aws:iam::284668455005:root'
+                - 'arn:aws:iam::035351147821:root'
+                - 'arn:aws:iam::859597730677:root'
+                - 'arn:aws:iam::814480443879:root'
+                - 'arn:aws:iam::086441151436:root'
+                - 'arn:aws:iam::388731089494:root'
+                - 'arn:aws:iam::113285607260:root'
+  RawBucketNotification:
+    Type: 'AWS::SNS::Topic'
+    Properties:
+      DisplayName: CloudTrail and ELB Bucket Event Notification
+      TopicName: !Join 
+        - ''
+        - - s3-event-
+          - !Ref BucketPrefix
+          - '-raw-log'
+          - !Ref BucketSuffix
+  RawBucketSnsPolicy:
+    Type: 'AWS::SNS::TopicPolicy'
+    Properties:
+      PolicyDocument:
+        Version: 2008-10-17
+        Statement:
+          - Sid: raw-log-file-created-sns
+            Effect: Allow
+            Principal:
+              AWS: '*'
+            Action:
+              - 'SNS:Publish'
+            Resource:
+              - !Ref RawBucketNotification
+            Condition:
+              ArnLike:
+                'aws:SourceArn': !Join 
+                  - ''
+                  - - 'arn:aws:s3:*:*:'
+                    - !Ref BucketPrefix
+                    - '-raw-log'
+                    - !Ref BucketSuffix
+      Topics:
+        - !Ref RawBucketNotification
+  AccessS3LogBucketNotification:
+    Type: 'AWS::SNS::Topic'
+    Properties:
+      DisplayName: S3 and CloudFront Access Log Bucket Event Notification
+      TopicName: !Join 
+        - ''
+        - - s3-event-
+          - !Ref BucketPrefix
+          - '-access-s3-log'
+          - !Ref BucketSuffix
+  AccessS3LogBucketSnsPolicy:
+    Type: 'AWS::SNS::TopicPolicy'
+    Properties:
+      PolicyDocument:
+        Version: 2008-10-17
+        Statement:
+          - Sid: s3-access-file-created-sns
+            Effect: Allow
+            Principal:
+              AWS: '*'
+            Action:
+              - 'SNS:Publish'
+            Resource:
+              - !Ref AccessS3LogBucketNotification
+            Condition:
+              ArnLike:
+                'aws:SourceArn': !Join 
+                  - ''
+                  - - 'arn:aws:s3:*:*:'
+                    - !Ref BucketPrefix
+                    - '-access-s3-log'
+                    - !Ref BucketSuffix
+      Topics:
+        - !Ref AccessS3LogBucketNotification
+  AccessCfLogBucketNotification:
+    Type: 'AWS::SNS::Topic'
+    Properties:
+      DisplayName: S3 and CloudFront Access Log Bucket Event Notification
+      TopicName: !Join 
+        - ''
+        - - s3-event-
+          - !Ref BucketPrefix
+          - '-access-cf-log'
+          - !Ref BucketSuffix
+  AccessCfLogBucketSnsPolicy:
+    Type: 'AWS::SNS::TopicPolicy'
+    Properties:
+      PolicyDocument:
+        Version: 2008-10-17
+        Statement:
+          - Sid: s3-access-file-created-sns
+            Effect: Allow
+            Principal:
+              AWS: '*'
+            Action:
+              - 'SNS:Publish'
+            Resource:
+              - !Ref AccessCfLogBucketNotification
+            Condition:
+              ArnLike:
+                'aws:SourceArn': !Join 
+                  - ''
+                  - - 'arn:aws:s3:*:*:'
+                    - !Ref BucketPrefix
+                    - '-access-cf-log'
+                    - !Ref BucketSuffix
+      Topics:
+        - !Ref AccessCfLogBucketNotification
+  GlobalCloudTrailLog:
+    DependsOn:
+      - LogStream
+      - LogStreamRole
+      - LogStreamRolePolicy
+    Type: 'AWS::Logs::LogGroup'
+    Properties: {}
+  GlobalCloudTrail:
+    Type: 'AWS::CloudTrail::Trail'
+    Properties:
+      CloudWatchLogsLogGroupArn: !GetAtt 
+        - GlobalCloudTrailLog
+        - Arn
+      CloudWatchLogsRoleArn: !GetAtt 
+        - GlobalCloudTrailLogRole
+        - Arn
+      EnableLogFileValidation: 'true'
+      IncludeGlobalServiceEvents: 'true'
+      IsLogging: 'true'
+      IsMultiRegionTrail: 'true'
+      S3BucketName: !Ref Raw
+      SnsTopicName: !Ref GlobalCloudTrailNotification
+  GlobalCloudTrailNotification:
+    Type: 'AWS::SNS::Topic'
+    Properties:
+      DisplayName: CloudTrail notification
+      TopicName: !Join 
+        - ''
+        - - cloudtrail-event-
+          - !Ref GlobalCloudTrailLog
+  GlobalCloudTrailNotificationPolicy:
+    Type: 'AWS::SNS::TopicPolicy'
+    Properties:
+      PolicyDocument:
+        Statement:
+          - Sid: Statement1
+            Effect: Allow
+            Principal:
+              AWS: '*'
+            Action:
+              - 'SNS:GetTopicAttributes'
+              - 'SNS:SetTopicAttributes'
+              - 'SNS:AddPermission'
+              - 'SNS:RemovePermission'
+              - 'SNS:DeleteTopic'
+              - 'SNS:Subscribe'
+              - 'SNS:ListSubscriptionsByTopic'
+              - 'SNS:Publish'
+              - 'SNS:Receive'
+            Resource: !Ref GlobalCloudTrailNotification
+            Condition:
+              StringEquals:
+                'AWS:SourceOwner': '380048663093'
+          - Sid: Statement2
+            Effect: Allow
+            Principal:
+              Service: cloudtrail.amazonaws.com
+            Action: 'SNS:Publish'
+            Resource: !Ref GlobalCloudTrailNotification
+      Topics:
+        - !Ref GlobalCloudTrailNotification
+  GlobalCloudTrailLogRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: cloudtrail.amazonaws.com
+            Action: 'sts:AssumeRole'
+      Path: /analytics/log-store/
+      Policies:
+        - PolicyName: root
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action:
+                  - '*'
+                Resource: !GetAtt 
+                  - GlobalCloudTrailLog
+                  - Arn
+  GlobalCloudTrailLogSub:
+    DependsOn:
+      - GlobalCloudTrailLog
+    Type: 'AWS::Logs::SubscriptionFilter'
+    Properties:
+      DestinationArn: !GetAtt 
+        - LogStream
+        - Arn
+      FilterPattern: ''
+      LogGroupName: !Ref GlobalCloudTrailLog
+      RoleArn: !GetAtt 
+        - LogStreamRole
+        - Arn
+  VpcTrafficLog:
+    DependsOn:
+      - LogStream
+      - LogStreamRole
+      - LogStreamRolePolicy
+    Type: 'AWS::Logs::LogGroup'
+    Properties: {}
+  VpcTrafficLogSub:
+    DependsOn:
+      - VpcTrafficLog
+    Type: 'AWS::Logs::SubscriptionFilter'
+    Properties:
+      DestinationArn: !GetAtt 
+        - LogStream
+        - Arn
+      FilterPattern: >-
+        [version, account_id, interface_id, srcaddr, dstaddr, srcport, dstport,
+        protocol, packets, bytes, start, end, action, log_status]
+      LogGroupName: !Ref VpcTrafficLog
+      RoleArn: !GetAtt 
+        - LogStreamRole
+        - Arn
+  VpcTrafficLogRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: vpc-flow-logs.amazonaws.com
+            Action: 'sts:AssumeRole'
+      Path: /analytics/log-store/
+      Policies:
+        - PolicyName: root
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action:
+                  - 'logs:CreateLogStream'
+                  - 'logs:DescribeLogGroups'
+                  - 'logs:DescribeLogStreams'
+                  - 'logs:PutLogEvents'
+                Resource: !GetAtt 
+                  - VpcTrafficLog
+                  - Arn
+  LxSysLog:
+    DependsOn:
+      - LogStream
+      - LogStreamRole
+      - LogStreamRolePolicy
+    Type: 'AWS::Logs::LogGroup'
+    Properties: {}
+  LxSysLogLogSub:
+    DependsOn:
+      - LxSysLog
+    Type: 'AWS::Logs::SubscriptionFilter'
+    Properties:
+      DestinationArn: !GetAtt 
+        - LogStream
+        - Arn
+      FilterPattern: ''
+      LogGroupName: !Ref LxSysLog
+      RoleArn: !GetAtt 
+        - LogStreamRole
+        - Arn
+  LxAuthLog:
+    DependsOn:
+      - LogStream
+      - LogStreamRole
+      - LogStreamRolePolicy
+    Type: 'AWS::Logs::LogGroup'
+    Properties: {}
+  LxAuthLogSub:
+    DependsOn:
+      - LxAuthLog
+    Type: 'AWS::Logs::SubscriptionFilter'
+    Properties:
+      DestinationArn: !GetAtt 
+        - LogStream
+        - Arn
+      FilterPattern: ''
+      LogGroupName: !Ref LxAuthLog
+      RoleArn: !GetAtt 
+        - LogStreamRole
+        - Arn
+  LxDockerLog:
+    DependsOn:
+      - LogStream
+      - LogStreamRole
+      - LogStreamRolePolicy
+    Type: 'AWS::Logs::LogGroup'
+    Properties: {}
+  LxDockerLogSub:
+    DependsOn:
+      - LxDockerLog
+    Type: 'AWS::Logs::SubscriptionFilter'
+    Properties:
+      DestinationArn: !GetAtt 
+        - LogStream
+        - Arn
+      FilterPattern: ''
+      LogGroupName: !Ref LxDockerLog
+      RoleArn: !GetAtt 
+        - LogStreamRole
+        - Arn
+  LinuxLogPolicy:
+    Type: 'AWS::IAM::ManagedPolicy'
+    Properties:
+      Path: /analytics/log-store/
+      PolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Action:
+              - 'cloudwatch:PutMetricData'
+              - 'ec2:DescribeTags'
+            Resource:
+              - '*'
+          - Effect: Allow
+            Action:
+              - 'logs:CreateLogGroup'
+              - 'logs:CreateLogStream'
+              - 'logs:PutLogEvents'
+              - 'logs:DescribeLogGroups'
+              - 'logs:DescribeLogStreams'
+            Resource:
+              - !GetAtt 
+                - LxSysLog
+                - Arn
+              - !GetAtt 
+                - LxAuthLog
+                - Arn
+              - !GetAtt 
+                - LxDockerLog
+                - Arn
+  LogStream:
+    Type: 'AWS::Kinesis::Stream'
+    Properties:
+      ShardCount: 1
+  LogStreamRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: !Join 
+                - ''
+                - - logs.
+                  - !Ref 'AWS::Region'
+                  - .amazonaws.com
+            Action: 'sts:AssumeRole'
+  LogStreamRolePolicy:
+    Type: 'AWS::IAM::Policy'
+    Properties:
+      PolicyName: KinesisPutRecordPolicy
+      Roles:
+        - !Ref LogStreamRole
+      PolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Action: 'kinesis:PutRecord'
+            Resource: !GetAtt 
+              - LogStream
+              - Arn
+          - Effect: Allow
+            Action: 'iam:PassRole'
+            Resource: !Join 
+              - ''
+              - - 'arn:aws:iam::'
+                - !Ref 'AWS::AccountId'
+                - ':role/'
+                - !Ref LogStreamRole
+Outputs:
+  LxDockerLogParams:
+    Value: !Join 
+      - ''
+      - - '--log-driver=awslogs '
+        - '--log-opt awslogs-group='
+        - !Ref LxDockerLog
+  DockerCwlParams:
+    Value: !Join 
+      - ''
+      - - '-e SYSLOG='
+        - !Ref LxSysLog
+        - ' '
+        - '-e AUTHLOG='
+        - !Ref LxAuthLog
+  FlowLogRoleArn:
+    Value: !GetAtt 
+      - VpcTrafficLogRole
+      - Arn
