@@ -20,12 +20,14 @@ Metadata:
         LinuxDockerLogGroupName: LxDockerLog
         LinuxSysLogGroupName: LxSysLog
         LinuxAuthLogGroupName: LxAuthLog
+        BillingLogGroupName: BillingLog
         RawLogBucketName: Raw
         RawLogSns: RawBucketNotification
         AccessS3LogBucketName: AccessS3Log
         AccessS3LogSns: AccessS3LogBucketNotification
         AccessCfLogBucketName: AccessCfLog
         AccessCfLogSns: AccessCfLogBucketNotification
+        BillingLogSns: BillingNotification
         CwlPolicy: LinuxLogPolicy
       Outputs:
         CwlDockerParams: DockerCwlParams
@@ -89,6 +91,9 @@ Parameters:
   LinuxAuthLogGroupName:
     Description: Name of VPC traffic log group.
     Type: String
+  BillingLogGroupName:
+    Description: Name of VPC traffic log group.
+    Type: String    
   EsHost:
     Description: Hostname of Elasticsearch
     Type: String
@@ -110,6 +115,9 @@ Parameters:
   AccessCfLogSns:
     Description: Hostname of Elasticsearch
     Type: String
+  BillingLogSns:
+    Description: Hostname of Elasticsearch
+    Type: String    
   LogstashDocker:
     Description: Name of cluster. This is used for discovery.
     Type: String
@@ -277,6 +285,14 @@ Resources:
         - Arn
       Protocol: sqs
       TopicArn: !Ref AccessCfLogSns
+  BillingSubscription:
+    Type: 'AWS::SNS::Subscription'
+    Properties:
+      Endpoint: !GetAtt 
+        - LogQueue
+        - Arn
+      Protocol: sqs
+      TopicArn: !Ref BillingLogSns
   LogQueue:
     Type: 'AWS::SQS::Queue'
     Properties:
@@ -361,6 +377,7 @@ Resources:
             -e RAW_BUCKET=${RawLogBucketName} \
             -e S3_BUCKET=${AccessS3LogBucketName} \
             -e CF_BUCKET=${AccessCfLogBucketName} \
+            -e BILL_BUCKET=${BillingLogGroupName} \
             ${LogstashSqsDocker}
           docker run -t --rm ${ContainerAwsUtil} cfn-signal -e $? --stack ${AWS::StackName} --resource LogstashSqsAsg --region ${AWS::Region}
     UpdatePolicy:
