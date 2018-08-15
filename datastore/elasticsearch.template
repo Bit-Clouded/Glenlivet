@@ -57,11 +57,11 @@ Parameters:
       - m5.large
       - m5.xlarge
       - m5.2xlarge
-      - r4.large
-      - r4.xlarge
-      - r4.2xlarge
-      - r4.4xlarge
-      - r4.8xlarge
+      - r5.large
+      - r5.xlarge
+      - r5.2xlarge
+      - r5.4xlarge
+      - r5.8xlarge
     ConstraintDescription: must be a valid EC2 instance type.
   GatewayNodeInstanceType:
     Description: WebServer EC2 instance type
@@ -75,11 +75,11 @@ Parameters:
       - m5.large
       - m5.xlarge
       - m5.2xlarge
-      - r4.large
-      - r4.xlarge
-      - r4.2xlarge
-      - r4.4xlarge
-      - r4.8xlarge
+      - r5.large
+      - r5.xlarge
+      - r5.2xlarge
+      - r5.4xlarge
+      - r5.8xlarge
     ConstraintDescription: must be a valid EC2 instance type.
   DataNodeInstanceType:
     Description: WebServer EC2 instance type
@@ -93,11 +93,11 @@ Parameters:
       - m5.large
       - m5.xlarge
       - m5.2xlarge
-      - r4.large
-      - r4.xlarge
-      - r4.2xlarge
-      - r4.4xlarge
-      - r4.8xlarge
+      - r5.large
+      - r5.xlarge
+      - r5.2xlarge
+      - r5.4xlarge
+      - r5.8xlarge
       - i3.large
       - i3.xlarge
       - i3.2xlarge
@@ -117,11 +117,11 @@ Parameters:
       - m5.large
       - m5.xlarge
       - m5.2xlarge
-      - r4.large
-      - r4.xlarge
-      - r4.2xlarge
-      - r4.4xlarge
-      - r4.8xlarge
+      - r5.large
+      - r5.xlarge
+      - r5.2xlarge
+      - r5.4xlarge
+      - r5.8xlarge
     ConstraintDescription: must be a valid EC2 instance type.
   BcUbuntuBaseAmiId:
     Description: Custom AMI Baked by BitClouded Software
