@@ -22,6 +22,9 @@ Metadata:
       Outputs:
         CwlLinuxParams: LxDockerLogParams
         CwlDockerParams: DockerCwlParams
+    - TemplatePath: development-services/cicd-base
+      Resources:
+        AgentInstanceProfile: AgentInstanceProfile
 Parameters:
   KeyPairName:
     Description: Name of an existing EC2 KeyPair
@@ -52,6 +55,10 @@ Parameters:
     Description: Size of the disk for storing GoCD state.
     Type: Number
     Default: '100'
+  GocdAgentDiskSize:
+    Description: Size of the disk for storing GoCD state.
+    Type: Number
+    Default: '100'
   AgentInstanceType:
     Description: Agent EC2 instance type
     Type: String
@@ -77,11 +84,11 @@ Parameters:
     Type: String
   GocdServerContainer:
     Description: Gocd container name with tag.
-    Default: 'gocd/gocd-server:16.11.0'
+    Default: 'gocd/gocd-server:v18.7.0'
     Type: String
   GocdLxAgentContainer:
     Description: Gocd swarm agent container name with tag.
-    Default: 'bitclouded/gocd-agent:5.1'
+    Default: 'gocd/gocd-agent-alpine-3.6:v18.7.0'
     Type: String
   SslCertId:
     Description: Id of the SSL certificate to use.
@@ -130,6 +137,8 @@ Parameters:
     Type: String
   CwlPolicy:
     Description: 'Managed policy for linux logging. [logs-store.resources.LinuxLogPolicy]'
+    Type: String
+  AgentInstanceProfile:
     Type: String
 Conditions:
   HasStateSnapshot: !Not 
@@ -209,59 +218,28 @@ Resources:
         - '0'
         - !Ref ServerSubnets
       UserData: !Base64 
-        'Fn::Join':
-          - ''
-          - - |
-              #!/bin/bash
-            - !If 
-              - HasStateSnapshot
-              - ''
-              - |
-                mkfs -F -t ext4 /dev/xvdb
-            - |
-              umount /mnt/
-            - |
-              mkdir /mnt/xvdb
-            - |
-              cp /etc/fstab /etc/fstab.bak && rm /etc/fstab
-            - |
-              cat /etc/fstab.bak | grep -v ^/dev/xvdb | tee /etc/fstab
-            - |
-              echo -e "/dev/xvdb\t/mnt/xvdb\tauto\tdefaults\t0\t2" >> /etc/fstab
-            - |
-              mount -a
-            - |
-              chown 999 -R /mnt/xvdb
-            - |
-              ECID=$(curl http://169.254.169.254/latest/meta-data/instance-id)
-            - |
-              CWLA=cwlagent_$ECID
-            - 'docker run -d --restart=always '
-            - '--name $CWLA --log-opt awslogs-stream=$CWLA '
-            - '-v /var/log:/var/log-host:ro '
-            - !Ref CwlLinuxParams
-            - ' '
-            - !Ref CwlDockerParams
-            - ' '
-            - !Ref CwlUbuntuAgentDocker
-            - |+
+        'Fn::Sub':
+          - |
+            #!/bin/bash
+            ${StateSnapshotCommand}
+            umount /mnt/
+            mkdir /mnt/xvdb
+            cp /etc/fstab /etc/fstab.bak && rm /etc/fstab
+            cat /etc/fstab.bak | grep -v ^/dev/xvdb | tee /etc/fstab
+            echo -e "/dev/xvdb\t/mnt/xvdb\tauto\tdefaults\t0\t2" >> /etc/fstab
+            mount -a
+            chmod 777 -R /mnt/xvdb
 
-            - 'docker run -d --restart=always --name cwlcron '
-            - !Ref CwlUbuntuAgentDocker
-            - |2
-               cron
-            - |
-              GOCD_MASTER=gocd-master_$ECID
-            - 'docker run -d --restart=always '
-            - '--name $GOCD_MASTER --log-opt awslogs-stream=$GOCD_MASTER '
-            - '-p 8153:8153 -p 8154:8154 '
-            - !Ref CwlLinuxParams
-            - ' '
-            - '-v /mnt/xvdb/lib:/var/lib/go-server '
-            - '-v /mnt/xvdb/log:/var/log/go-server '
-            - '-v /mnt/xvdb/etc:/etc/go '
-            - !Ref GocdServerContainer
-            - |+
+            ECID=$(curl http://169.254.169.254/latest/meta-data/instance-id)
+            GOCD_MASTER=gocd-master_$ECID
+            docker run -d --restart=always \
+              --name $GOCD_MASTER --log-opt awslogs-stream=$GOCD_MASTER \
+              -p 8153:8153 -p 8154:8154 \
+              ${CwlLinuxParams} \
+              -v /mnt/xvdb/godata:/godata \
+              -v /mnt/xvdb/home:/home/go \
+              ${GocdServerContainer}
+          - StateSnapshotCommand: !If [HasStateSnapshot, '', 'mkfs -F -t ext4 /dev/xvdb']
 
       Volumes:
         - Device: xvdb
@@ -277,10 +255,8 @@ Resources:
         Statement:
           - Effect: Allow
             Principal:
-              Service:
-                - ec2.amazonaws.com
-            Action:
-              - 'sts:AssumeRole'
+              Service: [ec2.amazonaws.com]
+            Action: ['sts:AssumeRole']
       Path: /devservices/gocd/
       ManagedPolicyArns:
         - !Ref CwlPolicy
@@ -295,7 +271,7 @@ Resources:
     Properties:
       InstanceType: !Ref AgentInstanceType
       ImageId: !Ref WindowsContainerAmiId
-      IamInstanceProfile: !Ref WebServersInstanceProfile
+      IamInstanceProfile: !Ref AgentInstanceProfile
       KeyName: !If 
         - HasNoKeypair
         - !Ref 'AWS::NoValue'
@@ -305,83 +281,57 @@ Resources:
       BlockDeviceMappings:
         - DeviceName: /dev/sda1
           Ebs:
-            VolumeSize: '80'
+            VolumeSize: !Ref GocdAgentDiskSize
             VolumeType: gp2
       UserData: !Base64 
-        'Fn::Join':
-          - ''
-          - - |
-              <powershell>
-            - |2
-                  $gocd_bin = "c:\gocd\bin",
-            - |2
-                  $gocd_workspace = "c:\gocd\workspace",
-            - |2
-                  $gocd_installer_url = "https://download.go.cd/binaries/16.11.0-4185/win/go-agent-16.11.0-4185-setup.exe",
-            - |2
-                  $java_installer_url = "http://javadl.oracle.com/webapps/download/AutoDL?BundleId=216434"
-            - |
+        'Fn::Sub':
+          - |
+            <powershell>
+              $gocd_bin = "c:\gocd\bin"
+              $gocd_workspace = "c:\gocd\workspace"
+              $gocd_installer_url = "https://download.go.cd/binaries/16.11.0-4185/win/go-agent-16.11.0-4185-setup.exe"
+              $java_installer_url = "http://javadl.oracle.com/webapps/download/AutoDL?BundleId=216434"
+              [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+              [Environment]::SetEnvironmentVariable("GO_SERVER_URL", "https://${GoCdMasterIp}:8154/go", "Machine")
               mkdir $gocd_bin -Force
-            - |
               mkdir $gocd_workspace -Force
-            - |
               cd $gocd_bin
-            - |+
 
-            - |
               function GetAndInstall {
-            - |2
                   param(
-            - |2
                       [string]$url,
-            - |2
                       [string]$argstring = "/qn",
-            - |2
                       [string]$filename
-            - |2
                   )
-            - |+
 
-            - |2
                   if ([string]::IsNullOrWhiteSpace($filename)) {
-            - |2
                       $urlSegments = $url.Split('/')
-            - |2
                       $filename = $urlSegments[$urlSegments.Count - 1]
-            - |2
                   }
-            - |2
-                  Invoke-WebRequest $url -OutFile $filename
-            - |2
-                  Start-Process -FilePath ".\$filename" -ArgumentList $argstring -PassThru -Wait
-            - |2
-                  Remove-Item ".\$filename" -Force
-            - |
-              }
-            - |+
 
-            - >
-              GetAndInstall -url
-              https://github.com/git-for-windows/git/releases/download/v2.10.1.windows.1/Git-2.10.1-64-bit.exe
-              `
-            - |2
-                  -argstring '/silent /log="git-installer.log"'
-            - >
-              GetAndInstall -url $java_installer_url -filename
-              java-installer.exe `
-            - |2
-                  -argstring "STATIC=0 WEB_JAVA=0 /s /L $gocd_bin\java-installer.log"
-            - |
+                  Invoke-WebRequest $url -OutFile $filename
+                  Start-Process -FilePath ".\$filename" -ArgumentList $argstring -PassThru -Wait
+                  Remove-Item ".\$filename" -Force
+              }
+
+              GetAndInstall -url https://github.com/git-for-windows/git/releases/download/v2.18.0.windows.1/Git-2.18.0-64-bit.exe `
+                -argstring '/silent /log="git-installer.log"'
+              GetAndInstall -url $java_installer_url -filename java-installer.exe `
+                -argstring "STATIC=0 WEB_JAVA=0 /s /L $gocd_bin\java-installer.log"
+
               sleep 60
-            - |
               GetAndInstall -url $gocd_installer_url `
-            - '    -argstring "/S /SERVERURL=https://'
-            - !GetAtt 
-              - GocdMaster
-              - PrivateIp
-            - |
-              :8154/go /D=$gocd_bin"
-            - </powershell>
+                -argstring "/S /SERVERURL=`"https://${GoCdMasterIp}:8154/go`" /D=$gocd_bin"
+              sleep 10
+              ."C:\gocd\bin\start-agent.bat"
+              sleep 10
+              ."C:\gocd\bin\start-agent.bat"
+              sleep 10
+              ."C:\gocd\bin\start-agent.bat"
+              sleep 10
+              ."C:\gocd\bin\start-agent.bat"
+            </powershell>
+          - GoCdMasterIp: !GetAtt GocdMaster.PrivateIp
   GocdWindowsAgentAsg:
     Type: 'AWS::AutoScaling::AutoScalingGroup'
     Properties:
@@ -398,7 +348,7 @@ Resources:
     Properties:
       InstanceType: !Ref AgentInstanceType
       ImageId: !Ref BcUbuntuBaseAmiId
-      IamInstanceProfile: !Ref WebServersInstanceProfile
+      IamInstanceProfile: !Ref AgentInstanceProfile
       KeyName: !If 
         - HasNoKeypair
         - !Ref 'AWS::NoValue'
@@ -406,52 +356,25 @@ Resources:
       SecurityGroups:
         - !Ref AgentSg
       UserData: !Base64 
-        'Fn::Join':
-          - ''
-          - - |
-              #!/bin/bash
-            - |
-              #ifconfig eth0 mtu 1500
-            - |
-              #wget -qO- https://get.docker.com/ | sh
-            - |
-              ECID=$(curl http://169.254.169.254/latest/meta-data/instance-id)
-            - |
-              #CWLA=cwlagent_$ECID
-            - '#docker run -d --restart=always '
-            - '--name $CWLA --log-opt awslogs-stream=$CWLA '
-            - '-v /var/log:/var/log-host:ro '
-            - !Ref CwlLinuxParams
-            - ' '
-            - !Ref CwlDockerParams
-            - ' '
-            - !Ref CwlUbuntuAgentDocker
-            - |+
-
-            - 'docker run -d --restart=always --name cwlcron '
-            - !Ref CwlUbuntuAgentDocker
-            - |2
-               cron
-            - |
-              GO_AGENT=go-agent_$ECID
-            - >-
-              docker run -d --restart=always --name $GO_AGENT --log-opt
-              awslogs-stream=$GO_AGENT 
-            - '-v /var/run/docker.sock:/var/run/docker.sock --privileged '
-            - !Ref CwlLinuxParams
-            - ' '
-            - '-e GO_SERVER='
-            - !GetAtt 
-              - GocdMaster
-              - PrivateIp
-            - ' '
-            - !Ref GocdLxAgentContainer
-            - |+
+        'Fn::Sub':
+          - |
+            #!/bin/bash
+            ECID=$(curl http://169.254.169.254/latest/meta-data/instance-id)
+            GO_AGENT=go-agent_$ECID
+            CONTAINER_ID=$(docker run -d --restart=always --name $GO_AGENT \
+              --log-opt awslogs-stream=$GO_AGENT \
+              -v /var/run/docker.sock:/var/run/docker.sock --privileged \
+              ${CwlLinuxParams} \
+              -e GO_SERVER=${GoCdMasterIp} \
+              ${GocdLxAgentContainer})
+            docker exec -it $CONTAINER_ID apk -Uuv add groff less python py-pip
+            docker exec -it $CONTAINER_ID pip install awscli
+          - GoCdMasterIp: !GetAtt GocdMaster.PrivateIp
 
       BlockDeviceMappings:
-        - DeviceName: /dev/xvda
+        - DeviceName: /dev/sda1
           Ebs:
-            VolumeSize: '30'
+            VolumeSize: !Ref GocdAgentDiskSize
             VolumeType: gp2
   GocdLinuxAgentAsg:
     Type: 'AWS::AutoScaling::AutoScalingGroup'
@@ -496,7 +419,5 @@ Resources:
           Value: Gocd Agent Security Group
 Outputs:
   Gateway:
-    Value: !GetAtt 
-      - GocdMaster
-      - PrivateIp
+    Value: !GetAtt GocdMaster.PrivateIp
     Description: IP of the GoCD server.
