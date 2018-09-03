@@ -3,6 +3,16 @@ Description: >-
   Logstash for sending logs collected in analytics/logs-store template to
   Elasticsearch
 Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label: SqsAutoScaling
+        Parameters:
+          - SqsScalingAdjustment
+          - SqsScalingCooldown
+          - SqsScaleUpThreshold
+          - SqsScaleDownThreshold
+          - SqsScaleTestPeriod
+          - SqsScaleTestPeriodCount
   DefaultName: AwsLogstash
   Dependencies:
     - TemplatePath: networking/vpc
@@ -136,6 +146,33 @@ Parameters:
   CwlPolicy:
     Description: Managed policy for linux logging.
     Type: String
+  
+  # SQS Processing Autoscaling
+  SqsScalingAdjustment:
+    Description: Number of servers to scale up and down for sqs processing.
+    Type: Number
+    Default: 1
+  SqsScalingCooldown:
+    Description: Number of minutes to wait before auto scaling again.
+    Type: Number
+    Default: 15
+  SqsScaleUpThreshold:
+    Description: Threshold for number of items in the queue for scale up.
+    Type: Number
+    Default: 40
+  SqsScaleDownThreshold:
+    Description: Threshold for number of items in the queue for scale up.
+    Type: Number
+    Default: 20
+  SqsScaleTestPeriod:
+    Description: Period to test for sqs scaling
+    Type: Number
+    Default: 180
+  SqsScaleTestPeriodCount:
+    Description: Number of periods to test for sqs scaling
+    Type: Number
+    Default: 2
+  
 Conditions:
   HasNoKeypair: !Equals 
     - !Ref KeyPairName
@@ -261,6 +298,7 @@ Resources:
       Roles:
         - !Ref LogstashRole
 
+  # SQS Processing
   RawSubscription:
     Type: 'AWS::SNS::Subscription'
     Properties:
@@ -424,6 +462,54 @@ Resources:
             Resource: '*'
       Roles:
         - !Ref LogstashSqsRole
+  # SQS Processor Autoscaling
+  SqsProcessingScaleUpPolicy:
+    Type: "AWS::AutoScaling::ScalingPolicy"
+    Properties:
+      AdjustmentType: "ChangeInCapacity"
+      AutoScalingGroupName: !Ref "LogstashSqsAsg"
+      Cooldown: !Ref SqsScalingCooldown
+      ScalingAdjustment: !Ref SqsScalingAdjustment
+  SqsProcessingScaleDownPolicy:
+    Type: "AWS::AutoScaling::ScalingPolicy"
+    Properties:
+      AdjustmentType: "ChangeInCapacity"
+      AutoScalingGroupName: !Ref "LogstashSqsAsg"
+      Cooldown: !Ref SqsScalingCooldown
+      ScalingAdjustment: !Ref SqsScalingAdjustment
+  SqsProcessingCapacityAlarmLow:
+    Type: "AWS::CloudWatch::Alarm"
+    Properties:
+      AlarmDescription: !Sub |
+        Scale-down if cpu reservation < ${SqsScaleUpThreshold}% for ${SqsScaleTestPeriodCount} * ${SqsScaleTestPeriod} seconds
+      MetricName: "ApproximateNumberOfMessagesVisible"
+      Namespace: "AWS/SQS"
+      Statistic: "Average"
+      Period: !Ref SqsScaleTestPeriod
+      EvaluationPeriods: !Ref SqsScaleTestPeriodCount
+      Threshold: !Ref SqsScaleUpThreshold
+      AlarmActions: [!Ref SqsProcessingScaleUpPolicy]
+      Dimensions:
+        - Name: "QueueName"
+          Value: !GetAtt LogQueue.QueueName
+      ComparisonOperator: "GreaterThanThreshold"
+  SqsProcessingCapacityAlarmHigh:
+    Type: "AWS::CloudWatch::Alarm"
+    Properties:
+      AlarmDescription: !Sub |
+        Scale-down if cpu reservation < ${SqsScaleDownThreshold}% for ${SqsScaleTestPeriodCount} * ${SqsScaleTestPeriod} seconds
+      MetricName: "ApproximateNumberOfMessagesVisible"
+      Namespace: "AWS/SQS"
+      Statistic: "Average"
+      Period: !Ref SqsScaleTestPeriod
+      EvaluationPeriods: !Ref SqsScaleTestPeriodCount
+      Threshold: !Ref SqsScaleDownThreshold
+      AlarmActions: [!Ref SqsProcessingScaleDownPolicy]
+      Dimensions: 
+        - Name: "QueueName"
+          Value: !GetAtt LogQueue.QueueName
+      ComparisonOperator: "LessThanThreshold"
+  # /SQS Processing
 
 Outputs:
   ViewAvailableIndex:
