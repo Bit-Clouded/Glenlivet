@@ -929,3 +929,7 @@ Resources:
                 - - 'arn:aws:s3:*:*:*'
       Topics:
         - !Ref NewObjectNotification
+
+Outputs:
+  EnrichedStreamArn:
+    Value: !GetAtt EnrichedStream.Arn
