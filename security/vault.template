@@ -1,0 +1,347 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: HA Hashicorp Vault backed with DynamoDB
+Metadata:
+  DefaultName: Vault
+  Dependencies:
+    - TemplatePath: networking/vpc
+      Resources:
+        ElbSg: ElbSecGroup
+        ElbTargetSg: ElbTargetSecGroup
+        HttpSg: HttpNsSecGroup
+    - TemplatePath: networking/elb-subnets
+      Parameters:
+        VpcId: VpcId
+      Outputs:
+        ElbSubnets: ElbSubnets
+        ServerSubnets: WebServerSubnets
+      NestedDependency: networking/vpc
+    - TemplatePath: analytics/logs-store
+      Resources:
+        AccessLogBucket: Raw
+        CwlPolicy: LinuxLogPolicy
+      Outputs:
+        CwlLinuxParams: LxDockerLogParams
+
+Parameters:
+  KeyPairName:
+    Description: Name of an existing EC2 KeyPair to enable SSH access to the instances
+    Type: String
+    Default: ''
+  AdminElbScheme:
+    Type: String
+    Default: internal
+    AllowedValues:
+      - internet-facing
+      - internal
+    Description: Whether the site has a public ip address and is publicly available.
+  WebInstanceType:
+    Description: Server instance type
+    Type: String
+    Default: t2.nano
+    AllowedValues:
+      - t2.nano
+      - t2.micro
+      - t2.small
+      - t2.medium
+      - t2.large
+      - m3.medium
+      - m4.large
+      - m4.xlarge
+      - m4.2xlarge
+    ConstraintDescription: must be a valid EC2 instance type.
+  BcUbuntuBaseAmiId:
+    Description: AWS AMI ID of Debian Jessie.
+    Type: 'AWS::EC2::Image::Id'
+  VpcId:
+    Description: VPCid associated with the subnets.
+    Type: 'AWS::EC2::VPC::Id'
+  HostedZoneName:
+    Description: >-
+      Hosted Zone for the url (Without '.' at the end). You need to fill in
+      Subdomain as well for custom domain to work.
+    Type: String
+  Subdomain:
+    Description: >-
+      Subdomain (Without '.'  at the end). You need to fill in HostedZoneName as
+      well for custom domain to work.
+    Type: String
+  ElbSg:
+    Description: Elb Security Group.
+    Type: String
+  ElbTargetSg:
+    Description: Elb Target Security Group.
+    Type: String
+  HttpSg:
+    Description: Elb Target Security Group.
+    Type: String
+  ElbSubnets:
+    Description: VPCid associated with the subnets.
+    Type: 'List<AWS::EC2::Subnet::Id>'
+  ServerSubnets:
+    Description: VPCid associated with the subnets.
+    Type: 'List<AWS::EC2::Subnet::Id>'
+  SslRedirectContainerImage:
+    Description: ''
+    Type: String
+    Default: geldim/https-redirect
+  ContainerAwsUtil:
+    Description: Container image for awscli and cfn-signal
+    Type: String
+    Default: 'bitclouded/aws-util:2-1'
+  CertbotContainerImage:
+    Description: ''
+    Type: String
+    Default: bitcloudedci/route53-certbot:1-1
+  VaultContainerImage:
+    Description: 'Official Hashicorp Vault image from dockerhub library'
+    Type: String
+    Default: 'vault:0.8.2'
+  AccessLogBucket:
+    Description: S3 bucket for ELB access log.
+    Type: String
+  CwlLinuxParams:
+    Description: Environment variables for syslog and authlog cwl group names
+    Type: String
+  CwlPolicy:
+    Description: Managed policy for linux logging.
+    Type: String
+Conditions:
+  HasNoKeypair: !Equals 
+    - !Ref KeyPairName
+    - ''
+Resources:
+  Route53:
+    Type: 'AWS::Route53::RecordSet'
+    Properties:
+      HostedZoneName: !Sub '${HostedZoneName}.'
+      Comment: Hostname
+      Name: !Sub '${Subdomain}.${HostedZoneName}.'
+      Type: A
+      AliasTarget:
+        DNSName: !GetAtt AdminGateway.DNSName
+        HostedZoneId: !GetAtt AdminGateway.CanonicalHostedZoneNameID
+
+  AdminAsg:
+    Type: 'AWS::AutoScaling::AutoScalingGroup'
+    Properties:
+      VPCZoneIdentifier: !Ref ServerSubnets
+      Tags:
+        - Value: Grafana Server
+          PropagateAtLaunch: true
+          Key: Name
+      LoadBalancerNames:
+        - !Ref AdminGateway
+      MinSize: 1
+      MaxSize: 1
+      LaunchConfigurationName: !Ref AdminServerLc
+    CreationPolicy:
+      ResourceSignal:
+        Count: 1
+        Timeout: PT10M
+    UpdatePolicy:
+      AutoScalingRollingUpdate:
+        MinInstancesInService: 0
+        WaitOnResourceSignals: 'true'
+        PauseTime: PT10M
+  ServerRoleIp:
+    Type: 'AWS::IAM::InstanceProfile'
+    Properties:
+      Roles:
+        - !Ref ServerRole
+      Path: /analytics/grafana/
+  ServerRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ec2.amazonaws.com
+            Action:
+              - 'sts:AssumeRole'
+      Path: /analytics/grafana/
+      ManagedPolicyArns:
+        - !Ref CwlPolicy
+      Policies:
+        - PolicyName: root
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action:
+                  - 'ec2:DescribeInstances'
+                  - 'cloudwatch:Describe*'
+                  - 'cloudwatch:Get*'
+                  - 'dynamodb:*'
+                Resource: '*'
+  AdminServerLc:
+    Type: 'AWS::AutoScaling::LaunchConfiguration'
+    Properties:
+      KeyName: !If [HasNoKeypair, !Ref 'AWS::NoValue', !Ref 'KeyPairName']
+      SecurityGroups:
+        - !Ref ElbTargetSg
+      IamInstanceProfile: !Ref ServerRoleIp
+      InstanceType: !Ref WebInstanceType
+      ImageId: !Ref BcUbuntuBaseAmiId
+      UserData: !Base64 
+        'Fn::Sub': |
+          #!/bin/bash
+          ECID=$(curl http://169.254.169.254/latest/meta-data/instance-id)
+          docker run -d --restart=always \
+            --name sslredirect --log-opt awslogs-stream=${AWS::StackName}/sslredirect/$ECID \
+            ${CwlLinuxParams} \
+            -p 80:80 \
+            ${SslRedirectContainerImage}
+          docker run --rm \
+            -v /root/:/etc/letsencrypt/ \
+            -e HOSTEDZONE=${HostedZoneName} \
+            -e SUBDOMAIN=${Subdomain} \
+            ${CertbotContainerImage}
+
+          cat <<EOF >> /root/vault.hcl
+          backend "dynamodb" {
+            ha_enabled    = "true"
+            redirect_addr = "https://${Subdomain}.${HostedZoneName}/"
+            region        = "${AWS::Region}"
+            table         = "${StorageBackend}" }
+          listener "tcp" {
+            tls_cert_file = "/vault/config/live/${Subdomain}.${HostedZoneName}/fullchain.pem"
+            tls_key_file  = "/vault/config/live/${Subdomain}.${HostedZoneName}/privkey.pem"
+            address       = "0.0.0.0:8200"
+            tls_disable   = 0 }
+          EOF
+
+          docker run -d --restart=always --cap-add=IPC_LOCK \
+            --name vault --log-opt awslogs-stream=${AWS::StackName}/vault/$ECID \
+            -v /root/:/vault/config/ \
+            ${CwlLinuxParams} -p 8200:8200 \
+            ${VaultContainerImage} server
+          docker run -t --rm ${ContainerAwsUtil} cfn-signal -e $? --stack ${AWS::StackName} --resource AdminAsg --region ${AWS::Region}
+    UpdatePolicy:
+      AutoScalingReplacingUpdate:
+        WillReplace: 'true'
+
+  AdminGateway:
+    Type: 'AWS::ElasticLoadBalancing::LoadBalancer'
+    Properties:
+      Subnets: !Ref ElbSubnets
+      Scheme: !Ref AdminElbScheme
+      Listeners:
+        - InstancePort: 80
+          LoadBalancerPort: 80
+          Protocol: tcp
+          InstanceProtocol: tcp
+        - InstancePort: 8200
+          LoadBalancerPort: 443
+          Protocol: tcp
+          InstanceProtocol: tcp
+      AccessLoggingPolicy:
+        EmitInterval: '5'
+        Enabled: 'true'
+        S3BucketName: !Ref AccessLogBucket
+      SecurityGroups:
+        - !Ref ElbSg
+        - !Ref HttpSg
+      HealthCheck:
+        HealthyThreshold: 2
+        Interval: 30
+        Target: 'TCP:8200'
+        Timeout: 10
+        UnhealthyThreshold: 5
+      ConnectionDrainingPolicy:
+        Enabled: 'true'
+        Timeout: '60'
+
+  # DDB Storage and Scaling
+  DynamoDbScalingRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - application-autoscaling.amazonaws.com
+            Action:
+              - 'sts:AssumeRole'
+      Path: /
+      Policies:
+        - PolicyName: root
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action:
+                  - 'dynamodb:DescribeTable'
+                  - 'dynamodb:UpdateTable'
+                  - 'cloudwatch:PutMetricAlarm'
+                  - 'cloudwatch:DescribeAlarms'
+                  - 'cloudwatch:GetMetricStatistics'
+                  - 'cloudwatch:SetAlarmState'
+                  - 'cloudwatch:DeleteAlarms'
+                Resource: '*'
+  StorageBackend:
+    Type: "AWS::DynamoDB::Table"
+    Properties:
+      AttributeDefinitions:
+        - AttributeName: Path
+          AttributeType: S
+        - AttributeName: Key
+          AttributeType: S
+      KeySchema:
+        - AttributeName: Path
+          KeyType: HASH
+        - AttributeName: Key
+          KeyType: RANGE
+      ProvisionedThroughput:
+        ReadCapacityUnits: 5
+        WriteCapacityUnits: 5
+  WriteScalableTarget:
+    Type: 'AWS::ApplicationAutoScaling::ScalableTarget'
+    Properties:
+      MaxCapacity: 200
+      MinCapacity: 10
+      ResourceId: !Sub 'table/${StorageBackend}'
+      RoleARN: !GetAtt DynamoDbScalingRole.Arn
+      ScalableDimension: 'dynamodb:table:WriteCapacityUnits'
+      ServiceNamespace: dynamodb
+  WriteScalingPolicy:
+    Type: 'AWS::ApplicationAutoScaling::ScalingPolicy'
+    Properties:
+      PolicyName: WritePolicy
+      PolicyType: TargetTrackingScaling
+      ScalingTargetId: !Ref WriteScalableTarget
+      TargetTrackingScalingPolicyConfiguration:
+        TargetValue: 80
+        ScaleInCooldown: 60
+        ScaleOutCooldown: 60
+        PredefinedMetricSpecification:
+          PredefinedMetricType: DynamoDBWriteCapacityUtilization
+  ReadScalableTarget:
+    Type: 'AWS::ApplicationAutoScaling::ScalableTarget'
+    Properties:
+      MaxCapacity: 200
+      MinCapacity: 10
+      ResourceId: !Sub 'table/${StorageBackend}'
+      RoleARN: !GetAtt DynamoDbScalingRole.Arn
+      ScalableDimension: 'dynamodb:table:ReadCapacityUnits'
+      ServiceNamespace: dynamodb
+  ReadScalingPolicy:
+    Type: 'AWS::ApplicationAutoScaling::ScalingPolicy'
+    Properties:
+      PolicyName: ReadPolicy
+      PolicyType: TargetTrackingScaling
+      ScalingTargetId: !Ref ReadScalableTarget
+      TargetTrackingScalingPolicyConfiguration:
+        TargetValue: 80
+        ScaleInCooldown: 60
+        ScaleOutCooldown: 60
+        PredefinedMetricSpecification:
+          PredefinedMetricType: DynamoDBReadCapacityUtilization
+
+Outputs:
+  AdminPanel:
+    Value: !Sub 'https://${Subdomain}.${HostedZoneName}/'
+    Description: Admin panel url.
