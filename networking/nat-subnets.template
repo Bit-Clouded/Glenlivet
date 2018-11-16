@@ -1,7 +1,6 @@
 AWSTemplateFormatVersion: 2010-09-09
-Description: >-
-  General purpose subnets twith a route table having the public route mapped
-  through a NAT.
+Description: |
+  General purpose subnets with traffic routed through NAT gateway.
 Metadata:
   DefaultName: NatSubnets
   Dependencies:
@@ -20,43 +19,35 @@ Metadata:
       NestedDependency: networking/vpc.template
 Parameters:
   NatServerSubnet1:
-    Description: >-
-      Subnet suffix to be concatenated with the VPC prefix.
-      [nat-gateway-subnets.resources.Subnet1]
+    Description: Subnet ID for NAT server in the first AZ.
     Type: String
   NatServerSubnet2:
-    Description: >-
-      Subnet suffix to be concatenated with the VPC prefix.
-      [nat-gateway-subnets.resources.Subnet2]
+    Description: Subnet ID for NAT server in the second AZ.
     Type: String
   NatServerSubnet3:
-    Description: >-
-      Subnet suffix to be concatenated with the VPC prefix.
-      [nat-gateway-subnets.resources.Subnet3]
+    Description: Subnet ID for NAT server in the third (and optional) AZ.
     Type: String
     Default: ''
   Subnet1Suffix:
-    Description: 'Subnet suffix to be concatenated with the VPC prefix. '
+    Description: 'Subnet suffix to be concatenated with the VPC prefix.'
     Type: Number
     Default: '76'
   Subnet2Suffix:
-    Description: 'Subnet suffix to be concatenated with the VPC prefix. '
+    Description: 'Subnet suffix to be concatenated with the VPC prefix.'
     Type: Number
     Default: '77'
   Subnet3Suffix:
-    Description: 'Subnet suffix to be concatenated with the VPC prefix. '
+    Description: 'Subnet suffix to be concatenated with the VPC prefix.'
     Type: Number
     Default: '78'
   VpcPrefix:
-    Description: 'Prefix for the VPC [vpc.parameters.VpcPrefix]'
+    Description: 'Prefix for the VPC'
     Type: String
   VpcId:
-    Description: 'VPC id [vpc.resources.Vpc]'
+    Description: 'VPC ID'
     Type: String
   AzCount:
-    Description: >-
-      Number of AZ. Third subnet will only be created if number is 3
-      [vpc.outputs.AzCount]
+    Description: Number of AZs. Third subnet will only be created if number is 3
     Type: String
   AvailableAzs:
     Description: Comma-delimited list of three IP blocks
@@ -69,22 +60,22 @@ Parameters:
     AllowedValues:
       - 'true'
       - 'false'
+  EnableGatewayEndpoints:
+    Description: Enables multi AZ deployment of NAT Gateway. The default is true.
+    Type: String
+    Default: 'true'
+    AllowedValues:
+      - 'true'
+      - 'false'
+
 Conditions:
-  IsThreeAz: !Equals 
-    - !Ref AzCount
-    - '3'
-  IsMultiAzActive: !Equals 
-    - !Ref IsMultiAz
-    - 'true'
-  IsThreeMultiAz: !And
-    - !Condition IsThreeAz
-    - !Condition IsMultiAzActive
-  IsAzSupplied: !Not 
-    - !Equals 
-      - !Select 
-        - '0'
-        - !Ref AvailableAzs
-      - ''
+  IsThreeAz: !Equals [!Ref AzCount, '3']
+  IsAzSupplied: !Not [!Equals [!Select ['0', !Ref AvailableAzs], '']]
+
+  IsMultiAzActive: !Equals [!Ref IsMultiAz, 'true']
+  IsThreeMultiAz: !And [!Condition IsThreeAz, !Condition IsMultiAzActive]
+  EnableGatewayEndpointsActive: !Equals [!Ref IsMultiAz, 'true']
+
 Resources:
 
   # Primary Subnet. This is the subnet that holds the
@@ -299,19 +290,19 @@ Resources:
         From: '32768'
         To: '65535'
   
-  # S3 endpoint for effeciency.
+  # Private endpoints for effeciency.
+  # Gateway Endpoints
   S3Endpoint:
     Type: 'AWS::EC2::VPCEndpoint'
+    Condition: EnableGatewayEndpointsActive
     Properties:
       PolicyDocument:
         Version: 2012-10-17
         Statement:
           - Effect: Allow
             Principal: '*'
-            Action:
-              - '*'
-            Resource:
-              - '*'
+            Action: ['*']
+            Resource: ['*']
       RouteTableIds:
         - !Ref RouteTable1
         - !Ref RouteTable2
@@ -319,12 +310,29 @@ Resources:
           - IsThreeAz
           - !Ref RouteTable3
           - !Ref 'AWS::NoValue'
-      ServiceName: !Join 
-        - ''
-        - - com.amazonaws.
-          - !Ref 'AWS::Region'
-          - .s3
+      ServiceName: !Sub 'com.amazonaws.${AWS::Region}.s3'
       VpcId: !Ref VpcId
+  DdbEndpoint:
+    Type: 'AWS::EC2::VPCEndpoint'
+    Condition: EnableGatewayEndpointsActive
+    Properties:
+      PolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal: '*'
+            Action: ['*']
+            Resource: ['*']
+      RouteTableIds:
+        - !Ref RouteTable1
+        - !Ref RouteTable2
+        - !If 
+          - IsThreeAz
+          - !Ref RouteTable3
+          - !Ref 'AWS::NoValue'
+      ServiceName: !Sub 'com.amazonaws.${AWS::Region}.dynamodb'
+      VpcId: !Ref VpcId
+  # /Gateway Endpoints
 
 Outputs:
   # This comma delimited string helps piece together
@@ -335,13 +343,8 @@ Outputs:
     Description: The list of subnets for the ELBs
     Value: !Join 
       - ''
-      - - !Ref Subnet1
-        - ','
-        - !Ref Subnet2
+      - - !Sub '${Subnet1},${Subnet2}'
         - !If 
           - IsThreeAz
-          - !Join 
-            - ''
-            - - ','
-              - !Ref Subnet3
+          - !Sub ',${Subnet3}'
           - !Ref 'AWS::NoValue'
