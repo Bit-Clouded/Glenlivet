@@ -567,6 +567,23 @@ Resources:
       RoleArn: !GetAtt 
         - LogStreamRole
         - Arn
+  BaseEc2Role:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ec2.amazonaws.com
+            Action: 'sts:AssumeRole'
+      Path: /analytics/log-store/
+      ManagedPolicyArns: [!Ref LinuxLogPolicy]
+  BaseEc2InstanceProfile:
+    Type: 'AWS::IAM::InstanceProfile'
+    Properties:
+      Path: /analytics/log-store/
+      Roles: [!Ref BaseEc2Role]
   LinuxLogPolicy:
     Type: 'AWS::IAM::ManagedPolicy'
     Properties:
@@ -574,7 +591,8 @@ Resources:
       PolicyDocument:
         Version: 2012-10-17
         Statement:
-          - Effect: Allow
+          - Sid: SsmManagement
+            Effect: Allow
             Action:
               - 'cloudwatch:PutMetricData'
               - 'ec2:DescribeTags'
@@ -595,9 +613,9 @@ Resources:
               - 'ec2messages:GetEndpoint'
               - 'ec2messages:GetMessages'
               - 'ec2messages:SendReply'
-            Resource:
-              - '*'
-          - Effect: Allow
+            Resource: ['*']
+          - Sid: CloudwatchMetrics
+            Effect: Allow
             Action:
               - 'logs:CreateLogGroup'
               - 'logs:CreateLogStream'
@@ -605,15 +623,18 @@ Resources:
               - 'logs:DescribeLogGroups'
               - 'logs:DescribeLogStreams'
             Resource:
-              - !GetAtt 
-                - LxSysLog
-                - Arn
-              - !GetAtt 
-                - LxAuthLog
-                - Arn
-              - !GetAtt 
-                - LxDockerLog
-                - Arn
+              - !GetAtt LxSysLog.Arn
+              - !GetAtt LxAuthLog.Arn
+              - !GetAtt LxDockerLog.Arn
+          - Sid: SessionManager
+            Effect: Allow
+            Action:
+              - 'ssmmessages:CreateControlChannel'
+              - 'ssmmessages:CreateDataChannel'
+              - 'ssmmessages:OpenControlChannel'
+              - 'ssmmessages:OpenDataChannel'
+              - 's3:GetEncryptionConfiguration'
+            Resource: ['*']
   LogStream:
     Type: 'AWS::Kinesis::Stream'
     Properties:
@@ -626,11 +647,7 @@ Resources:
         Statement:
           - Effect: Allow
             Principal:
-              Service: !Join 
-                - ''
-                - - logs.
-                  - !Ref 'AWS::Region'
-                  - .amazonaws.com
+              Service: !Sub logs.${AWS::Region}.amazonaws.com
             Action: 'sts:AssumeRole'
   LogStreamRolePolicy:
     Type: 'AWS::IAM::Policy'
