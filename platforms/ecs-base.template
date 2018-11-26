@@ -521,9 +521,98 @@ Resources:
       ComparisonOperator: "LessThanThreshold"
   # End of ECS Auto Scaling
 
+  # Shared Roles
+  # Role used for scheduling the ecs services and registering them with the loadbalancer
+  SharedEcsServiceSchedulingRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - ecs.amazonaws.com
+            Action:
+              - 'sts:AssumeRole'
+      Path: /platforms/ecs-base/
+      Policies:
+        - PolicyName: ecs-service
+          PolicyDocument:
+            Statement:
+              - Effect: Allow
+                Action:
+                  - 'elasticloadbalancing:DeregisterInstancesFromLoadBalancer'
+                  - 'elasticloadbalancing:DeregisterTargets'
+                  - 'elasticloadbalancing:Describe*'
+                  - 'elasticloadbalancing:RegisterInstancesWithLoadBalancer'
+                  - 'elasticloadbalancing:RegisterTargets'
+                  - 'ec2:Describe*'
+                  - 'ec2:AuthorizeSecurityGroupIngress'
+                Resource: '*'
+  # Role used for ecs service auto scaling
+  SharedEcsServiceScalingRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - application-autoscaling.amazonaws.com
+            Action:
+              - 'sts:AssumeRole'
+      Path: /platforms/ecs-base/
+      Policies:
+        - PolicyName: ecs-service
+          PolicyDocument:
+            Statement:
+              - Effect: Allow
+                Action:
+                  - 'ecs:DescribeServices'
+                  - 'ecs:UpdateService'
+                  - 'cloudwatch:DescribeAlarms'
+                Resource: '*'
+  # Role used for ecs service auto scaling
+  ShareEcsServiceTaskExecutionRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: [ecs-tasks.amazonaws.com]
+            Action: ['sts:AssumeRole']
+      Path: /platforms/ecs-base/
+      ManagedPolicyArns: ['arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy']
+  # Role used for ecs service auto scaling
+  ShareEcsServiceScheduleTaskRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: [events.amazonaws.com]
+            Action: ['sts:AssumeRole']
+      Path: /platforms/ecs-base/
+      Policies:
+        - PolicyName: ecs-runtask
+          PolicyDocument:
+            Statement:
+              - Effect: Allow
+                Action:
+                  - 'ecs:RunTask'
+                Resource: '*'
+
 Outputs:
   EcsAdminUrl:
     Description: Ec2 Container Service Cluster
-    Value: !Sub >-
-      https://${AWS::Region}.console.aws.amazon.com
-      /ecs/home?region=${AWS::Region}#/clusters/${EcsCluster}/containerInstances'
+    Value: !Sub 'https://${AWS::Region}.console.aws.amazon.com/ecs/home?region=${AWS::Region}#/clusters/${EcsCluster}/containerInstances'
+  SharedScalingRole:
+    Value: !GetAtt SharedEcsServiceScalingRole.Arn
+  SharedSchedulingRole:
+    Value: !GetAtt SharedEcsServiceSchedulingRole.Arn
+  SharedTaskExecutionRole:
+    Value: !GetAtt ShareEcsServiceTaskExecutionRole.Arn
+  ShareScheduleTaskRole:
+    Value: !GetAtt ShareEcsServiceScheduleTaskRole.Arn
