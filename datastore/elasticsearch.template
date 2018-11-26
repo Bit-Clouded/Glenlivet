@@ -45,14 +45,14 @@ Parameters:
   KibanaInstanceType:
     Description: WebServer EC2 instance type
     Type: String
-    Default: t2.micro
+    Default: t3.micro
     AllowedValues:
-      - t2.micro
-      - t2.small
-      - t2.medium
-      - t2.large
-      - t2.xlarge
-      - t2.2xlarge
+      - t3.micro
+      - t3.small
+      - t3.medium
+      - t3.large
+      - t3.xlarge
+      - t3.2xlarge
       - m3.medium
       - m5.large
       - m5.xlarge
@@ -66,11 +66,12 @@ Parameters:
   GatewayNodeInstanceType:
     Description: WebServer EC2 instance type
     Type: String
-    Default: m3.medium
+    Default: ''
     AllowedValues:
-      - t2.micro
-      - t2.small
-      - t2.medium
+      - ''
+      - t3.micro
+      - t3.small
+      - t3.medium
       - m3.medium
       - m5.large
       - m5.xlarge
@@ -86,9 +87,9 @@ Parameters:
     Type: String
     Default: m3.medium
     AllowedValues:
-      - t2.micro
-      - t2.small
-      - t2.medium
+      - t3.micro
+      - t3.small
+      - t3.medium
       - m3.medium
       - m5.large
       - m5.xlarge
@@ -108,11 +109,11 @@ Parameters:
   MasterNodeInstanceType:
     Description: WebServer EC2 instance type
     Type: String
-    Default: t2.small
+    Default: t3.small
     AllowedValues:
-      - t2.micro
-      - t2.small
-      - t2.medium
+      - t3.micro
+      - t3.small
+      - t3.medium
       - m3.medium
       - m5.large
       - m5.xlarge
@@ -178,6 +179,7 @@ Parameters:
 
 Conditions:
   HasNoKeypair: !Equals [!Ref KeyPairName, '']
+  HasNoGatewayNodes: !Not [!Equals [!Ref GatewayNodeInstanceType, '']]
   HasSsl: !Not [!Equals [!Ref CertificateArn, '']]
   HasEsHostname: !And 
     - !Not [!Equals [!Ref EsSubdomain, '']]
@@ -238,7 +240,8 @@ Resources:
             cat /etc/fstab.bak | grep -v ^/dev/${DataDisk} | tee /etc/fstab
             echo -e "/dev/${DataDisk}\t/mnt/xvdk\tauto\tdefaults\t0\t2" >> /etc/fstab
             mount -a
-            chown 1000:1000 /mnt/xvdk -R
+            chmod g+rwx /mnt/xvdk
+            chgrp 1000 /mnt/xvdk
             sysctl -w vm.max_map_count=262144
 
             ECID=$(curl http://169.254.169.254/latest/meta-data/instance-id)
@@ -254,6 +257,7 @@ Resources:
               -e CLUSTER_NAME=${EsConfClusterName} \
               -e DISC_SECGROUP=${EsClusterNodeSg} \
               -e IS_MASTER=false -e IS_DATA=true \
+              -e TAKE_FILE_OWNERSHIP=1 \
               -e AWS_REGION=${AWS::Region} \
               ${EsContainerName}
           - DataDisk: !If ["AttachEphemeral", "nvme0n1", "xvdk"]
@@ -311,6 +315,7 @@ Resources:
         - !Ref KeyPairName
       SecurityGroups:
         - !Ref EsClusterNodeSg
+        - !Ref EsClusterGatewayNodeSg
       IamInstanceProfile: !Ref EsDataNodeInstanceProfile
       UserData: !Base64 
         Fn::Sub: |
@@ -328,6 +333,7 @@ Resources:
             -e CLUSTER_NAME=${EsConfClusterName} \
             -e DISC_SECGROUP=${EsClusterNodeSg} \
             -e IS_MASTER=true -e IS_DATA=false \
+            -e TAKE_FILE_OWNERSHIP=1 \
             -e AWS_REGION=${AWS::Region} \
             ${EsContainerName}
 
@@ -341,6 +347,10 @@ Resources:
     Properties:
       VPCZoneIdentifier: !Ref ServerSubnets
       LaunchConfigurationName: !Ref EsMasterNodeLc
+      LoadBalancerNames: !If
+        - HasNoGatewayNodes
+        - !Ref AWS::NoValue
+        - [!Ref ClusterGateway]
       MinSize: '3'
       MaxSize: '7'
       Tags:
@@ -349,6 +359,7 @@ Resources:
           PropagateAtLaunch: 'True'
   EsGatewayNodeLc:
     Type: 'AWS::AutoScaling::LaunchConfiguration'
+    Condition: HasNoGatewayNodes
     Properties:
       InstanceType: !Ref GatewayNodeInstanceType
       ImageId: !Ref BcUbuntuBaseAmiId
@@ -376,6 +387,7 @@ Resources:
             -e INSTANCE_ID=$ECID \
             -e DISC_SECGROUP=${EsClusterNodeSg} \
             -e IS_MASTER=false -e IS_DATA=false \
+            -e TAKE_FILE_OWNERSHIP=1 \
             -e AWS_REGION=${AWS::Region} \
             ${EsContainerName}
           
@@ -388,13 +400,13 @@ Resources:
             VolumeType: gp2
   EsGatewayNodeAsg:
     Type: 'AWS::AutoScaling::AutoScalingGroup'
+    Condition: HasNoGatewayNodes
     Properties:
       VPCZoneIdentifier: !Ref ServerSubnets
       LaunchConfigurationName: !Ref EsGatewayNodeLc
       MinSize: '2'
       MaxSize: '10'
-      LoadBalancerNames:
-        - !Ref ClusterGateway
+      LoadBalancerNames: [!Ref ClusterGateway]
       Tags:
         - Key: Name
           Value: Elasticsearch Cluster Gateway Node
