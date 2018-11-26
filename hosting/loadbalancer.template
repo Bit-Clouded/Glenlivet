@@ -1,0 +1,311 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: A template for a shared load balancers.
+Metadata:
+  DefaultName: SharedLoadBalancer
+  Dependencies:
+    - TemplatePath: networking/vpc
+      Resources:
+        ElbSg: ElbSecGroup
+        HttpSg: HttpNsSecGroup
+    - TemplatePath: networking/elb-subnets
+      Parameters:
+        VpcId: VpcId
+      Outputs:
+        ElbSubnets: ElbSubnets
+      NestedDependency: networking/vpc
+    - TemplatePath: platforms/ecs-base
+      Resources:
+        SslRedirectEcsCluster: EcsCluster
+      Outputs:
+        EcsServiceSchedulingRole: SharedSchedulingRole
+        EcsServiceScalingRole: SharedScalingRole
+    - TemplatePath: analytics/logs-store
+      Resources:
+        LogBucket: Raw
+        SslRedirectLxDockerLog: LxDockerLog
+    - TemplatePath: security/waf
+      Resources:
+        RegionalWebAcl: RegionalDefaultWebAcl
+        RegionalXssRule: RegionalXssRule
+        RegionalSqlInjectionRule: RegionalSqlInjectionRule
+Parameters:
+  ElbSubnets:
+    Description: 'VPCid associated with the subnets. [elb-subnets.outputs.ElbSubnets]'
+    Type: 'List<AWS::EC2::Subnet::Id>'
+  ElbSg:
+    Description: 'Elb Security Group'
+    Type: String
+  HttpSg:
+    Description: 'Elb Targets Security Group'
+    Type: String
+  CertificateArn:
+    Description: 'Certificate to associate with HTTPS listener'
+    Type: String
+    Default: ''
+  VpcId:
+    Description: ''
+    Type: String
+  LogBucket:
+    Description: ''
+    Type: String
+  RegionalWebAcl:
+    Description: 'A shared AWS Web ACL external to the template to be attached to the load balancer'
+    Type: String
+  RegionalXssRule:
+    Description: 'A shared AWS regional xss rule external to the template. Use in case RegionalWebAcl is not filled in'
+    Type: String
+  RegionalSqlInjectionRule:
+    Description: 'A shared AWS regional xss rule external to the template. Use in case RegionalWebAcl is not filled in'
+    Type: String
+
+  EcsServiceSchedulingRole:
+    Type: String
+    Description: 'Role arn used for scheduling the ecs service and registering it to the load balancer'
+  EcsServiceScalingRole:
+    Type: String
+    Description: 'Role arn used for scaling the ecs service in and out'
+  # SSL Redirect
+  SslRedirectEcsCluster:
+    Type: String
+    Description: ''
+  SslRedirectLxDockerLog:
+    Description: ''
+    Type: String
+  SslRedirectContainerPort:
+    Description: ''
+    Type: String
+    Default: '80'
+  SslRedirectImageName:
+    Description: ''
+    Type: String
+    Default: geldim/https-redirect
+  SslRedirectHealthUrl:
+    Description: ''
+    Type: String
+    Default: /
+  SslRedirectHealthStatusCode:
+    Description: ''
+    Type: String
+    Default: '301'
+  SslRedirectCpuReservation:
+    Description: ''
+    Type: String
+    Default: '50'
+  SslRedirectMemoryReservation:
+    Description: ''
+    Type: String
+    Default: '300'
+  SslRedirectContainerCommand:
+    Description: ''
+    Type: CommaDelimitedList
+    Default: ''
+  GatewayScheme:
+    Description: ''
+    Type: String
+    Default: 'internal'
+    AllowedValues:
+      - internal
+      - internet-facing
+  IdleTimeout:
+    Description: 'Idle timeout attribute setting for the load balancer'
+    Type: Number
+    MinValue: 1
+    MaxValue: 4000
+    Default: 60
+
+Conditions:
+  CommandSupplied: !Not [!Equals [!Select ['0', !Ref SslRedirectContainerCommand], '']]
+  HasCertificateArn: !Not [!Equals [!Ref CertificateArn, '']]
+
+Resources:
+  HttpGateway:
+    Type: 'AWS::ElasticLoadBalancingV2::LoadBalancer'
+    Properties:
+      Scheme: !Ref GatewayScheme
+      LoadBalancerAttributes:
+        - Key: idle_timeout.timeout_seconds
+          Value: !Ref IdleTimeout
+        - Key: access_logs.s3.enabled
+          Value: 'true'
+        - Key: access_logs.s3.bucket
+          Value: !Ref LogBucket
+      Subnets: !Ref ElbSubnets
+      SecurityGroups:
+        - !Ref ElbSg
+        - !Ref HttpSg
+  GatewayWafAssociation:
+    Type: "AWS::WAFRegional::WebACLAssociation"
+    Properties: 
+      ResourceArn: !Ref HttpGateway
+      WebACLId: !Ref RegionalWebAcl
+  HttpListener:
+    Type: 'AWS::ElasticLoadBalancingV2::Listener'
+    Properties:
+      LoadBalancerArn: !Ref HttpGateway
+      Port: '80'
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref HttpDefaultTargetGroup
+      Protocol: HTTP
+  HttpDefaultTargetGroup:
+    Type: 'AWS::ElasticLoadBalancingV2::TargetGroup'
+    Properties:
+      HealthCheckIntervalSeconds: '60'
+      HealthCheckPath: !Ref SslRedirectHealthUrl
+      HealthCheckProtocol: HTTP
+      HealthCheckTimeoutSeconds: '30'
+      HealthyThresholdCount: 10
+      Port: !Ref SslRedirectContainerPort
+      Protocol: HTTP
+      Matcher:
+        HttpCode: !Ref SslRedirectHealthStatusCode
+      UnhealthyThresholdCount: 10
+      VpcId: !Ref VpcId
+  HttpsListener:
+    Type: 'AWS::ElasticLoadBalancingV2::Listener'
+    Condition: HasCertificateArn
+    Properties:
+      LoadBalancerArn: !Ref HttpGateway
+      Port: '443'
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref HttpsDefaultTargetGroup
+      Protocol: HTTPS
+      Certificates:
+        - CertificateArn: !Ref CertificateArn
+  HttpsDefaultTargetGroup:
+    Type: 'AWS::ElasticLoadBalancingV2::TargetGroup'
+    Condition: HasCertificateArn
+    Properties:
+      HealthCheckIntervalSeconds: '60'
+      HealthCheckPath: /
+      HealthCheckProtocol: HTTP
+      HealthCheckTimeoutSeconds: '30'
+      HealthyThresholdCount: 10
+      Port: 80
+      Protocol: HTTP
+      UnhealthyThresholdCount: 10
+      VpcId: !Ref VpcId
+
+  # Ssl redirect service.
+  # Any service that do not register a listener rule on port 80
+  # will cause the client to be redirected to 443.
+  SslRedirectService:
+    Type: 'AWS::ECS::Service'
+    # DependsOn is required as the target group would not yet be associated
+    # with a loadbalancer.
+    DependsOn: HttpListener
+    Properties:
+      Cluster: !Ref SslRedirectEcsCluster
+      DesiredCount: '2'
+      Role: !Ref EcsServiceSchedulingRole
+      LoadBalancers:
+        - ContainerName: https-redirect
+          ContainerPort: !Ref SslRedirectContainerPort
+          TargetGroupArn: !Ref HttpDefaultTargetGroup
+      TaskDefinition: !Ref SslRedirectTaskDef
+  SslRedirectTaskDef:
+    Type: 'AWS::ECS::TaskDefinition'
+    Properties:
+      ContainerDefinitions:
+        - Command: !If 
+            - CommandSupplied
+            - !Ref SslRedirectContainerCommand
+            - !Ref 'AWS::NoValue'
+          Name: https-redirect
+          Cpu: !Ref SslRedirectCpuReservation
+          Essential: 'true'
+          Image: !Ref SslRedirectImageName
+          Memory: !Ref SslRedirectMemoryReservation
+          PortMappings:
+            - ContainerPort: !Ref SslRedirectContainerPort
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !Ref SslRedirectLxDockerLog
+              awslogs-region: !Ref 'AWS::Region'
+              awslogs-stream-prefix: !Ref 'AWS::StackName'
+
+  # Ssl redirect autoscaling
+  ServiceCapacityScalingTarget:
+    Type: 'AWS::ApplicationAutoScaling::ScalableTarget'
+    Properties:
+      MaxCapacity: 10
+      MinCapacity: 2
+      ResourceId: !Sub 'service/${SslRedirectEcsCluster}/${SslRedirectService.Name}'
+      RoleARN: !Ref EcsServiceScalingRole
+      ScalableDimension: 'ecs:service:DesiredCount'
+      ServiceNamespace: ecs
+  ServiceScalingUpPolicy:
+    Type: 'AWS::ApplicationAutoScaling::ScalingPolicy'
+    Properties:
+      PolicyName: !Sub '${AWS::StackName}-ScaleUpPolicy'
+      PolicyType: StepScaling
+      ScalingTargetId: !Ref ServiceCapacityScalingTarget
+      StepScalingPolicyConfiguration:
+        AdjustmentType: PercentChangeInCapacity
+        Cooldown: 60
+        MetricAggregationType: Average
+        StepAdjustments:
+          - MetricIntervalLowerBound: 15
+            ScalingAdjustment: 200
+          - MetricIntervalUpperBound: 15
+            MetricIntervalLowerBound: 0
+            ScalingAdjustment: 100
+  ServiceScalingDownPolicy:
+    Type: 'AWS::ApplicationAutoScaling::ScalingPolicy'
+    Properties:
+      PolicyName: !Sub '${AWS::StackName}-ScaleDownPolicy'
+      PolicyType: StepScaling
+      ScalingTargetId: !Ref ServiceCapacityScalingTarget
+      StepScalingPolicyConfiguration:
+        AdjustmentType: ChangeInCapacity
+        Cooldown: 60
+        MetricAggregationType: Average
+        StepAdjustments:
+          - MetricIntervalUpperBound: 0
+            ScalingAdjustment: -1
+  CpuAlarmScaleUp:
+    Type: 'AWS::CloudWatch::Alarm'
+    Properties:
+      EvaluationPeriods: '1'
+      Statistic: Average
+      Threshold: '70'
+      AlarmDescription: CPU based scaling out
+      Period: '60'
+      AlarmActions:
+        - !Ref ServiceScalingUpPolicy
+      Namespace: AWS/ECS
+      Dimensions:
+        - Name: ServiceName
+          Value: !GetAtt SslRedirectService.Name
+        - Name: ClusterName
+          Value: !Ref SslRedirectEcsCluster
+      ComparisonOperator: GreaterThanThreshold
+      MetricName: CPUUtilization
+  CpuAlarmScaleDown:
+    Type: 'AWS::CloudWatch::Alarm'
+    Properties:
+      EvaluationPeriods: '2'
+      Statistic: Average
+      Threshold: '30'
+      AlarmDescription: CPU based scaling in
+      Period: '60'
+      AlarmActions:
+        - !Ref ServiceScalingDownPolicy
+      Namespace: AWS/ECS
+      Dimensions:
+        - Name: ServiceName
+          Value: !GetAtt SslRedirectService.Name
+        - Name: ClusterName
+          Value: !Ref SslRedirectEcsCluster
+      ComparisonOperator: LessThanThreshold
+      MetricName: CPUUtilization
+
+Outputs:
+  GatewayName:
+    Value: !GetAtt HttpGateway.LoadBalancerFullName
+  GatewayDnsName:
+    Value: !GetAtt HttpGateway.DNSName
+  GatewayCanonicalZonId:
+    Value: !GetAtt HttpGateway.CanonicalHostedZoneID
