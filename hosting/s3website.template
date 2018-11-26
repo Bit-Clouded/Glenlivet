@@ -17,6 +17,7 @@ Parameters:
   S3AccessLogBucketName:
     Description: Name of bucket for aws s3 access logs.
     Type: String
+
 Metadata:
   DefaultName: S3WebHosting
   Dependencies:
@@ -24,13 +25,11 @@ Metadata:
       Resources:
         CloudFrontLogBucketName: AccessCfLog
         S3AccessLogBucketName: AccessS3Log
+
 Conditions:
-  HasSsl: !Not 
-    - !Equals 
-      - !Ref AcmCertificateArn
-      - ''
-  HasSubdomain: !Not 
-    - !Equals [!Ref SubDomain, '']
+  HasSsl: !Not [!Equals [!Ref AcmCertificateArn, '']]
+  HasSubdomain: !Not [!Equals [!Ref SubDomain, '']]
+
 Resources:
   Website:
     Type: 'AWS::S3::Bucket'
@@ -41,24 +40,16 @@ Resources:
         ErrorDocument: error.html
       LoggingConfiguration:
         DestinationBucketName: !Ref S3AccessLogBucketName
-        LogFilePrefix: !Join 
-          - ''
-          - - !Ref 'AWS::StackName'
-            - '-Website/'
+        LogFilePrefix: !Sub '${AWS::StackName}-Website/'
   BucketPolicy:
     Type: 'AWS::S3::BucketPolicy'
     Properties:
       Bucket: !Ref Website
       PolicyDocument:
         Statement:
-          - Action:
-              - 's3:GetObject'
+          - Action: ['s3:GetObject']
             Effect: Allow
-            Resource: !Join 
-              - ''
-              - - 'arn:aws:s3:::'
-                - !Ref Website
-                - /*
+            Resource: !Sub 'arn:aws:s3:::${Website}/*'
             Principal: '*'
   WebsiteCloudfront:
     Type: 'AWS::CloudFront::Distribution'
@@ -119,15 +110,8 @@ Resources:
           - DomainName
 Outputs:
   WebsiteURL:
-    Value: !GetAtt 
-      - Website
-      - WebsiteURL
+    Value: !GetAtt Website.WebsiteURL
     Description: URL for website hosted on S3
   S3BucketSecureURL:
-    Value: !Join 
-      - ''
-      - - 'http://'
-        - !GetAtt 
-          - Website
-          - DomainName
+    Value: !Sub 'http://${Website.DomainName}'
     Description: Name of S3 bucket to hold website content

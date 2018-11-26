@@ -21,8 +21,8 @@ Metadata:
         CwlPolicy: LinuxLogPolicy
         AccessS3Log: AccessS3Log
       Outputs:
+        # TODO fix name
         CwlLinuxParams: LxDockerLogParams
-        CwlDockerParams: DockerCwlParams
     - TemplatePath: datastore/elasticsearch
       Resources:
         EsHost: EsElb
@@ -51,19 +51,15 @@ Parameters:
     Description: Container image for elasticsearch sink
     Type: String
     Default: 'bitclouded/snowplow-stream-es-sink:1-1'
-  ContainerAwsUtil:
-    Description: Container image for awscli and cfn-signal
-    Type: String
-    Default: 'bitclouded/aws-util:2-1'
   InstanceType:
     Description: Type of EC2 instance to launch for snowplow servers. c4 family is usually recommended.
     Type: String
-    Default: t2.micro
+    Default: t3.micro
     AllowedValues:
-      - t2.micro
-      - t2.small
-      - t2.medium
-      - t2.large
+      - t3.micro
+      - t3.small
+      - t3.medium
+      - t3.large
       - m3.medium
       - m5.large
       - m5.xlarge
@@ -79,61 +75,54 @@ Parameters:
   BcUbuntuBaseAmiId:
     Description: Image id of the frontend
     Type: 'AWS::EC2::Image::Id'
+  EsHost:
+    Description: 'Hostname of Elasticsearch'
+    Type: String
+    Default: ''
+
+  # Network dependencies
   VpcId:
-    Description: 'VPCid associated with the subnets. [elb-subnets.parameters.VpcId]'
+    Description: 'Vpc ID associated with the subnets.'
     Type: String
   ElbSubnets:
     Description: '[elb-subnets.outputs.ElbSubnets]'
     Type: 'List<AWS::EC2::Subnet::Id>'
   WebServerSubnets:
-    Description: 'Subnet to run HA web cluster on. [elb-subnets.outputs.WebServerSubnets]'
+    Description: 'Subnet to run HA web cluster on.'
     Type: 'List<AWS::EC2::Subnet::Id>'
   ElbSg:
-    Description: 'Elb Security Group. [vpc.resources.ElbSecGroup]'
+    Description: 'Elb Security Group.'
     Type: String
   ElbTargetSg:
-    Description: 'Elb Target Security Group. [vpc.resources.ElbTargetSecGroup]'
+    Description: 'Elb Target Security Group.'
     Type: String
   HttpSg:
-    Description: 'Elb Target Security Group. [vpc.resources.HttpNsSecGroup]'
+    Description: 'Elb Target Security Group.'
     Type: String
+
+  # Logging dependencies
   AccessLogBucket:
-    Description: 'Image id of the frontend [logs-store.resources.Raw]'
+    Description: 'Loadbalancer access log bucket.'
     Type: String
-  CwlUbuntuAgentDocker:
-    Description: Name of cluster. This is used for discovery.
-    Type: String
-    Default: 'bitclouded/aws-cwl-agent:4.1'
   CwlLinuxParams:
-    Description: >-
-      Environment variables for syslog and authlog cwl group names
-      [logs-store.outputs.LxDockerLogParams]
-    Type: String
-  CwlDockerParams:
-    Description: 'Docker log driver params [logs-store.outputs.DockerCwlParams]'
+    Description: Environment variables for syslog and authlog cwl group names.
     Type: String
   CwlPolicy:
-    Description: 'Managed policy for linux logging. [logs-store.resources.LinuxLogPolicy]'
+    Description: 'Managed policy for linux logging'
     Type: String
   AccessS3Log:
     Description: Bucket for holding s3 access logs
     Type: String
-  EsHost:
-    Description: 'Hostname of Elasticsearch [elasticsearch.outputs.EsElb]'
+  ContainerAwsUtil:
+    Description: Container image for awscli and cfn-signal
     Type: String
-    Default: ''
+    Default: 'bitclouded/aws-util:2-1'
+
 Conditions:
-  HasSsl: !Not 
-    - !Equals 
-      - !Ref SslCertId
-      - ''
-  HasEsHost: !Not 
-    - !Equals 
-      - !Ref EsHost
-      - ''
-  HasNoKeypair: !Equals 
-    - !Ref KeyPairName
-    - ''
+  HasSsl: !Not [!Equals [!Ref SslCertId, '']]
+  HasEsHost: !Not [!Equals [!Ref EsHost, '']]
+  HasNoKeypair: !Equals [!Ref KeyPairName, '']
+
 Resources:
   RawStream:
     Type: 'AWS::Kinesis::Stream'
@@ -171,12 +160,8 @@ Resources:
               - 'kinesis:SplitShard'
             Effect: Allow
             Resource:
-              - !GetAtt 
-                - EnrichedStream
-                - Arn
-              - !GetAtt 
-                - EnrichedStreamBad
-                - Arn
+              - !GetAtt EnrichedStream.Arn
+              - !GetAtt EnrichedStreamBad.Arn
           - Action:
               - 'kinesis:DescribeStream'
               - 'kinesis:GetShardIterator'
@@ -191,15 +176,7 @@ Resources:
           - Action:
               - 'dynamodb:*'
             Effect: Allow
-            Resource:
-              - !Join 
-                - ''
-                - - 'arn:aws:dynamodb:'
-                  - !Ref 'AWS::Region'
-                  - ':'
-                  - !Ref 'AWS::AccountId'
-                  - ':table/'
-                  - !Ref RawReadCheckpoint
+            Resource: [!GetAtt RawReadCheckpoint.Arn]
   EnrichedStreamPermission:
     Type: 'AWS::IAM::ManagedPolicy'
     Properties:
@@ -216,9 +193,7 @@ Resources:
               - 'kinesis:SplitShard'
             Effect: Allow
             Resource:
-              - !GetAtt 
-                - EnrichedStream
-                - Arn
+              - !GetAtt EnrichedStream.Arn
           - Action:
               - 'kinesis:DescribeStream'
               - 'kinesis:MergeShards'
@@ -234,38 +209,17 @@ Resources:
               - 'dynamodb:*'
             Effect: Allow
             Resource:
-              - !Join 
-                - ''
-                - - 'arn:aws:dynamodb:'
-                  - !Ref 'AWS::Region'
-                  - ':'
-                  - !Ref 'AWS::AccountId'
-                  - ':table/'
-                  - !Ref EnrichedToS3Checkpoint
+              - !GetAtt EnrichedToS3Checkpoint.Arn
               - !If 
                 - HasEsHost
-                - !Join 
-                  - ''
-                  - - 'arn:aws:dynamodb:'
-                    - !Ref 'AWS::Region'
-                    - ':'
-                    - !Ref 'AWS::AccountId'
-                    - ':table/'
-                    - !Ref EnrichedToEsCheckpoint
+                - !GetAtt EnrichedToEsCheckpoint.Arn
                 - !Ref 'AWS::NoValue'
           - Effect: Allow
             Action:
               - 's3:*'
             Resource:
-              - !Join 
-                - ''
-                - - 'arn:aws:s3:::'
-                  - !Ref RawDataStore
-                  - /*
-              - !Join 
-                - ''
-                - - 'arn:aws:s3:::'
-                  - !Ref RawDataStore
+              - !Sub 'arn:aws:s3:::${RawDataStore}/*'
+              - !Sub 'arn:aws:s3:::${RawDataStore}'
 
   # DynamoDB and associated autoscaling stuff.
   # Scaling Role is shared.
@@ -596,12 +550,8 @@ Resources:
               - 'kinesis:SplitShard'
             Effect: Allow
             Resource:
-              - !GetAtt 
-                - RawStream
-                - Arn
-              - !GetAtt 
-                - RawStreamBad
-                - Arn
+              - !GetAtt RawStream.Arn
+              - !GetAtt RawStreamBad.Arn
   EnrichStreamRole:
     Type: 'AWS::IAM::Role'
     Properties:
@@ -896,10 +846,7 @@ Resources:
       AccessControl: Private
       LoggingConfiguration:
         DestinationBucketName: !Ref AccessS3Log
-        LogFilePrefix: !Join 
-          - ''
-          - - !Ref 'AWS::StackName'
-            - '-RawDataStore'
+        LogFilePrefix: !Sub '${AWS::StackName}-RawDataStore'
       VersioningConfiguration:
         Status: Enabled
       NotificationConfiguration:
@@ -919,16 +866,12 @@ Resources:
           Effect: Allow
           Principal:
             AWS: '*'
-          Action:
-            - 'SNS:Publish'
+          Action: ['SNS:Publish']
           Resource: !Ref NewObjectNotification
           Condition:
             ArnLike:
-              'aws:SourceArn': !Join 
-                - ''
-                - - 'arn:aws:s3:*:*:*'
-      Topics:
-        - !Ref NewObjectNotification
+              'aws:SourceArn': 'arn:aws:s3:*:*:*'
+      Topics: [!Ref NewObjectNotification]
 
 Outputs:
   EnrichedStreamArn:
