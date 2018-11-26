@@ -27,6 +27,10 @@ Parameters:
       Subnet suffix to be concatenated with the VPC prefix.
       [logs-store.resources.VpcTrafficLog]
     Type: String
+  DefaultVpcPrivateNamespace:
+    Description: A default namespace for predesigned services.
+    Type: String
+    Default: services.internal
 Mappings:
   RegionMap:
     us-east-1:
@@ -151,9 +155,17 @@ Resources:
       GroupId: !Ref ElbTargetSecGroup
       IpProtocol: '-1'
       SourceSecurityGroupId: !Ref ElbSecGroup
+  InternalNamespace:
+    Type: "AWS::ServiceDiscovery::PrivateDnsNamespace"
+    Properties:
+      Name: !Ref DefaultVpcPrivateNamespace
+      Vpc: !Ref Vpc
+
 Outputs:
   AzCount:
     Value: !FindInMap 
       - RegionMap
       - !Ref 'AWS::Region'
       - AzCount
+  DefaultInternalNamespaceId:
+    Value: !GetAtt InternalNamespace.Id
