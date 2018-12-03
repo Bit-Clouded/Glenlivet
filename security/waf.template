@@ -142,11 +142,12 @@ Resources:
       Name: !Sub '${AWS::StackName} - Regional WebAcl'
       Rules:
         - Action:
-            Type: BLOCK
+            Type: COUNT
           Priority: 1
           RuleId: !Ref RegionalSqlInjectionRule
+          # Sql injection interferes with Kibana
         - Action:
-            Type: BLOCK
+            Type: COUNT
           Priority: 2
           RuleId: !Ref RegionalXssRule
   RegionalSqlInjectionDetection:
