@@ -16,7 +16,6 @@ Metadata:
     - TemplatePath: analytics/logs-store
       Resources:
         LxDockerLog: LxDockerLog
-        S3AccessLogBucketName: AccessS3Log
     - TemplatePath: platforms/ecs-base
       Resources:
         DatabaseSg: DatabaseSg
@@ -133,10 +132,6 @@ Parameters:
     Type: String
     Default: 'rate(30 minutes)'
 
-  S3AccessLogBucketName:
-    Description: Name of bucket for aws s3 access logs.
-    Type: String
-
   OpsAlert:
     Type: String
     Default: ''
@@ -188,7 +183,7 @@ Resources:
         - FARGATE
       NetworkMode: awsvpc
       ContainerDefinitions:
-        - Command: []
+        - Command: ['--es.tags-as-fields.all']
           Name: jaeger-collector
           Essential: 'true'
           Image: !Ref CollectorImageName
@@ -208,6 +203,21 @@ Resources:
               awslogs-group: !Ref LxDockerLog
               awslogs-region: !Ref 'AWS::Region'
               awslogs-stream-prefix: !Ref AWS::StackName
+        - Command: [!Sub '--reporter.tchannel.host-port=${Subdomain}.${NamespaceName}:14267']
+          Name: jaeger-agent
+          Essential: 'true'
+          Image: !Ref AgentImageName
+          PortMappings:
+            - ContainerPort: 5775
+            - ContainerPort: 6831
+            - ContainerPort: 6832
+            - ContainerPort: 5778
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !Ref LxDockerLog
+              awslogs-region: !Ref 'AWS::Region'
+              awslogs-stream-prefix: !Ref 'AWS::StackName'
   CollectorService:
     Type: 'AWS::ECS::Service'
     Properties:
@@ -440,10 +450,9 @@ Resources:
           Essential: 'true'
           Image: !Ref ExampleImageName
           Memory: !Ref MemoryReservation
-          Links: [jaeger-agent]
           Environment:
             - Name: JAEGER_AGENT_HOST
-              Value: jaeger-agent
+              Value: !Sub '${Subdomain}.${NamespaceName}'
             - Name: JAEGER_AGENT_PORT
               Value: 6831
           PortMappings:
@@ -451,18 +460,6 @@ Resources:
             - ContainerPort: 8081
             - ContainerPort: 8082
             - ContainerPort: 8083
-          LogConfiguration:
-            LogDriver: awslogs
-            Options:
-              awslogs-group: !Ref LxDockerLog
-              awslogs-region: !Ref 'AWS::Region'
-              awslogs-stream-prefix: !Ref 'AWS::StackName'
-        - Command: [!Sub '--reporter.tchannel.host-port=${Subdomain}.${NamespaceName}:14267']
-          Name: jaeger-agent
-          Cpu: !Ref CpuReservation
-          Essential: 'true'
-          Image: !Ref AgentImageName
-          Memory: !Ref MemoryReservation
           LogConfiguration:
             LogDriver: awslogs
             Options:
