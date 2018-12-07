@@ -18,6 +18,15 @@ Parameters:
 Metadata:
   DefaultName: LogStore
 Resources:
+  CriticalEvents:
+    Type: 'AWS::SNS::Topic'
+    Properties:
+      DisplayName: Infrastructure Critical Events
+  WarningEvents:
+    Type: 'AWS::SNS::Topic'
+    Properties:
+      DisplayName: Infrastructure Warning Events
+
   ConfigRecorder:
     Type: 'AWS::Config::ConfigurationRecorder'
     Properties:
