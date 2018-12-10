@@ -45,9 +45,9 @@ Parameters:
       - t2.medium
       - t2.large
       - m3.medium
-      - m4.large
-      - m4.xlarge
-      - m4.2xlarge
+      - m5.large
+      - m5.xlarge
+      - m5.2xlarge
     ConstraintDescription: must be a valid EC2 instance type.
   BcUbuntuBaseAmiId:
     Description: AWS AMI ID of Debian Jessie.
@@ -95,7 +95,7 @@ Parameters:
   VaultContainerImage:
     Description: 'Official Hashicorp Vault image from dockerhub library'
     Type: String
-    Default: 'vault:0.8.2'
+    Default: 'vault:0.11.3'
   AccessLogBucket:
     Description: S3 bucket for ELB access log.
     Type: String
@@ -148,7 +148,7 @@ Resources:
     Properties:
       Roles:
         - !Ref ServerRole
-      Path: /analytics/grafana/
+      Path: /security/vault/
   ServerRole:
     Type: 'AWS::IAM::Role'
     Properties:
@@ -160,7 +160,7 @@ Resources:
               Service: ec2.amazonaws.com
             Action:
               - 'sts:AssumeRole'
-      Path: /analytics/grafana/
+      Path: /security/vault/
       ManagedPolicyArns:
         - !Ref CwlPolicy
       Policies:
@@ -174,6 +174,7 @@ Resources:
                   - 'cloudwatch:Describe*'
                   - 'cloudwatch:Get*'
                   - 'dynamodb:*'
+                  - 'route53:*'
                 Resource: '*'
   AdminServerLc:
     Type: 'AWS::AutoScaling::LaunchConfiguration'
@@ -198,6 +199,8 @@ Resources:
             -e HOSTEDZONE=${HostedZoneName} \
             -e SUBDOMAIN=${Subdomain} \
             ${CertbotContainerImage}
+          chmod go+x ~/archive
+          chmod go+x ~/live
 
           cat <<EOF >> /root/vault.hcl
           backend "dynamodb" {
@@ -210,11 +213,14 @@ Resources:
             tls_key_file  = "/vault/config/live/${Subdomain}.${HostedZoneName}/privkey.pem"
             address       = "0.0.0.0:8200"
             tls_disable   = 0 }
+          disable_mlock = true
+          ui = true
           EOF
 
           docker run -d --restart=always --cap-add=IPC_LOCK \
             --name vault --log-opt awslogs-stream=${AWS::StackName}/vault/$ECID \
             -v /root/:/vault/config/ \
+            -e SKIP_SETCAP=true \
             ${CwlLinuxParams} -p 8200:8200 \
             ${VaultContainerImage} server
           docker run -t --rm ${ContainerAwsUtil} cfn-signal -e $? --stack ${AWS::StackName} --resource AdminAsg --region ${AWS::Region}
