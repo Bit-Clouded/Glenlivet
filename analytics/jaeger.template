@@ -1,0 +1,522 @@
+AWSTemplateFormatVersion: 2010-09-09
+Metadata:
+  DefaultName: MonkeyShoulderEcsSd
+  Dependencies:
+    - TemplatePath: networking/vpc
+      Parameters:
+        NamespaceName: DefaultVpcPrivateNamespace
+      Resources:
+        VpcId: Vpc
+      Outputs:
+        NamespaceId: DefaultInternalNamespaceId
+    - TemplatePath: networking/elb-subnets
+      Outputs:
+        WebServerSubnets: WebServerSubnets
+      NestedDependency: networking/vpc
+    - TemplatePath: analytics/logs-store
+      Resources:
+        LxDockerLog: LxDockerLog
+    - TemplatePath: platforms/ecs-base
+      Resources:
+        DatabaseSg: DatabaseSg
+        EcsCluster: EcsCluster
+      Outputs:
+        TaskExecutionRoleArn: SharedTaskExecutionRole
+        ServiceScalingRole: SharedScalingRole
+        ServiceSchedulingRole: SharedSchedulingRole
+        ShareScheduleTaskRole: ShareScheduleTaskRole
+    - TemplatePath: datastore/elasticsearch
+      Outputs:
+        EsHost: EsElb
+    - TemplatePath: hosting/loadbalancer
+      Resources:
+        HttpsListener: HttpsListener
+        HttpListener: HttpListener
+      Outputs:
+        GatewayCanonicalZoneId: GatewayCanonicalZonId
+        GatewayDnsName: GatewayDnsName
+        GatewayName: GatewayName
+
+Parameters:
+  DeregistrationDelay:
+    Description: ''
+    Type: Number
+    MinValue: 0
+    MaxValue: 3600
+    Default: 20
+  GatewayName:
+    Type: String
+    Description: 'Loadbalancer full name'
+  GatewayDnsName:
+    Type: String
+    Description: 'Loadbalancer DNS name'
+  GatewayCanonicalZoneId:
+    Type: String
+    Description: 'Loadbalancer Zone ID'
+  HttpsListener:
+    Type: String
+    Description: 'Loadbalancer HTTS listener'
+    Default: ''
+  HttpListener:
+    Type: String
+    Description: 'Loadbalancer HTT listener'
+  ListenerPriority:
+    Description: ''
+    Type: Number
+    Default: 10
+  ServiceScalingRole:
+    Description: 'Role used for ECS service autoscaling'
+    Type: String
+  ServiceSchedulingRole:
+    Description: 'Role used for ECS service scheduling'
+    Type: String
+  ShareScheduleTaskRole:
+    Description: 'Role used for ECS cron job'
+    Type: String
+    Default: ''
+  
+  WebServerSubnets:
+    Description: 'Subnets to host the collectors in'
+    Type: 'List<AWS::EC2::Subnet::Id>'
+  EsHost:
+    Description: 'Url entry point for Elasticsearch'
+    Type: String
+  VpcId:
+    Description: 'VPCid associated with the subnets.'
+    Type: 'AWS::EC2::VPC::Id'
+  DatabaseSg:
+    Type: String
+    Description: 'Security group to allow access from ECS cluster'
+  EcsCluster:
+    Type: String
+    Description: 'ECS Cluster to run the collector and UI on'
+  CollectorImageName:
+    Description: 'Docker image tag for the Jaeger collector'
+    Type: String
+    Default: jaegertracing/jaeger-collector:1.8.0
+  QueryImageName:
+    Description: 'Docker image tag for the Jaeger web ui'
+    Type: String
+    Default: jaegertracing/jaeger-query:1.8.0
+  AgentImageName:
+    Description: 'Docker image tag for the Jaeger agent'
+    Type: String
+    Default: jaegertracing/jaeger-agent:1.8.0
+  ExampleImageName:
+    Description: 'Docker image tag for the Jaeger sample site'
+    Type: String
+    Default: jaegertracing/example-hotrod:1.8.0
+  SparkJobImageName:
+    Description: 'Docker image tag for the Jaeger spark job'
+    Default: jaegertracing/spark-dependencies
+    Type: String
+  LxDockerLog:
+    Description: ''
+    Type: String
+  HostedZoneName:
+    Description: Hosted Zone for the url (Must not end with '.')
+    Type: String
+  Subdomain:
+    Description: Subdomain (Must not end with '.')
+    Type: String
+  CpuReservation:
+    Description: ''
+    Type: String
+    Default: '256'
+  MemoryReservation:
+    Description: ''
+    Type: String
+    Default: '512'
+  SparkJobRate:
+    Description: 'Rate expression at which to run the spark job. Use either rate() or cron().'
+    Type: String
+    Default: 'rate(30 minutes)'
+
+  OpsAlert:
+    Type: String
+    Default: ''
+  TaskExecutionRoleArn:
+    Description: 'Role for executing ecs fargate tasks'
+    Type: String
+  EsHost:
+    Description: 'Hostname of Elasticsearch'
+    Type: String
+    Default: ''
+  NamespaceId:
+    Description: 'Namespace Id to register the Jaeger collector in'
+    Type: String
+  NamespaceName:
+    Description: 'Namespace name to register the Jaeger collector in'
+    Type: String
+  ExampleListenerPriority:
+    Description: 'Listener priority for the example app'
+    Type: Number
+    Default: 11
+Conditions:
+  # / pub/
+  HasOpsAlerts: !Not 
+    - !Equals [!Ref 'OpsAlert',  '']
+
+Resources:
+
+  ServiceDiscovery:
+    Type: 'AWS::ServiceDiscovery::Service' 
+    Properties:
+      Description: noconfigweb service discovery
+      DnsConfig: 
+        DnsRecords: 
+          - Type: A
+            TTL: 2
+        NamespaceId: !Ref NamespaceId
+      HealthCheckCustomConfig: 
+        FailureThreshold: 3
+      Name: !Sub '${Subdomain}'
+
+  # Collector Stuff
+  CollectorTaskDef:
+    Type: 'AWS::ECS::TaskDefinition'
+    Properties:
+      ExecutionRoleArn: !Ref TaskExecutionRoleArn
+      Cpu: !Ref CpuReservation
+      Memory: !Ref MemoryReservation
+      RequiresCompatibilities:
+        - FARGATE
+      NetworkMode: awsvpc
+      ContainerDefinitions:
+        - Command: ['--es.tags-as-fields.all']
+          Name: jaeger-collector
+          Essential: 'true'
+          Image: !Ref CollectorImageName
+          Environment:
+            - Name: SPAN_STORAGE_TYPE
+              Value: elasticsearch
+            - Name: ES_SERVER_URLS
+              Value: !Sub 'http://${EsHost}:9200/'
+          PortMappings:
+            - ContainerPort: 9411
+            - ContainerPort: 14267
+            - ContainerPort: 14268
+            - ContainerPort: 14269
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !Ref LxDockerLog
+              awslogs-region: !Ref 'AWS::Region'
+              awslogs-stream-prefix: !Ref AWS::StackName
+        - Command: [!Sub '--reporter.tchannel.host-port=${Subdomain}.${NamespaceName}:14267']
+          Name: jaeger-agent
+          Essential: 'true'
+          Image: !Ref AgentImageName
+          PortMappings:
+            - ContainerPort: 5775
+            - ContainerPort: 6831
+            - ContainerPort: 6832
+            - ContainerPort: 5778
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !Ref LxDockerLog
+              awslogs-region: !Ref 'AWS::Region'
+              awslogs-stream-prefix: !Ref 'AWS::StackName'
+  CollectorService:
+    Type: 'AWS::ECS::Service'
+    Properties:
+      Cluster: !Ref EcsCluster
+      ServiceRegistries:  
+        - RegistryArn: !GetAtt ServiceDiscovery.Arn
+      LaunchType: FARGATE
+      DesiredCount: 2
+      TaskDefinition: !Ref CollectorTaskDef
+      NetworkConfiguration: 
+        AwsvpcConfiguration: 
+          SecurityGroups: 
+            - !Ref DatabaseSg
+          Subnets: !Ref WebServerSubnets
+  ServiceCapacityScalingTarget:
+    Type: 'AWS::ApplicationAutoScaling::ScalableTarget'
+    DependsOn: CollectorService
+    Properties:
+      MaxCapacity: 6
+      MinCapacity: 2
+      ResourceId: !Sub 'service/${EcsCluster}/${CollectorService.Name}'
+      RoleARN: !Ref ServiceScalingRole
+      ScalableDimension: 'ecs:service:DesiredCount'
+      ServiceNamespace: ecs
+  ServiceScalingUpPolicy:
+    Type: 'AWS::ApplicationAutoScaling::ScalingPolicy'
+    Properties:
+      PolicyName: !Sub ${AWS::StackName}-ScaleUpPolicy
+      PolicyType: StepScaling
+      ScalingTargetId: !Ref ServiceCapacityScalingTarget
+      StepScalingPolicyConfiguration:
+        AdjustmentType: PercentChangeInCapacity
+        Cooldown: 60
+        MetricAggregationType: Average
+        StepAdjustments:
+          - MetricIntervalLowerBound: 15
+            ScalingAdjustment: 200
+          - MetricIntervalUpperBound: 15
+            MetricIntervalLowerBound: 0
+            ScalingAdjustment: 100
+  ServiceScalingDownPolicy:
+    Type: 'AWS::ApplicationAutoScaling::ScalingPolicy'
+    Properties:
+      PolicyName: !Sub ${AWS::StackName}-ScaleDownPolicy
+      PolicyType: StepScaling
+      ScalingTargetId: !Ref ServiceCapacityScalingTarget
+      StepScalingPolicyConfiguration:
+        AdjustmentType: ChangeInCapacity
+        Cooldown: 60
+        MetricAggregationType: Average
+        StepAdjustments:
+          - MetricIntervalUpperBound: 0
+            ScalingAdjustment: -1
+  CpuAlarmScaleUp:
+    Type: 'AWS::CloudWatch::Alarm'
+    Properties:
+      EvaluationPeriods: '1'
+      Statistic: Average
+      Threshold: '70'
+      AlarmDescription: CPU based out scaling.
+      Period: '60'
+      AlarmActions:
+        - !Ref ServiceScalingUpPolicy
+      Namespace: AWS/ECS
+      Dimensions:
+        - Name: ServiceName
+          Value: !GetAtt CollectorService.Name
+        - Name: ClusterName
+          Value: !Ref EcsCluster
+      ComparisonOperator: GreaterThanThreshold
+      MetricName: CPUUtilization
+  CpuAlarmScaleDown:
+    Type: 'AWS::CloudWatch::Alarm'
+    Properties:
+      EvaluationPeriods: '2'
+      Statistic: Average
+      Threshold: '30'
+      AlarmDescription: CPU based in scaling.
+      Period: '60'
+      AlarmActions:
+        - !Ref ServiceScalingDownPolicy
+      Namespace: AWS/ECS
+      Dimensions:
+        - Name: ServiceName
+          Value: !GetAtt CollectorService.Name
+        - Name: ClusterName
+          Value: !Ref EcsCluster
+      ComparisonOperator: LessThanThreshold
+      MetricName: CPUUtilization
+  # /Collector Stuff
+
+  # Spark Job
+  SparkTaskSchedule:
+    Type: AWS::Events::Rule
+    Properties:
+      Description: "dump data every workday at 10"
+      Name: dump-data
+      ScheduleExpression: !Ref SparkJobRate
+      State: ENABLED
+      Targets:
+        - Id: dump-data-ecs-task
+          RoleArn: !GetAtt ShareEcsServiceScheduleTaskRole.Arn
+          EcsParameters:
+            TaskDefinitionArn: !Ref SparkTaskDef
+          Arn: !Sub 'arn:aws:ecs:${AWS::Region}:${AWS::AccountId}:cluster/${EcsCluster}'
+  # Role used for ecs service auto scaling
+  ShareEcsServiceScheduleTaskRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: [events.amazonaws.com]
+            Action: ['sts:AssumeRole']
+      Path: /platforms/ecs-base/
+      Policies:
+        - PolicyName: ecs-runtask
+          PolicyDocument:
+            Statement:
+              - Effect: Allow
+                Action:
+                  - 'ecs:RunTask'
+                Resource: '*'
+
+  SparkTaskDef:
+    Type: 'AWS::ECS::TaskDefinition'
+    Properties:
+      ContainerDefinitions:
+        - Command: !Ref 'AWS::NoValue'
+          Name: jaeger-spark
+          Cpu: !Ref CpuReservation
+          Essential: 'true'
+          Image: !Ref SparkJobImageName
+          Memory: !Ref MemoryReservation
+          Environment:
+            - Name: STORAGE
+              Value: elasticsearch
+            - Name: ES_NODES
+              Value: !Sub 'http://${EsHost}:9200/'
+            - Name: ES_NODES_WAN_ONLY
+              Value: 'true'
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !Ref LxDockerLog
+              awslogs-region: !Ref 'AWS::Region'
+              awslogs-stream-prefix: !Ref 'AWS::StackName'
+  # /Spark Job
+
+  QueryTaskDef:
+    Type: 'AWS::ECS::TaskDefinition'
+    Properties:
+      ContainerDefinitions:
+        - Command: !Ref 'AWS::NoValue'
+          Name: jaeger-query
+          Cpu: !Ref CpuReservation
+          Essential: 'true'
+          Image: !Ref QueryImageName
+          Memory: !Ref MemoryReservation
+          Environment:
+            - Name: SPAN_STORAGE_TYPE
+              Value: elasticsearch
+            - Name: ES_SERVER_URLS
+              Value: !Sub 'http://${EsHost}:9200/'
+          PortMappings:
+            - ContainerPort: 16686
+            - ContainerPort: 16687
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !Ref LxDockerLog
+              awslogs-region: !Ref 'AWS::Region'
+              awslogs-stream-prefix: !Ref 'AWS::StackName'
+  QueryService:
+    Type: 'AWS::ECS::Service'
+    DependsOn: AlbListenerRule
+    Properties:
+      Cluster: !Ref EcsCluster
+      Role: !Ref ServiceSchedulingRole
+      LoadBalancers:
+        - ContainerName: jaeger-query
+          ContainerPort: 16686
+          TargetGroupArn: !Ref AlbTargetGroup
+      DesiredCount: 2
+      TaskDefinition: !Ref QueryTaskDef
+  AlbListenerRule:
+    Type: 'AWS::ElasticLoadBalancingV2::ListenerRule'
+    Properties:
+      Actions:
+        - Type: forward
+          TargetGroupArn: !Ref AlbTargetGroup
+      Conditions:
+        - Field: host-header
+          Values: [!Sub '${Subdomain}.${HostedZoneName}']
+      ListenerArn: !Ref HttpListener
+      Priority: !Ref ListenerPriority
+  AlbTargetGroup:
+    Type: 'AWS::ElasticLoadBalancingV2::TargetGroup'
+    Properties:
+      HealthCheckIntervalSeconds: '60'
+      HealthCheckPath: '/'
+      HealthCheckProtocol: HTTP
+      HealthCheckTimeoutSeconds: '30'
+      HealthyThresholdCount: 10
+      Port: 16686
+      Protocol: HTTP
+      UnhealthyThresholdCount: 10
+      VpcId: !Ref VpcId
+      TargetGroupAttributes:
+        - Key: deregistration_delay.timeout_seconds
+          Value: !Ref DeregistrationDelay
+  Route53:
+    Type: 'AWS::Route53::RecordSet'
+    Properties:
+      HostedZoneName: !Sub '${HostedZoneName}.'
+      Comment: Hostname
+      Name: !Sub '${Subdomain}.${HostedZoneName}.'
+      Type: A
+      AliasTarget:
+        DNSName: !Ref GatewayDnsName
+        HostedZoneId: !Ref GatewayCanonicalZoneId
+
+  ExampleTaskDef:
+    Type: 'AWS::ECS::TaskDefinition'
+    Properties:
+      ContainerDefinitions:
+        - Name: jaeger-hotrod
+          Cpu: !Ref CpuReservation
+          Essential: 'true'
+          Image: !Ref ExampleImageName
+          Memory: !Ref MemoryReservation
+          Environment:
+            - Name: JAEGER_AGENT_HOST
+              Value: !Sub '${Subdomain}.${NamespaceName}'
+            - Name: JAEGER_AGENT_PORT
+              Value: 6831
+          PortMappings:
+            - ContainerPort: 8080
+            - ContainerPort: 8081
+            - ContainerPort: 8082
+            - ContainerPort: 8083
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !Ref LxDockerLog
+              awslogs-region: !Ref 'AWS::Region'
+              awslogs-stream-prefix: !Ref 'AWS::StackName'
+  ExampleService:
+    Type: 'AWS::ECS::Service'
+    DependsOn: ExampleAlbListenerRule
+    Properties:
+      Cluster: !Ref EcsCluster
+      Role: !Ref ServiceSchedulingRole
+      LoadBalancers:
+        - ContainerName: jaeger-hotrod
+          ContainerPort: 8080
+          TargetGroupArn: !Ref ExampleAlbTargetGroup
+      DesiredCount: 2
+      TaskDefinition: !Ref ExampleTaskDef
+  ExampleAlbListenerRule:
+    Type: 'AWS::ElasticLoadBalancingV2::ListenerRule'
+    Properties:
+      Actions:
+        - Type: forward
+          TargetGroupArn: !Ref ExampleAlbTargetGroup
+      Conditions:
+        - Field: host-header
+          Values: [!Sub '${Subdomain}-hotrod.${HostedZoneName}']
+      ListenerArn: !Ref HttpListener
+      Priority: !Ref ExampleListenerPriority
+  ExampleAlbTargetGroup:
+    Type: 'AWS::ElasticLoadBalancingV2::TargetGroup'
+    Properties:
+      HealthCheckIntervalSeconds: '60'
+      HealthCheckPath: '/'
+      HealthCheckProtocol: HTTP
+      HealthCheckTimeoutSeconds: '30'
+      HealthyThresholdCount: 10
+      Port: 8080
+      Protocol: HTTP
+      UnhealthyThresholdCount: 10
+      VpcId: !Ref VpcId
+      TargetGroupAttributes:
+        - Key: deregistration_delay.timeout_seconds
+          Value: !Ref DeregistrationDelay
+  ExampleRoute53:
+    Type: 'AWS::Route53::RecordSet'
+    Properties:
+      HostedZoneName: !Sub '${HostedZoneName}.'
+      Comment: Hostname
+      Name: !Sub '${Subdomain}-hotrod.${HostedZoneName}.'
+      Type: A
+      AliasTarget:
+        DNSName: !Ref GatewayDnsName
+        HostedZoneId: !Ref GatewayCanonicalZoneId
+
+Outputs:
+  UiEndpoint:
+    # Http will auto redirect to https if it's enabled.
+    Value: !Sub 'http://${Subdomain}.${HostedZoneName}/'
+    Description: Web UI

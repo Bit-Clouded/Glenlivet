@@ -1,0 +1,262 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: Base infrastructure for AWS WAF and Shield.
+Metadata:
+  DefaultName: WafBaseline
+
+Parameters:
+  CreateDefaultWebAcls:
+    Type: String
+    Default: true
+    AllowedValues:
+      - true
+      - false
+    Description: Determines whether a default set of shared Web ACLs (one global and one regional) are created
+  XssRuleDefaultAction:
+    Type: String
+    Default: BLOCK
+    AllowedValues:
+      - ALLOW
+      - BLOCK
+      - COUNT
+    Description: Default action to taken when XSS attack is detected.
+  
+
+Conditions:
+  IsCreateDefaultWebAcls: !Equals [!Ref CreateDefaultWebAcls, 'true']
+
+Resources:
+  GlobalDefaultWebAcl:
+    Condition: IsCreateDefaultWebAcls
+    Type: "AWS::WAF::WebACL"
+    Properties: 
+      DefaultAction:
+        Type: ALLOW
+      MetricName: GlobalDefaultXssRule
+      Name: !Sub '${AWS::StackName} - Global WebAcl'
+      Rules:
+        - Action:
+            Type: BLOCK
+          Priority: 1
+          RuleId: !Ref GlobalSqlInjectionRule
+        - Action:
+            Type: BLOCK
+          Priority: 2
+          RuleId: !Ref GlobalXssRule
+  GlobalSqlInjectionDetection:
+    Type: 'AWS::WAF::SqlInjectionMatchSet'
+    Properties:
+      Name: !Sub '${AWS::StackName} - SQL Injection Detection'
+      SqlInjectionMatchTuples:
+        - FieldToMatch:
+            Type: QUERY_STRING
+          TextTransformation: URL_DECODE
+        - FieldToMatch:
+            Type: QUERY_STRING
+          TextTransformation: HTML_ENTITY_DECODE
+        - FieldToMatch:
+            Type: BODY
+          TextTransformation: URL_DECODE
+        - FieldToMatch:
+            Type: BODY
+          TextTransformation: HTML_ENTITY_DECODE
+        - FieldToMatch:
+            Type: URI
+          TextTransformation: URL_DECODE
+        - FieldToMatch:
+            Type: URI
+          TextTransformation: HTML_ENTITY_DECODE
+        - FieldToMatch:
+            Type: HEADER
+            Data: Cookie
+          TextTransformation: URL_DECODE
+        - FieldToMatch:
+            Type: HEADER
+            Data: Cookie
+          TextTransformation: HTML_ENTITY_DECODE
+        - FieldToMatch:
+            Type: HEADER
+            Data: Authorization
+          TextTransformation: URL_DECODE
+        - FieldToMatch:
+            Type: HEADER
+            Data: Authorization
+          TextTransformation: HTML_ENTITY_DECODE
+  GlobalSqlInjectionRule:
+    Type: 'AWS::WAF::Rule'
+    Properties:
+      Name: !Sub '${AWS::StackName} - SQL Injection Rule'
+      MetricName: SqlInjectionRule
+      Predicates:
+        - DataId: !Ref GlobalSqlInjectionDetection
+          Negated: false
+          Type: SqlInjectionMatch
+  GlobalXssDetection:
+    Type: 'AWS::WAF::XssMatchSet'
+    Properties:
+      Name: !Sub '${AWS::StackName} - Xss Detection'
+      XssMatchTuples:
+        - FieldToMatch:
+            Type: QUERY_STRING
+          TextTransformation: URL_DECODE
+        - FieldToMatch:
+            Type: QUERY_STRING
+          TextTransformation: HTML_ENTITY_DECODE
+        - FieldToMatch:
+            Type: BODY
+          TextTransformation: URL_DECODE
+        - FieldToMatch:
+            Type: BODY
+          TextTransformation: HTML_ENTITY_DECODE
+        - FieldToMatch:
+            Type: URI
+          TextTransformation: URL_DECODE
+        - FieldToMatch:
+            Type: URI
+          TextTransformation: HTML_ENTITY_DECODE
+        - FieldToMatch:
+            Type: HEADER
+            Data: Cookie
+          TextTransformation: URL_DECODE
+        - FieldToMatch:
+            Type: HEADER
+            Data: Cookie
+          TextTransformation: HTML_ENTITY_DECODE
+  GlobalXssRule:
+    Type: 'AWS::WAF::Rule'
+    Properties:
+      Name: !Sub '${AWS::StackName} - Xss Rule'
+      MetricName: XssRule
+      Predicates:
+        - DataId: !Ref GlobalXssDetection
+          Negated: false
+          Type: XssMatch
+
+  # Default regional rules
+  RegionalDefaultWebAcl:
+    Condition: IsCreateDefaultWebAcls
+    Type: "AWS::WAFRegional::WebACL"
+    Properties: 
+      DefaultAction:
+        Type: ALLOW
+      MetricName: RegionalDefaultWebAcl
+      Name: !Sub '${AWS::StackName} - Regional WebAcl'
+      Rules:
+        - Action:
+            Type: COUNT
+          Priority: 1
+          RuleId: !Ref RegionalSqlInjectionRule
+          # Sql injection interferes with Kibana
+        - Action:
+            Type: COUNT
+          Priority: 2
+          RuleId: !Ref RegionalXssRule
+  RegionalSqlInjectionDetection:
+    Type: 'AWS::WAFRegional::SqlInjectionMatchSet'
+    Properties:
+      Name: !Sub '${AWS::StackName} - SQL Injection Detection'
+      SqlInjectionMatchTuples:
+        - FieldToMatch:
+            Type: QUERY_STRING
+          TextTransformation: URL_DECODE
+        - FieldToMatch:
+            Type: QUERY_STRING
+          TextTransformation: HTML_ENTITY_DECODE
+        - FieldToMatch:
+            Type: BODY
+          TextTransformation: URL_DECODE
+        - FieldToMatch:
+            Type: BODY
+          TextTransformation: HTML_ENTITY_DECODE
+        - FieldToMatch:
+            Type: URI
+          TextTransformation: URL_DECODE
+        - FieldToMatch:
+            Type: URI
+          TextTransformation: HTML_ENTITY_DECODE
+        - FieldToMatch:
+            Type: HEADER
+            Data: Cookie
+          TextTransformation: URL_DECODE
+        - FieldToMatch:
+            Type: HEADER
+            Data: Cookie
+          TextTransformation: HTML_ENTITY_DECODE
+        - FieldToMatch:
+            Type: HEADER
+            Data: Authorization
+          TextTransformation: URL_DECODE
+        - FieldToMatch:
+            Type: HEADER
+            Data: Authorization
+          TextTransformation: HTML_ENTITY_DECODE
+  RegionalSqlInjectionRule:
+    Type: 'AWS::WAFRegional::Rule'
+    Properties:
+      Name: !Sub '${AWS::StackName} - SQL Injection Rule'
+      MetricName: RegionalDefaultSqlInjectionRule
+      Predicates:
+        - DataId: !Ref RegionalSqlInjectionDetection
+          Negated: false
+          Type: SqlInjectionMatch
+  RegionalXssDetection:
+    Type: 'AWS::WAFRegional::XssMatchSet'
+    Properties:
+      Name: !Sub '${AWS::StackName} - Xss Detection'
+      XssMatchTuples:
+        - FieldToMatch:
+            Type: QUERY_STRING
+          TextTransformation: URL_DECODE
+        - FieldToMatch:
+            Type: QUERY_STRING
+          TextTransformation: HTML_ENTITY_DECODE
+        - FieldToMatch:
+            Type: BODY
+          TextTransformation: URL_DECODE
+        - FieldToMatch:
+            Type: BODY
+          TextTransformation: HTML_ENTITY_DECODE
+        - FieldToMatch:
+            Type: URI
+          TextTransformation: URL_DECODE
+        - FieldToMatch:
+            Type: URI
+          TextTransformation: HTML_ENTITY_DECODE
+        - FieldToMatch:
+            Type: HEADER
+            Data: Cookie
+          TextTransformation: URL_DECODE
+        - FieldToMatch:
+            Type: HEADER
+            Data: Cookie
+          TextTransformation: HTML_ENTITY_DECODE
+  RegionalXssRule:
+    Type: 'AWS::WAFRegional::Rule'
+    Properties:
+      Name: !Sub '${AWS::StackName} - Xss Rule'
+      MetricName: RegionalDefaultXssRule
+      Predicates:
+        - DataId: !Ref RegionalXssDetection
+          Negated: false
+          Type: XssMatch
+  # /Default regional rules
+
+  # Role for Advanced Shield DDOS reponse team
+  AdvancedShieldResponseTeamRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - drt.shield.amazonaws.com
+            Action:
+              - 'sts:AssumeRole'
+      Path: /security/waf/
+      ManagedPolicyArns: ['arn:aws:iam::aws:policy/service-role/AWSShieldDRTAccessPolicy']
+  # Rate based rules are currently not supported via cloudformation
+
+  # Rules can only be reference by the Web ACLs during ACL's creation.
+  # So it is impossible to have one shared ACL with each independent
+  # stack adding and removing host based combinationsl rules at this
+  # stage. Hope AWS address this issue.
