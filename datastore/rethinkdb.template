@@ -46,7 +46,6 @@ Parameters:
       - t2.small
       - t2.medium
       - t2.large
-      - m3.medium
       - m5.large
       - m5.xlarge
       - m5.2xlarge

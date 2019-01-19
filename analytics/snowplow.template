@@ -60,7 +60,6 @@ Parameters:
       - t3.small
       - t3.medium
       - t3.large
-      - m3.medium
       - m5.large
       - m5.xlarge
       - m5.2xlarge

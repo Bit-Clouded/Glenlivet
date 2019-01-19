@@ -41,7 +41,6 @@ Parameters:
       - t2.micro
       - t2.small
       - t2.medium
-      - m3.medium
       - m3.large
       - m3.xlarge
       - m3.2xlarge
@@ -70,7 +69,6 @@ Parameters:
       - t2.small
       - t2.medium
       - t2.large
-      - m3.medium
       - m3.large
       - m3.xlarge
       - m3.2xlarge
@@ -156,10 +154,6 @@ Mappings:
       ram: '950'
     t2.medium:
       ram: '1950'
-    m3.medium:
-      ram: '1800'
-      lspotprice: '0.028'
-      wspotprice: '0.08'
     m3.large:
       ram: '3600'
       lspotprice: '0.056'

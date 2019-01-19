@@ -18,7 +18,7 @@ Metadata:
 
 Parameters:
   InstanceType:
-    Description: 'EC2 instance type (m3.medium, etc).'
+    Description: 'EC2 instance type (m5.large, etc).'
     Type: String
     Default: t2.nano
     AllowedValues:
@@ -29,7 +29,6 @@ Parameters:
       - t2.large
       - t2.xlarge
       - t2.2xlarge
-      - m3.medium
       - m5.large
       - m5.xlarge
       - m5.2xlarge

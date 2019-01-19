@@ -54,12 +54,11 @@ Parameters:
       Logstash EC2 instance type. t2.nano should only be used for development
       purpose.
     Type: String
-    Default: m3.medium
+    Default: m5.large
     AllowedValues:
       - t2.nano
       - t2.micro
       - t2.small
-      - m3.medium
       - m5.large
       - m5.xlarge
       - m5.2xlarge
