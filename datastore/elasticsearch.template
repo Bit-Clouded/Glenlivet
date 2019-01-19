@@ -3,11 +3,6 @@ Description: Multi AZ Elasticsearch on AutoScaling Group
 Metadata:
   DefaultName: Elasticsearch
   Dependencies:
-    - TemplatePath: platforms/ecs-base
-      Resources:
-        EcsCluster: EcsCluster
-      Outputs:
-        ServiceSchedulingRole: SharedSchedulingRole
     - TemplatePath: networking/elb-subnets
       Parameters:
         VpcId: VpcId
@@ -16,26 +11,15 @@ Metadata:
         ServerSubnets: WebServerSubnets
     - TemplatePath: analytics/logs-store
       Resources:
-        LxDockerLog: LxDockerLog
         CwlPolicy: LinuxLogPolicy
       Outputs:
         CwlLinuxParams: LxDockerLogParams
-    - TemplatePath: hosting/loadbalancer
-      Resources:
-        HttpsListener: HttpsListener
-        HttpListener: HttpListener
-      Outputs:
-        GatewayCanonicalZoneId: GatewayCanonicalZonId
-        GatewayDnsName: GatewayDnsName
-        GatewayName: GatewayName
+        CwlDockerParams: DockerCwlParams
 Parameters:
   KeyPairName:
     Description: Name of an existing EC2 KeyPair to enable SSH access to the instances
     Type: String
     Default: ''
-  ServiceSchedulingRole:
-    Description: 'Role used for ECS service scheduling'
-    Type: String
   CertificateArn:
     Description: 'ARN of the imported SSL certificate'
     Type: String
@@ -45,52 +29,72 @@ Parameters:
       Hosted Zone for the url (Without '.' at the end). You need to fill in
       Subdomain as well for custom domain to work.
     Type: String
+    Default: ''
   EsSubdomain:
     Description: >-
       Subdomain (Without '.'  at the end). You need to fill in HostedZoneName as
       well for custom domain to work.
     Type: String
-    Default: elasticsearch
+    Default: ''
   KibanaSubdomain:
     Description: >-
       Subdomain (Without '.'  at the end). You need to fill in HostedZoneName as
       well for custom domain to work.
     Type: String
     Default: ''
-  GatewayNodeInstanceType:
+  KibanaInstanceType:
     Description: WebServer EC2 instance type
     Type: String
-    Default: ''
+    Default: t2.micro
     AllowedValues:
-      - ''
-      - t3.small
-      - t3.medium
-      - m3.medium
+      - t2.micro
+      - t2.small
+      - t2.medium
+      - t2.large
+      - t2.xlarge
+      - t2.2xlarge
       - m5.large
       - m5.xlarge
       - m5.2xlarge
-      - r5.large
-      - r5.xlarge
-      - r5.2xlarge
-      - r5.4xlarge
-      - r5.8xlarge
+      - r4.large
+      - r4.xlarge
+      - r4.2xlarge
+      - r4.4xlarge
+      - r4.8xlarge
+    ConstraintDescription: must be a valid EC2 instance type.
+  GatewayNodeInstanceType:
+    Description: WebServer EC2 instance type
+    Type: String
+    Default: t2.small
+    AllowedValues:
+      - t2.micro
+      - t2.small
+      - t2.medium
+      - m5.large
+      - m5.xlarge
+      - m5.2xlarge
+      - r4.large
+      - r4.xlarge
+      - r4.2xlarge
+      - r4.4xlarge
+      - r4.8xlarge
     ConstraintDescription: must be a valid EC2 instance type.
   DataNodeInstanceType:
     Description: WebServer EC2 instance type
     Type: String
-    Default: m3.medium
+    Default: m5.large
     AllowedValues:
-      - t3.small
-      - t3.medium
-      - m3.medium
+      - t2.micro
+      - t2.small
+      - t2.medium
       - m5.large
       - m5.xlarge
       - m5.2xlarge
-      - r5.large
-      - r5.xlarge
-      - r5.2xlarge
-      - r5.4xlarge
-      - r5.8xlarge
+      - r4.large
+      - r4.xlarge
+      - r4.2xlarge
+      - r4.4xlarge
+      - r4.8xlarge
       - i3.large
       - i3.xlarge
       - i3.2xlarge
@@ -101,19 +105,19 @@ Parameters:
   MasterNodeInstanceType:
     Description: WebServer EC2 instance type
     Type: String
-    Default: t3.small
+    Default: t2.small
     AllowedValues:
-      - t3.small
-      - t3.medium
-      - m3.medium
+      - t2.micro
+      - t2.small
+      - t2.medium
       - m5.large
       - m5.xlarge
       - m5.2xlarge
-      - r5.large
-      - r5.xlarge
-      - r5.2xlarge
-      - r5.4xlarge
-      - r5.8xlarge
+      - r4.large
+      - r4.xlarge
+      - r4.2xlarge
+      - r4.4xlarge
+      - r4.8xlarge
     ConstraintDescription: must be a valid EC2 instance type.
   BcUbuntuBaseAmiId:
     Description: Custom AMI Baked by BitClouded Software
@@ -124,6 +128,14 @@ Parameters:
     Type: Number
     MinValue: '50'
     MaxValue: '1000'
+  EsConfShard:
+    Description: Number of shards per index.
+    Default: '5'
+    Type: Number
+  EsConfReplica:
+    Description: Number of replicas.
+    Default: '1'
+    Type: Number
   EsConfClusterName:
     Description: Name of cluster. This is used for discovery.
     Type: String
@@ -153,51 +165,22 @@ Parameters:
     Description: >-
       Environment variables for syslog and authlog cwl group names
     Type: String
+  CwlDockerParams:
+    Description: 'Docker log driver params'
+    Type: String
   CwlPolicy:
     Description: 'Managed policy for linux logging'
     Type: String
-  CpuReservation:
-    Description: ''
-    Type: String
-    Default: '256'
-  MemoryReservation:
-    Description: ''
-    Type: String
-    Default: '512'
-  LxDockerLog:
-    Description: ''
-    Type: String
-
-  EcsCluster:
-    Type: String
-    Description: 'ECS Cluster to run the collector and UI on'
-  GatewayName:
-    Type: String
-    Description: 'Loadbalancer full name'
-  GatewayDnsName:
-    Type: String
-    Description: 'Loadbalancer DNS name'
-  GatewayCanonicalZoneId:
-    Type: String
-    Description: 'Loadbalancer Zone ID'
-  HttpsListener:
-    Type: String
-    Description: 'Loadbalancer HTTS listener'
-    Default: ''
-  HttpListener:
-    Type: String
-    Description: 'Loadbalancer HTT listener'
-  KibanaListenerPriority:
-    Description: ''
-    Type: Number
-    Default: 21
 
 Conditions:
   HasNoKeypair: !Equals [!Ref KeyPairName, '']
-  HasNoGatewayNodes: !Not [!Equals [!Ref GatewayNodeInstanceType, '']]
-
   HasSsl: !Not [!Equals [!Ref CertificateArn, '']]
-  HasKibanaHostname: !Not [!Equals [!Ref KibanaSubdomain, '']]
+  HasEsHostname: !And 
+    - !Not [!Equals [!Ref EsSubdomain, '']]
+    - !Not [!Equals [!Ref HostedZoneName, '']]
+  HasKibanaHostname: !And 
+    - !Not [!Equals [!Ref KibanaSubdomain, '']]
+    - !Not [!Equals [!Ref HostedZoneName, '']]
   AttachEphemeral:
     !Equals [!Select [0, !Split ['.', !Ref DataNodeInstanceType]], 'i3']
 
@@ -206,6 +189,7 @@ Resources:
   # Optional Domains
   EsDomain:
     Type: 'AWS::Route53::RecordSet'
+    Condition: HasEsHostname
     Properties:
       HostedZoneName: !Sub '${HostedZoneName}.'
       Comment: Hostname
@@ -214,6 +198,17 @@ Resources:
       AliasTarget:
         DNSName: !GetAtt ClusterGateway.DNSName
         HostedZoneId: !GetAtt ClusterGateway.CanonicalHostedZoneNameID
+  KibanaDomain:
+    Type: 'AWS::Route53::RecordSet'
+    Condition: HasKibanaHostname
+    Properties:
+      HostedZoneName: !Sub '${HostedZoneName}.'
+      Comment: Hostname
+      Name: !Sub '${KibanaSubdomain}.${HostedZoneName}.'
+      Type: A
+      AliasTarget:
+        DNSName: !GetAtt KibanaGateway.DNSName
+        HostedZoneId: !GetAtt KibanaGateway.CanonicalHostedZoneNameID
   # /Optional Domains
 
   EsDataNodeLc:
@@ -239,8 +234,7 @@ Resources:
             cat /etc/fstab.bak | grep -v ^/dev/${DataDisk} | tee /etc/fstab
             echo -e "/dev/${DataDisk}\t/mnt/xvdk\tauto\tdefaults\t0\t2" >> /etc/fstab
             mount -a
-            chmod g+rwx /mnt/xvdk
-            chgrp 1000 /mnt/xvdk
+            chown 1000:1000 /mnt/xvdk -R
             sysctl -w vm.max_map_count=262144
 
             ECID=$(curl http://169.254.169.254/latest/meta-data/instance-id)
@@ -256,7 +250,6 @@ Resources:
               -e CLUSTER_NAME=${EsConfClusterName} \
               -e DISC_SECGROUP=${EsClusterNodeSg} \
               -e IS_MASTER=false -e IS_DATA=true \
-              -e TAKE_FILE_OWNERSHIP=1 \
               -e AWS_REGION=${AWS::Region} \
               ${EsContainerName}
           - DataDisk: !If ["AttachEphemeral", "nvme0n1", "xvdk"]
@@ -314,7 +307,6 @@ Resources:
         - !Ref KeyPairName
       SecurityGroups:
         - !Ref EsClusterNodeSg
-        - !Ref EsClusterGatewayNodeSg
       IamInstanceProfile: !Ref EsDataNodeInstanceProfile
       UserData: !Base64 
         Fn::Sub: |
@@ -332,7 +324,6 @@ Resources:
             -e CLUSTER_NAME=${EsConfClusterName} \
             -e DISC_SECGROUP=${EsClusterNodeSg} \
             -e IS_MASTER=true -e IS_DATA=false \
-            -e TAKE_FILE_OWNERSHIP=1 \
             -e AWS_REGION=${AWS::Region} \
             ${EsContainerName}
 
@@ -346,10 +337,6 @@ Resources:
     Properties:
       VPCZoneIdentifier: !Ref ServerSubnets
       LaunchConfigurationName: !Ref EsMasterNodeLc
-      LoadBalancerNames: !If
-        - HasNoGatewayNodes
-        - !Ref AWS::NoValue
-        - [!Ref ClusterGateway]
       MinSize: '3'
       MaxSize: '7'
       Tags:
@@ -358,7 +345,6 @@ Resources:
           PropagateAtLaunch: 'True'
   EsGatewayNodeLc:
     Type: 'AWS::AutoScaling::LaunchConfiguration'
-    Condition: HasNoGatewayNodes
     Properties:
       InstanceType: !Ref GatewayNodeInstanceType
       ImageId: !Ref BcUbuntuBaseAmiId
@@ -386,7 +372,6 @@ Resources:
             -e INSTANCE_ID=$ECID \
             -e DISC_SECGROUP=${EsClusterNodeSg} \
             -e IS_MASTER=false -e IS_DATA=false \
-            -e TAKE_FILE_OWNERSHIP=1 \
             -e AWS_REGION=${AWS::Region} \
             ${EsContainerName}
           
@@ -399,13 +384,13 @@ Resources:
             VolumeType: gp2
   EsGatewayNodeAsg:
     Type: 'AWS::AutoScaling::AutoScalingGroup'
-    Condition: HasNoGatewayNodes
     Properties:
       VPCZoneIdentifier: !Ref ServerSubnets
       LaunchConfigurationName: !Ref EsGatewayNodeLc
       MinSize: '2'
       MaxSize: '10'
-      LoadBalancerNames: [!Ref ClusterGateway]
+      LoadBalancerNames:
+        - !Ref ClusterGateway
       Tags:
         - Key: Name
           Value: Elasticsearch Cluster Gateway Node
@@ -421,6 +406,9 @@ Resources:
         - LoadBalancerPort: '9200'
           InstancePort: '9200'
           Protocol: HTTP
+        - LoadBalancerPort: '80'
+          InstancePort: '80'
+          Protocol: HTTP
       HealthCheck:
         Target: 'HTTP:9200/'
         HealthyThreshold: '3'
@@ -430,7 +418,63 @@ Resources:
       SecurityGroups:
         - !Ref EsElbSg
       Scheme: internal
-
+  KibanaLc:
+    Type: 'AWS::AutoScaling::LaunchConfiguration'
+    Properties:
+      InstanceType: !Ref KibanaInstanceType
+      ImageId: !Ref BcUbuntuBaseAmiId
+      KeyName: !If 
+        - HasNoKeypair
+        - !Ref 'AWS::NoValue'
+        - !Ref KeyPairName
+      SecurityGroups:
+        - !Ref EsClusterNodeSg
+        - !Ref EsClusterGatewayNodeSg
+      IamInstanceProfile: !Ref EsDataNodeInstanceProfile
+      UserData: !Base64 
+        'Fn::Sub': |
+          #!/bin/bash
+          ECID=$(curl http://169.254.169.254/latest/meta-data/instance-id)
+          docker run -p 80:5601 -d --restart=always \
+            --name kibana --log-opt awslogs-stream=${AWS::StackName}/kibana/$ECID \
+            ${CwlLinuxParams} \
+            -e ELASTICSEARCH_URL=http://${ClusterGateway.DNSName}:9200 \
+            ${KibanaContainerName}
+      BlockDeviceMappings:
+        - DeviceName: /dev/xvda
+          Ebs:
+            VolumeSize: '30'
+            VolumeType: gp2
+  KibanaAsg:
+    Type: 'AWS::AutoScaling::AutoScalingGroup'
+    Properties:
+      VPCZoneIdentifier: !Ref ServerSubnets
+      LaunchConfigurationName: !Ref KibanaLc
+      MinSize: '1'
+      MaxSize: '10'
+      LoadBalancerNames:
+        - !Ref KibanaGateway
+      Tags:
+        - Key: Name
+          Value: Kibana
+          PropagateAtLaunch: 'True'
+  KibanaGateway:
+    Type: 'AWS::ElasticLoadBalancing::LoadBalancer'
+    Properties:
+      Subnets: !Ref ElbSubnets
+      Listeners:
+        - LoadBalancerPort: '80'
+          InstancePort: '80'
+          Protocol: HTTP
+      HealthCheck:
+        Target: 'HTTP:80/'
+        HealthyThreshold: '3'
+        UnhealthyThreshold: '5'
+        Interval: '30'
+        Timeout: '5'
+      SecurityGroups:
+        - !Ref EsElbSg
+      Scheme: internal
   EsDataNodeInstanceProfile:
     Type: 'AWS::IAM::InstanceProfile'
     Properties:
@@ -493,6 +537,10 @@ Resources:
           SourceSecurityGroupId: !Ref EsElbSg
           FromPort: '9200'
           ToPort: '9200'
+        - IpProtocol: '6'
+          SourceSecurityGroupId: !Ref EsElbSg
+          FromPort: '80'
+          ToPort: '80'
       VpcId: !Ref VpcId
       Tags:
         - Key: Name
@@ -526,92 +574,25 @@ Resources:
       ToPort: '9200'
       GroupId: !Ref EsElbSg
       DestinationSecurityGroupId: !Ref EsClusterGatewayNodeSg
+  EsElbToEsClusterGatewayNodeKibanaEgress:
+    Type: 'AWS::EC2::SecurityGroupEgress'
+    Properties:
+      IpProtocol: tcp
+      FromPort: '80'
+      ToPort: '80'
+      GroupId: !Ref EsElbSg
+      DestinationSecurityGroupId: !Ref EsClusterGatewayNodeSg
   UtilityBucket:
     Type: 'AWS::S3::Bucket'
     Properties: {}
     DeletionPolicy: Retain
-
-
-  KibanaTaskDef:
-    Type: 'AWS::ECS::TaskDefinition'
-    Condition: HasKibanaHostname
-    Properties:
-      ContainerDefinitions:
-        - Command: !Ref 'AWS::NoValue'
-          Name: kibana
-          Cpu: !Ref CpuReservation
-          Essential: 'true'
-          Image: !Ref KibanaContainerName
-          Memory: !Ref MemoryReservation
-          Environment:
-            - Name: ELASTICSEARCH_URL
-              Value: !Sub 'http://${ClusterGateway.DNSName}:9200/'
-          PortMappings: [ContainerPort: 5601]
-          LogConfiguration:
-            LogDriver: awslogs
-            Options:
-              awslogs-group: !Ref LxDockerLog
-              awslogs-region: !Ref 'AWS::Region'
-              awslogs-stream-prefix: !Ref 'AWS::StackName'
-  KibanaService:
-    Type: 'AWS::ECS::Service'
-    Condition: HasKibanaHostname
-    DependsOn: KibanaAlbListenerRule
-    Properties:
-      Cluster: !Ref EcsCluster
-      Role: !Ref ServiceSchedulingRole
-      LoadBalancers:
-        - ContainerName: kibana
-          ContainerPort: 5601
-          TargetGroupArn: !Ref KibanaAlbTargetGroup
-      DesiredCount: 2
-      TaskDefinition: !Ref KibanaTaskDef
-  KibanaAlbListenerRule:
-    Type: 'AWS::ElasticLoadBalancingV2::ListenerRule'
-    Condition: HasKibanaHostname
-    Properties:
-      Actions:
-        - Type: forward
-          TargetGroupArn: !Ref KibanaAlbTargetGroup
-      Conditions:
-        - Field: host-header
-          Values: [!Sub '${KibanaSubdomain}.${HostedZoneName}']
-      ListenerArn: !Ref HttpListener
-      Priority: !Ref KibanaListenerPriority
-  KibanaAlbTargetGroup:
-    Type: 'AWS::ElasticLoadBalancingV2::TargetGroup'
-    Condition: HasKibanaHostname
-    Properties:
-      HealthCheckIntervalSeconds: '60'
-      HealthCheckPath: '/'
-      HealthCheckProtocol: HTTP
-      HealthCheckTimeoutSeconds: '30'
-      HealthyThresholdCount: 10
-      Port: 80
-      Protocol: HTTP
-      UnhealthyThresholdCount: 10
-      VpcId: !Ref VpcId
-      TargetGroupAttributes:
-        - Key: deregistration_delay.timeout_seconds
-          Value: 5
-  KibanaRoute53:
-    Type: 'AWS::Route53::RecordSet'
-    Condition: HasKibanaHostname
-    Properties:
-      HostedZoneName: !Sub '${HostedZoneName}.'
-      Comment: Hostname
-      Name: !Sub '${KibanaSubdomain}.${HostedZoneName}.'
-      Type: A
-      AliasTarget:
-        DNSName: !Ref GatewayDnsName
-        HostedZoneId: !Ref GatewayCanonicalZoneId
-
-
 Outputs:
   EsElb:
     Value: !GetAtt ClusterGateway.DNSName
     Description: LoadBalancer Url of the ES Gateway
   KibanaUrl:
-    Condition: HasKibanaHostname
-    Value: !Sub 'http://${KibanaSubdomain}.${HostedZoneName}/'
+    Value: !If 
+      - HasKibanaHostname
+      - !Sub 'http://${KibanaSubdomain}.${HostedZoneName}/'
+      - !Sub 'http://${KibanaGateway.DNSName}/'
     Description: Kibana URL

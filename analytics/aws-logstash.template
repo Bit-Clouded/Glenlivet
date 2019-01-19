@@ -182,10 +182,8 @@ Resources:
   LogStreamKclLeasesTable:
     Type: 'AWS::DynamoDB::Table'
     Properties:
+      BillingMode: PAY_PER_REQUEST
       TableName: !Ref 'AWS::StackName'
-      ProvisionedThroughput:
-        ReadCapacityUnits: '10'
-        WriteCapacityUnits: '10'
       AttributeDefinitions:
         - AttributeName: leaseKey
           AttributeType: S

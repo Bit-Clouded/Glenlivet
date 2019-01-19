@@ -221,206 +221,42 @@ Resources:
               - !Sub 'arn:aws:s3:::${RawDataStore}/*'
               - !Sub 'arn:aws:s3:::${RawDataStore}'
 
-  # DynamoDB and associated autoscaling stuff.
-  # Scaling Role is shared.
-  DynamoDbScalingRole:
-    Type: 'AWS::IAM::Role'
-    Properties:
-      AssumeRolePolicyDocument:
-        Version: 2012-10-17
-        Statement:
-          - Effect: Allow
-            Principal:
-              Service:
-                - application-autoscaling.amazonaws.com
-            Action:
-              - 'sts:AssumeRole'
-      Path: /
-      Policies:
-        - PolicyName: root
-          PolicyDocument:
-            Version: 2012-10-17
-            Statement:
-              - Effect: Allow
-                Action:
-                  - 'dynamodb:DescribeTable'
-                  - 'dynamodb:UpdateTable'
-                  - 'cloudwatch:PutMetricAlarm'
-                  - 'cloudwatch:DescribeAlarms'
-                  - 'cloudwatch:GetMetricStatistics'
-                  - 'cloudwatch:SetAlarmState'
-                  - 'cloudwatch:DeleteAlarms'
-                Resource: '*'
   # Raw read table and scaling
   RawReadCheckpoint:
     Type: 'AWS::DynamoDB::Table'
     Properties:
-      ProvisionedThroughput:
-        ReadCapacityUnits: '5'
-        WriteCapacityUnits: '5'
+      BillingMode: PAY_PER_REQUEST
       AttributeDefinitions:
         - AttributeName: leaseKey
           AttributeType: S
       KeySchema:
         - AttributeName: leaseKey
           KeyType: HASH
-  RawWriteScalableTarget:
-    Type: 'AWS::ApplicationAutoScaling::ScalableTarget'
-    Properties:
-      MaxCapacity: 200
-      MinCapacity: 10
-      ResourceId: !Sub 'table/${RawReadCheckpoint}'
-      RoleARN: !GetAtt DynamoDbScalingRole.Arn
-      ScalableDimension: 'dynamodb:table:WriteCapacityUnits'
-      ServiceNamespace: dynamodb
-  RawWriteScalingPolicy:
-    Type: 'AWS::ApplicationAutoScaling::ScalingPolicy'
-    Properties:
-      PolicyName: RawWritePolicy
-      PolicyType: TargetTrackingScaling
-      ScalingTargetId: !Ref RawWriteScalableTarget
-      TargetTrackingScalingPolicyConfiguration:
-        TargetValue: 80
-        ScaleInCooldown: 60
-        ScaleOutCooldown: 60
-        PredefinedMetricSpecification:
-          PredefinedMetricType: DynamoDBWriteCapacityUtilization
-  RawReadScalableTarget:
-    Type: 'AWS::ApplicationAutoScaling::ScalableTarget'
-    Properties:
-      MaxCapacity: 200
-      MinCapacity: 10
-      ResourceId: !Sub 'table/${RawReadCheckpoint}'
-      RoleARN: !GetAtt DynamoDbScalingRole.Arn
-      ScalableDimension: 'dynamodb:table:ReadCapacityUnits'
-      ServiceNamespace: dynamodb
-  RawReadScalingPolicy:
-    Type: 'AWS::ApplicationAutoScaling::ScalingPolicy'
-    Properties:
-      PolicyName: RawReadPolicy
-      PolicyType: TargetTrackingScaling
-      ScalingTargetId: !Ref RawReadScalableTarget
-      TargetTrackingScalingPolicyConfiguration:
-        TargetValue: 80
-        ScaleInCooldown: 60
-        ScaleOutCooldown: 60
-        PredefinedMetricSpecification:
-          PredefinedMetricType: DynamoDBReadCapacityUtilization
   # Enriched to S3 table and scaling
   EnrichedToS3Checkpoint:
     Type: 'AWS::DynamoDB::Table'
     Properties:
-      ProvisionedThroughput:
-        ReadCapacityUnits: '5'
-        WriteCapacityUnits: '5'
+      BillingMode: PAY_PER_REQUEST
       AttributeDefinitions:
         - AttributeName: leaseKey
           AttributeType: S
       KeySchema:
         - AttributeName: leaseKey
           KeyType: HASH
-  EnrichedToS3WriteScalableTarget:
-    Type: 'AWS::ApplicationAutoScaling::ScalableTarget'
-    Properties:
-      MaxCapacity: 200
-      MinCapacity: 10
-      ResourceId: !Sub 'table/${EnrichedToS3Checkpoint}'
-      RoleARN: !GetAtt DynamoDbScalingRole.Arn
-      ScalableDimension: 'dynamodb:table:WriteCapacityUnits'
-      ServiceNamespace: dynamodb
-  EnrichedToS3WriteScalingPolicy:
-    Type: 'AWS::ApplicationAutoScaling::ScalingPolicy'
-    Properties:
-      PolicyName: EnrichedToS3WritePolicy
-      PolicyType: TargetTrackingScaling
-      ScalingTargetId: !Ref EnrichedToS3WriteScalableTarget
-      TargetTrackingScalingPolicyConfiguration:
-        TargetValue: 80
-        ScaleInCooldown: 60
-        ScaleOutCooldown: 60
-        PredefinedMetricSpecification:
-          PredefinedMetricType: DynamoDBWriteCapacityUtilization
-  EnrichedToS3ReadScalableTarget:
-    Type: 'AWS::ApplicationAutoScaling::ScalableTarget'
-    Properties:
-      MaxCapacity: 200
-      MinCapacity: 10
-      ResourceId: !Sub 'table/${EnrichedToS3Checkpoint}'
-      RoleARN: !GetAtt DynamoDbScalingRole.Arn
-      ScalableDimension: 'dynamodb:table:ReadCapacityUnits'
-      ServiceNamespace: dynamodb
-  EnrichedToS3ReadScalingPolicy:
-    Type: 'AWS::ApplicationAutoScaling::ScalingPolicy'
-    Properties:
-      PolicyName: EnrichedToS3ReadPolicy
-      PolicyType: TargetTrackingScaling
-      ScalingTargetId: !Ref EnrichedToS3ReadScalableTarget
-      TargetTrackingScalingPolicyConfiguration:
-        TargetValue: 80
-        ScaleInCooldown: 60
-        ScaleOutCooldown: 60
-        PredefinedMetricSpecification:
-          PredefinedMetricType: DynamoDBReadCapacityUtilization
+
   # Enriched to ES table and scaling
   EnrichedToEsCheckpoint:
     Condition: HasEsHost
     Type: 'AWS::DynamoDB::Table'
     Properties:
-      ProvisionedThroughput:
-        ReadCapacityUnits: '5'
-        WriteCapacityUnits: '5'
+      BillingMode: PAY_PER_REQUEST
       AttributeDefinitions:
         - AttributeName: leaseKey
           AttributeType: S
       KeySchema:
         - AttributeName: leaseKey
           KeyType: HASH
-  EnrichedToESWriteScalableTarget:
-    Condition: HasEsHost
-    Type: 'AWS::ApplicationAutoScaling::ScalableTarget'
-    Properties:
-      MaxCapacity: 200
-      MinCapacity: 10
-      ResourceId: !Sub 'table/${EnrichedToEsCheckpoint}'
-      RoleARN: !GetAtt DynamoDbScalingRole.Arn
-      ScalableDimension: 'dynamodb:table:WriteCapacityUnits'
-      ServiceNamespace: dynamodb
-  EnrichedToESWriteScalingPolicy:
-    Condition: HasEsHost
-    Type: 'AWS::ApplicationAutoScaling::ScalingPolicy'
-    Properties:
-      PolicyName: EnrichedToESWritePolicy
-      PolicyType: TargetTrackingScaling
-      ScalingTargetId: !Ref EnrichedToESWriteScalableTarget
-      TargetTrackingScalingPolicyConfiguration:
-        TargetValue: 80
-        ScaleInCooldown: 60
-        ScaleOutCooldown: 60
-        PredefinedMetricSpecification:
-          PredefinedMetricType: DynamoDBWriteCapacityUtilization
-  EnrichedToESReadScalableTarget:
-    Condition: HasEsHost
-    Type: 'AWS::ApplicationAutoScaling::ScalableTarget'
-    Properties:
-      MaxCapacity: 200
-      MinCapacity: 10
-      ResourceId: !Sub 'table/${EnrichedToEsCheckpoint}'
-      RoleARN: !GetAtt DynamoDbScalingRole.Arn
-      ScalableDimension: 'dynamodb:table:ReadCapacityUnits'
-      ServiceNamespace: dynamodb
-  EnrichedToESReadScalingPolicy:
-    Condition: HasEsHost
-    Type: 'AWS::ApplicationAutoScaling::ScalingPolicy'
-    Properties:
-      PolicyName: EnrichedToESReadPolicy
-      PolicyType: TargetTrackingScaling
-      ScalingTargetId: !Ref EnrichedToESReadScalableTarget
-      TargetTrackingScalingPolicyConfiguration:
-        TargetValue: 80
-        ScaleInCooldown: 60
-        ScaleOutCooldown: 60
-        PredefinedMetricSpecification:
-          PredefinedMetricType: DynamoDBReadCapacityUtilization
+
   # End of DynamoDB Table and scaling stuff
 
   EventCollectionRole:
