@@ -36,6 +36,8 @@ KMS
   - All KMS encryptable resources must have a default and overridable key
   - KMS key to have retained deletion policy if the datastores are retained
 
+ECS
+  - All services should toggle between fargate and ec2 where possible, and, if so, default to fargate
 
 another kinesis stream for all lambda functions
 all lambda functions log must be subscribed to the kinesis stream

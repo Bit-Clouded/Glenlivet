@@ -1,0 +1,309 @@
+AWSTemplateFormatVersion: 2010-09-09
+Metadata:
+  DefaultName: MonkeyShoulderEcsSd
+  Dependencies:
+    - TemplatePath: networking/vpc
+      Resources:
+        VpcId: Vpc
+    - TemplatePath: analytics/logs-store
+      Resources:
+        LxDockerLog: LxDockerLog
+        CwlPolicy: LinuxLogPolicy
+    - TemplatePath: platforms/ecs-base
+      Resources:
+        DatabaseSg: DatabaseSg
+        EcsCluster: EcsCluster
+      Outputs:
+        TaskExecutionRoleArn: SharedTaskExecutionRole
+        ServiceScalingRole: SharedScalingRole
+        ServiceSchedulingRole: SharedSchedulingRole
+        ShareScheduleTaskRole: ShareScheduleTaskRole
+    - TemplatePath: hosting/loadbalancer
+      Resources:
+        HttpsListener: HttpsListener
+        HttpListener: HttpListener
+      Outputs:
+        GatewayCanonicalZoneId: GatewayCanonicalZonId
+        GatewayDnsName: GatewayDnsName
+        GatewayName: GatewayName
+    - TemplatePath: networking/private-subnets
+      Resources:
+        DbSubnetGroup: RdsSubnetGroup
+      NestedDependency: networking/vpc
+
+Parameters:
+  EcsCluster:
+    Type: String
+    Description: 'ECS Cluster to run the collector and UI on'
+  DeregistrationDelay:
+    Description: ''
+    Type: Number
+    MinValue: 0
+    MaxValue: 3600
+    Default: 20
+  CpuReservation:
+    Description: ''
+    Type: String
+    Default: '256'
+  MemoryReservation:
+    Description: ''
+    Type: String
+    Default: '1024'
+  DatabaseSg:
+    Type: String
+    Description: 'Security group to allow access from ECS cluster'
+  DbInstanceType:
+    Description: Postgres server instance type
+    Type: String
+    Default: db.t2.small
+    AllowedValues:
+      - db.t2.small
+      - db.t2.medium
+      - db.t2.large
+      - db.m3.medium
+      - db.m4.large
+      - db.m4.xlarge
+      - db.m4.2xlarge
+      - db.r3.large
+      - db.r3.xlarge
+      - db.r3.2xlarge
+      - db.r3.4xlarge
+      - db.r3.8xlarge
+    ConstraintDescription: must be a valid RDS instance type.
+  DbUsername:
+    Description: MariaDB server username
+    Type: String
+    Default: sqladmin
+  DbPassword:
+    Description: MariaDB server password
+    Type: String
+    Default: Password1234
+    NoEcho: 'True'
+  DbSnapshot:
+    Description: MariaDB server snapshot
+    Type: String
+    Default: ''
+  DbSubnetGroup:
+    Description: Subnet Group for hosting the MariaDB server.
+    Type: String
+  VpcId:
+    Description: VPCid associated with the subnets.
+    Type: 'AWS::EC2::VPC::Id'
+  HostedZoneName:
+    Description: Hosted Zone for the url (Without '.' at the end). You need to fill in Subdomain as well for custom domain to work.
+    Type: String
+  Subdomain:
+    Description: Subdomain (Without '.'  at the end). You need to fill in HostedZoneName as well for custom domain to work.
+    Type: String
+  MetabaseContainerImage:
+    Description: Dockerhub image name.
+    Type: String
+    Default: 'metabase/metabase:v0.26.2'
+  CwlPolicy:
+    Description: Managed policy for linux logging.
+    Type: String
+  GatewayName:
+    Type: String
+    Description: 'Loadbalancer full name'
+  GatewayDnsName:
+    Type: String
+    Description: 'Loadbalancer DNS name'
+  GatewayCanonicalZoneId:
+    Type: String
+    Description: 'Loadbalancer Zone ID'
+  HttpsListener:
+    Type: String
+    Description: 'Loadbalancer HTTS listener'
+    Default: ''
+  HttpListener:
+    Type: String
+    Description: 'Loadbalancer HTT listener'
+  ListenerPriority:
+    Description: ''
+    Type: Number
+    Default: 20
+  LxDockerLog:
+    Description: ''
+    Type: String
+
+  DbStorageQuota:
+    Description: Database disk size
+    Type: Number
+    Default: 50
+  TaskExecutionRoleArn:
+    Description: 'Shared task execution role'
+    Type: String
+  ServiceScalingRole:
+    Description: 'Role used for ECS service autoscaling'
+    Type: String
+  ServiceSchedulingRole:
+    Description: 'Role used for ECS service scheduling'
+    Type: String
+  ShareScheduleTaskRole:
+    Description: 'Role used for ECS cron job'
+    Type: String
+    Default: ''
+
+Conditions:
+  HasDbSnapshot: !Not 
+    - !Equals [!Ref DbSnapshot, '']
+
+Resources:
+  Route53:
+    Type: 'AWS::Route53::RecordSet'
+    Condition: HasHostname
+    Properties:
+      HostedZoneName: !Sub ${HostedZoneName}.
+      Comment: Hostname
+      Name: !Sub ${Subdomain}.${HostedZoneName}.
+      Type: A
+      AliasTarget:
+        DNSName: !Ref GatewayDnsName
+        HostedZoneId: !Ref GatewayCanonicalZoneId
+
+  WebTaskDef:
+    Type: 'AWS::ECS::TaskDefinition'
+    Properties:
+      TaskRoleArn: !GetAtt WebRole.Arn
+      ContainerDefinitions:
+        - Command: !Ref 'AWS::NoValue'
+          Name: metabase-web
+          Cpu: !Ref CpuReservation
+          Essential: 'true'
+          Image: !Ref MetabaseContainerImage
+          Memory: !Ref MemoryReservation
+          Environment:
+            - Name: MB_DB_TYPE
+              Value: mysql
+            - Name: MB_DB_DBNAME
+              Value: metabase
+            - Name: MB_DB_PORT
+              Value: !GetAtt Database.Endpoint.Port
+            - Name: MB_DB_USER
+              Value: !Ref DbUsername
+            - Name: MB_DB_PASS
+              Value: !Ref DbPassword
+            - Name: MB_DB_HOST
+              Value: !GetAtt Database.Endpoint.Address
+            # timeout needed for GA accounts that has many properties
+            - Name: MB_DB_CONNECTION_TIMEOUT_MS
+              Value: 20000
+          PortMappings:
+            - ContainerPort: 3000
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !Ref LxDockerLog
+              awslogs-region: !Ref 'AWS::Region'
+              awslogs-stream-prefix: !Ref 'AWS::StackName'
+  WebService:
+    Type: 'AWS::ECS::Service'
+    DependsOn: AlbListenerRule
+    Properties:
+      Cluster: !Ref EcsCluster
+      Role: !Ref ServiceSchedulingRole
+      LoadBalancers:
+        - ContainerName: metabase-web
+          ContainerPort: 3000
+          TargetGroupArn: !Ref AlbTargetGroup
+      DesiredCount: 1
+      # Need to initialise with 1 first.
+      TaskDefinition: !Ref WebTaskDef
+  AlbListenerRule:
+    Type: 'AWS::ElasticLoadBalancingV2::ListenerRule'
+    Properties:
+      Actions:
+        - Type: forward
+          TargetGroupArn: !Ref AlbTargetGroup
+      Conditions:
+        - Field: host-header
+          Values: [!Sub '${Subdomain}.${HostedZoneName}']
+      ListenerArn: !Ref HttpListener
+      Priority: !Ref ListenerPriority
+  AlbTargetGroup:
+    Type: 'AWS::ElasticLoadBalancingV2::TargetGroup'
+    Properties:
+      HealthCheckIntervalSeconds: '60'
+      HealthCheckPath: '/'
+      HealthCheckProtocol: HTTP
+      HealthCheckTimeoutSeconds: '30'
+      HealthyThresholdCount: 10
+      Port: 3000
+      Protocol: HTTP
+      UnhealthyThresholdCount: 10
+      VpcId: !Ref VpcId
+      TargetGroupAttributes:
+        - Key: deregistration_delay.timeout_seconds
+          Value: !Ref DeregistrationDelay
+  Route53:
+    Type: 'AWS::Route53::RecordSet'
+    Properties:
+      HostedZoneName: !Sub '${HostedZoneName}.'
+      Comment: Hostname
+      Name: !Sub '${Subdomain}.${HostedZoneName}.'
+      Type: A
+      AliasTarget:
+        DNSName: !Ref GatewayDnsName
+        HostedZoneId: !Ref GatewayCanonicalZoneId
+
+  WebRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: [ecs-tasks.amazonaws.com]
+            Action: ['sts:AssumeRole']
+      Path: /analytics/metabase/
+      ManagedPolicyArns:
+        - !Ref CwlPolicy
+      Policies:
+        - PolicyName: root
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action:
+                  - 'ec2:DescribeInstances'
+                  - 'cloudwatch:Describe*'
+                  - 'cloudwatch:Get*'
+                  - 'cloudwatch:List*'
+                Resource: '*'
+
+  Database:
+    Type: 'AWS::RDS::DBInstance'
+    Properties:
+      VPCSecurityGroups:
+        - !Ref DatabaseSg
+      AllocatedStorage: !Ref DbStorageQuota
+      DBInstanceClass: !Ref DbInstanceType
+      DBParameterGroupName: !Ref DbParamGroup
+      DBName: metabase
+      Engine: mariadb
+      EngineVersion: 10.1.23
+      MasterUsername: !Ref DbUsername
+      MasterUserPassword: !Ref DbPassword
+      DBSnapshotIdentifier: !If 
+        - HasDbSnapshot
+        - !Ref DbSnapshot
+        - !Ref 'AWS::NoValue'
+      DBSubnetGroupName: !Ref DbSubnetGroup
+      Tags:
+        - Key: Name
+          Value: Database
+      StorageType: gp2
+      MultiAZ: 'false'
+    DeletionPolicy: Snapshot
+  DbParamGroup:
+    Type: 'AWS::RDS::DBParameterGroup'
+    Properties:
+      Description: ECS App Base Database Parameters
+      Family: mariadb10.1
+      Parameters: {}
+
+Outputs:
+  AdminPanel:
+    Value: !Sub http://${Subdomain}.${HostedZoneName}/
+    Description: App Url
