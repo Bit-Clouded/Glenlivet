@@ -513,6 +513,14 @@ Resources:
                 Resource: !GetAtt 
                   - VpcTrafficLog
                   - Arn
+  WindowsEventLog:
+    DependsOn:
+      - LogStream
+      - LogStreamRole
+      - LogStreamRolePolicy
+      - AccessS3LogBucketPolicy
+    Type: 'AWS::Logs::LogGroup'
+    Properties: {}
   LxSysLog:
     DependsOn:
       - LogStream
@@ -635,6 +643,7 @@ Resources:
               - !GetAtt LxSysLog.Arn
               - !GetAtt LxAuthLog.Arn
               - !GetAtt LxDockerLog.Arn
+              - !GetAtt WindowsEventLog.Arn
           - Sid: SessionManager
             Effect: Allow
             Action:
@@ -644,6 +653,11 @@ Resources:
               - 'ssmmessages:OpenDataChannel'
               - 's3:GetEncryptionConfiguration'
             Resource: ['*']
+          - Sid: SsmParameter
+            Effect: Allow
+            Action:
+              - 'ssm:GetParameter'
+            Resource: ['arn:aws:ssm:*:*:parameter/AmazonCloudWatch-*']
   LogStream:
     Type: 'AWS::Kinesis::Stream'
     Properties:
@@ -743,16 +757,29 @@ Resources:
               - !Ref BillingNotification
       Topics:
         - !Ref BillingNotification                         
-  LinuxMemoryAndLogShiping:
+  NewInstanceConfiguration:
     Type: "AWS::SSM::Document"
     Properties: 
       DocumentType: Command
       Content: 
-        schemaVersion: "2.0"
-        description: "Send memory metrics to cloudwatch custom metrics. Send syslog and authlog to cloudwatch logs."
+        schemaVersion: "2.2"
+        description: "Set up new instance, i.e. cloud watch agent configuration"
         mainSteps:
+          - action: aws:runPowerShellScript
+            name: "CloudWatchAgentSetupScript"
+            precondition:
+              StringEquals: 
+                - "platformType"
+                - "Windows"
+            inputs:
+              runCommand: 
+                - !Sub .'C:\Program Files\Amazon\AmazonCloudWatchAgent\configureCloudWatch.ps1' ${WindowsEventLog}
           - action: "aws:runShellScript"
             name: "LaunchLogAgent"
+            precondition:
+              StringEquals: 
+                - "platformType"
+                - "Linux"
             inputs:
               runCommand: 
                 - !Sub |
@@ -770,6 +797,10 @@ Resources:
                     ${CwlUbuntuAgentDocker}
                   docker run -d --restart=always --name cwlcron ${CwlUbuntuAgentDocker} cron
           - action: "aws:runShellScript"
+            precondition:
+              StringEquals: 
+                - "platformType"
+                - "Linux"
             name: "InstallInspector"
             inputs:
               runCommand: 
@@ -778,7 +809,7 @@ Resources:
   BcTemplatesAssociation:
     Type: "AWS::SSM::Association"
     Properties: 
-      Name: !Ref LinuxMemoryAndLogShiping
+      Name: !Ref NewInstanceConfiguration
       Targets:
         - Key: "tag:bc:template-name"
           Values:
@@ -787,6 +818,7 @@ Resources:
             - analytics/snowplow
             - datastore/elasticsearch
             - platforms/ecs-base
+
 Outputs:
   LxDockerLogParams:
     Value: !Join 
