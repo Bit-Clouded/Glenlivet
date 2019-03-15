@@ -51,14 +51,16 @@ Parameters:
     Default: ''
   LogstashNodeType:
     Description: >-
-      Logstash EC2 instance type. t2.nano should only be used for development
+      Logstash EC2 instance type. t3.nano should only be used for development
       purpose.
     Type: String
     Default: m5.large
     AllowedValues:
-      - t2.nano
-      - t2.micro
-      - t2.small
+      - t3.nano
+      - t3.micro
+      - t3.small
+      - t3.medium
+      - t3.large
       - m5.large
       - m5.xlarge
       - m5.2xlarge
@@ -349,8 +351,8 @@ Resources:
             Action: ['sqs:SendMessage']
             Resource: '*'
             Condition:
-              ArnEquals:
-                'aws:SourceArn': !Sub 'arn:aws:sns:ap-southeast-2:${AWS::AccountId}:*'
+              ArnLike:
+                'aws:SourceArn': !Sub 'arn:aws:sns:${AWS::Region}:${AWS::AccountId}:*'
       Queues:
         - !Ref LogQueue
   LogstashSg:
