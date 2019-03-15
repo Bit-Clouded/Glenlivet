@@ -11,6 +11,14 @@ Parameters:
       - Six_Hours
       - Twelve_Hours
       - TwentyFour_Hours
+  GuardDutyFindingsDeliveryFrequency:
+    Description: ''
+    Default: FIFTEEN_MINUTES
+    Type: String
+    AllowedValues:
+      - FIFTEEN_MINUTES
+      - ONE_HOUR
+      - SIX_HOURS
   CwlUbuntuAgentDocker:
     Description: Name tag of log shipping agent container.
     Type: String
@@ -816,7 +824,11 @@ Resources:
             - analytics/snowplow
             - datastore/elasticsearch
             - platforms/ecs-base
-
+  GuardDuty:
+    Type: AWS::GuardDuty::Detector
+    Properties:
+      Enable: true
+      FindingPublishingFrequency: !Ref GuardDutyFindingsDeliveryFrequency  
 Outputs:
   LxDockerLogParams:
     Value: !Join 
