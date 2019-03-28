@@ -11,9 +11,8 @@ Metadata:
     - TemplatePath: networking/elb-subnets
       Parameters:
         VpcId: VpcId
-      Resources:
-        ElbSubnet1Id: ElbSubnet1
-        PvtSubnet1Id: PvtWebSubnet1
+      Outputs:
+        ServerSubnets: WebServerSubnets
       NestedDependency: networking/vpc
     - TemplatePath: analytics/logs-store
       Resources:
@@ -22,28 +21,69 @@ Metadata:
       Outputs:
         CwlLinuxParams: LxDockerLogParams
         CwlDockerParams: DockerCwlParams
+    - TemplatePath: development-services/cicd-base
+      Resources:
+        ServerSg: ServerSg
+        AgentSg: AgentSg
+        AgentInstanceProfile: AgentInstanceProfile
+        ServerInstanceProfile: ServerInstanceProfile
+    - TemplatePath: hosting/loadbalancer
+      Resources:
+        HttpsListener: HttpsListener
+        HttpListener: HttpListener
+      Outputs:
+        GatewayCanonicalZoneId: GatewayCanonicalZonId
+        GatewayDnsName: GatewayDnsName
+        GatewayName: GatewayName
+
 Parameters:
   KeyPairName:
     Description: Name of an existing EC2 KeyPair
     Type: String
     Default: ''
-  DeploymentBucketMp:
-    Description: >-
-      Role that allow access to the required resource for purpose of deployment.
-      [misc.resources.DeploymentBucketMp]
+
+  HostedZoneName:
+    Description: Hosted Zone for the url (Without '.' at the end). You need to fill in Subdomain as well for custom domain to work.
     Type: String
+  Subdomain:
+    Description: Subdomain (Without '.'  at the end). You need to fill in HostedZoneName as well for custom domain to work.
+    Type: String
+  HttpsListener:
+    Type: String
+    Description: 'Loadbalancer HTTS listener'
+    # Https is allowed to be optional.
     Default: ''
-  ServerInstanceType:
-    Description: Go master server EC2 instance type
+  HttpListener:
     Type: String
-    Default: t2.micro
+    Description: 'Loadbalancer HTT listener'
+  ListenerPriority:
+    Description: ''
+    Type: Number
+    Default: 30
+  GatewayName:
+    Type: String
+    Description: 'Loadbalancer full name'
+  GatewayDnsName:
+    Type: String
+    Description: 'Loadbalancer DNS name'
+  GatewayCanonicalZoneId:
+    Type: String
+    Description: 'Loadbalancer Zone ID'
+
+  ServerSubnets:
+    Description: 'VPCid associated with the subnets.'
+    Type: 'List<AWS::EC2::Subnet::Id>'
+  ServerInstanceType:
+    Description: Jenkins master server EC2 instance type
+    Type: String
+    Default: t3.micro
     AllowedValues:
-      - t2.micro
-      - t2.small
-      - t2.medium
-      - m3.large
-      - m3.xlarge
-      - m3.2xlarge
+      - t3.micro
+      - t3.small
+      - t3.medium
+      - m5.large
+      - m5.xlarge
+      - m5.2xlarge
     ConstraintDescription: must be a valid EC2 instance type.
   BcUbuntuBaseAmiId:
     Description: Debian Jessie AMI Id.
@@ -63,16 +103,16 @@ Parameters:
   AgentInstanceType:
     Description: WebServer EC2 instance type
     Type: String
-    Default: t2.medium
+    Default: t3.medium
     AllowedValues:
-      - t2.micro
-      - t2.small
-      - t2.medium
-      - t2.large
-      - m3.large
-      - m3.xlarge
-      - m3.2xlarge
-      - r3.large
+      - t3.micro
+      - t3.small
+      - t3.medium
+      - t3.large
+      - m5.large
+      - m5.xlarge
+      - m5.2xlarge
+      - r5.large
       - r3.xlarge
       - r3.2xlarge
       - r3.4xlarge
@@ -90,160 +130,62 @@ Parameters:
     Default: 'bitcloudedci/jenkins-linux-agent:1.1'
     Type: String
   JenkinsAgentUsername:
-    Description: Username to allow auto registering of go agents.
+    Description: Username to allow auto registering of Jenkins agents.
     Default: autojoin
     Type: String
   JenkinsAgentPassword:
-    Description: Shared secret to allow auto registering of go agents.
+    Description: Shared secret to allow auto registering of Jenkins agents.
     Default: Password1234
     Type: String
     NoEcho: 'True'
-  SslCertId:
-    Description: Id of the SSL certificate to use.
-    Default: ''
-    Type: String
   VpcId:
-    Description: 'VPCid associated with the subnets. [elb-subnets.parameters.VpcId]'
-    Type: String
-  ElbSubnet1Id:
-    Description: 'Subnet to run HA web cluster on. [elb-subnets.resources.ElbSubnet1]'
-    Type: String
-  PvtSubnet1Id:
-    Description: 'Subnet to run HA web cluster on. [elb-subnets.resources.PvtWebSubnet1]'
+    Description: 'VPCid associated with the subnets. '
     Type: String
   ElbSg:
-    Description: 'Elb Security Group. [vpc.resources.ElbSecGroup]'
+    Description: 'Elb Security Group. '
     Type: String
   ElbTargetSg:
-    Description: 'Elb Target Security Group. [vpc.resources.ElbTargetSecGroup]'
+    Description: 'Elb Target Security Group. '
     Type: String
   HttpSg:
-    Description: 'Elb Target Security Group. [vpc.resources.HttpNsSecGroup]'
+    Description: 'Elb Target Security Group. '
     Type: String
-  IsPublicFacing:
-    Description: Is publicly accessable deployment.
+  AgentSg:
+    Description: 'Shared agent security group'
     Type: String
-    AllowedValues:
-      - 'true'
-      - 'false'
-    Default: 'false'
-    ConstraintDescription: 'Valid schemes: ''internet-facing'' or ''internal''.'
+  ServerSg:
+    Description: 'Shared server security group'
+    Type: String
+  AgentInstanceProfile:
+    Description: Shared instance profile for the build agents.
+    Type: String
+  ServerInstanceProfile:
+    Description: Shared instance profile for the Jenkins server.
+    Type: String
+
   RawLogBucket:
-    Description: 'Elb Target Security Group. [logs-store.resources.Raw]'
+    Description: 'Elb Target Security Group. '
     Type: String
   CwlUbuntuAgentDocker:
     Description: Name of cluster. This is used for discovery.
     Type: String
     Default: 'bitclouded/aws-cwl-agent:4.1'
   CwlLinuxParams:
-    Description: >-
-      Environment variables for syslog and authlog cwl group names
-      [logs-store.outputs.LxDockerLogParams]
+    Description: Environment variables for syslog and authlog cwl group names
     Type: String
   CwlDockerParams:
-    Description: 'Docker log driver params [logs-store.outputs.DockerCwlParams]'
+    Description: 'Docker log driver params '
     Type: String
   CwlPolicy:
-    Description: 'Managed policy for linux logging. [logs-store.resources.LinuxLogPolicy]'
+    Description: 'Managed policy for linux logging. '
     Type: String
-Mappings:
-  InstanceVariables:
-    t2.micro:
-      ram: '450'
-    t2.small:
-      ram: '950'
-    t2.medium:
-      ram: '1950'
-    m3.large:
-      ram: '3600'
-      lspotprice: '0.056'
-      wspotprice: '0.15'
-    m3.xlarge:
-      ram: '7000'
-      lspotprice: '0.111'
-      wspotprice: '0.271'
-    m3.2xlarge:
-      ram: '14500'
-      lspotprice: '0.222'
-      wspotprice: '0.543'
-    r3.large:
-      ram: '7500'
-      lspotprice: '0.065'
-      wspotprice: '0.155'
-    r3.xlarge:
-      ram: '15000'
-      lspotprice: '0.130'
-      wspotprice: '0.280'
-    r3.2xlarge:
-      ram: '30000'
-      lspotprice: '0.261'
-      wspotprice: '0.539'
-    r3.4xlarge:
-      ram: '60000'
-      lspotprice: '0.522'
-      wspotprice: '0.948'
-    r3.8xlarge:
-      ram: '12000'
-      lspotprice: '1.043'
-      wspotprice: '1.228'
+
 Conditions:
-  IsPublicFacingCondition: !Equals 
-    - !Ref IsPublicFacing
-    - 'true'
-  HasStateSnapshot: !Not 
-    - !Equals 
-      - !Ref JenkinsStateDiskSnapshot
-      - ''
-  HasDeploymentBucketMp: !Not 
-    - !Equals 
-      - !Ref DeploymentBucketMp
-      - ''
-  HasSsl: !Not 
-    - !Equals 
-      - !Ref SslCertId
-      - ''
-  HasNoKeypair: !Equals 
-    - !Ref KeyPairName
-    - ''
+  HasStateSnapshot: !Not [!Equals [!Ref JenkinsStateDiskSnapshot, '']]
+  HasNoKeypair: !Equals [!Ref KeyPairName, '']
+
 Resources:
-  HttpGateway:
-    Type: 'AWS::ElasticLoadBalancing::LoadBalancer'
-    Properties:
-      Subnets:
-        - !Ref ElbSubnet1Id
-      Listeners:
-        - LoadBalancerPort: '80'
-          InstancePort: '8080'
-          Protocol: HTTP
-        - !If 
-          - HasSsl
-          - LoadBalancerPort: '443'
-            InstancePort: '8080'
-            Protocol: HTTPS
-            InstanceProtocol: HTTP
-            SSLCertificateId: !Ref SslCertId
-          - !Ref 'AWS::NoValue'
-      HealthCheck:
-        Target: !Join 
-          - ''
-          - - 'TCP:8080'
-        HealthyThreshold: '3'
-        UnhealthyThreshold: '5'
-        Interval: '30'
-        Timeout: '5'
-      AccessLoggingPolicy:
-        EmitInterval: '5'
-        Enabled: 'true'
-        S3BucketName: !Ref RawLogBucket
-      SecurityGroups:
-        - !Ref ElbSg
-        - !Ref HttpSg
-      Scheme: !If 
-        - IsPublicFacingCondition
-        - internet-facing
-        - internal
-      Instances:
-        - !Ref JenkinsMaster
+
   RepoDisk:
     Type: 'AWS::EC2::Volume'
     Properties:
@@ -261,7 +203,7 @@ Resources:
   JenkinsMaster:
     Type: 'AWS::EC2::Instance'
     Properties:
-      IamInstanceProfile: !Ref WebServersInstanceProfile
+      IamInstanceProfile: !Ref ServerInstanceProfile
       InstanceType: !Ref ServerInstanceType
       ImageId: !Ref BcUbuntuBaseAmiId
       KeyName: !If 
@@ -271,62 +213,35 @@ Resources:
       SecurityGroupIds:
         - !Ref ServerSg
         - !Ref ElbTargetSg
-      SubnetId: !Ref PvtSubnet1Id
+      SubnetId: !Select ['0', !Ref ServerSubnets]
       UserData: !Base64 
-        'Fn::Join':
-          - ''
-          - - |
-              #!/bin/bash
-            - !If 
-              - HasStateSnapshot
-              - ''
-              - |
-                mkfs -F -t ext4 /dev/xvdb
-            - |
-              umount /mnt/
-            - |
-              mkdir /mnt/xvdb
-            - |
-              cp /etc/fstab /etc/fstab.bak && rm /etc/fstab
-            - |
-              cat /etc/fstab.bak | grep -v ^/dev/xvdb | tee /etc/fstab
-            - |
-              echo -e "/dev/xvdb\t/mnt/xvdb\tauto\tdefaults\t0\t2" >> /etc/fstab
-            - |
-              mount -a
-            - |
-              chown -R 1000 /mnt/xvdb
-            - |
-              ECID=$(curl http://169.254.169.254/latest/meta-data/instance-id)
-            - |
-              CWLA=cwlagent_$ECID
-            - 'docker run -d --restart=always '
-            - '--name $CWLA --log-opt awslogs-stream=$CWLA '
-            - '-v /var/log:/var/log-host:ro '
-            - !Ref CwlLinuxParams
-            - ' '
-            - !Ref CwlDockerParams
-            - ' '
-            - !Ref CwlUbuntuAgentDocker
-            - |+
+        'Fn::Sub':
+          - |
+            #!/bin/bash
+            ${Mkfs}
+            umount /mnt/
+            mkdir /mnt/xvdb
+            cp /etc/fstab /etc/fstab.bak && rm /etc/fstab
+            cat /etc/fstab.bak | grep -v ^/dev/nvme0n1 | tee /etc/fstab
+            echo -e "/dev/nvme0n1\t/mnt/xvdb\tauto\tdefaults\t0\t2" >> /etc/fstab
+            mount -a
+            chown -R 1000 /mnt/xvdb
 
-            - 'docker run -d --restart=always --name cwlcron '
-            - !Ref CwlUbuntuAgentDocker
-            - |2
-               cron
-            - |
-              JENKINS_MASTER=jenkins-master_$ECID
-            - >-
-              docker run -d --restart=always -p 8080:8080 -p 50000:50000 -v
-              /mnt/xvdb:/var/jenkins_home 
-            - '--name $JENKINS_MASTER --log-opt awslogs-stream=$JENKINS_MASTER '
-            - !Ref CwlLinuxParams
-            - ' '
-            - !Ref JenkinsContainer
+            ECID=$(curl http://169.254.169.254/latest/meta-data/instance-id)
+            JENKINS_MASTER=${AWS::StackName}/jenkins-master/$ECID
+            docker run -d --restart=always -p 8080:8080 -p 50000:50000 \
+              -v /mnt/xvdb:/var/jenkins_home  \
+              --name jenkins-master --log-opt awslogs-stream=$JENKINS_MASTER \
+              ${CwlLinuxParams} \
+              ${JenkinsContainer}
+          - Mkfs: !If 
+            - HasStateSnapshot
+            - ''
+            - mkfs -F -t ext4 /dev/nvme0n1
       BlockDeviceMappings:
         - DeviceName: /dev/xvda
           Ebs:
-            VolumeSize: '30'
+            VolumeSize: '40'
             VolumeType: gp2
       Volumes:
         - Device: xvdb
@@ -334,185 +249,161 @@ Resources:
       Tags:
         - Key: Name
           Value: Jenkins Master
-  WebServersRole:
-    Type: 'AWS::IAM::Role'
-    Properties:
-      AssumeRolePolicyDocument:
-        Version: 2012-10-17
-        Statement:
-          - Effect: Allow
-            Principal:
-              Service:
-                - ec2.amazonaws.com
-            Action:
-              - 'sts:AssumeRole'
-      Path: /devops/jenkins/
-      ManagedPolicyArns:
-        - !If 
-          - HasDeploymentBucketMp
-          - !Ref DeploymentBucketMp
-          - !Ref 'AWS::NoValue'
-        - !Ref CwlPolicy
-  WebServersInstanceProfile:
-    Type: 'AWS::IAM::InstanceProfile'
-    Properties:
-      Path: /devops/jenkins/
-      Roles:
-        - !Ref WebServersRole
-  JenkinsWindowsAgentLc:
-    Type: 'AWS::AutoScaling::LaunchConfiguration'
-    Properties:
-      InstanceType: !Ref AgentInstanceType
-      ImageId: !Ref WindowsContainerAmiId
-      IamInstanceProfile: !Ref WebServersInstanceProfile
-      KeyName: !If 
-        - HasNoKeypair
-        - !Ref 'AWS::NoValue'
-        - !Ref KeyPairName
-      SecurityGroups:
-        - !Ref AgentSg
-      BlockDeviceMappings:
-        - DeviceName: /dev/sda1
-          Ebs:
-            VolumeSize: !Ref JenkinsAgentDiskSize
-            VolumeType: gp2
-      UserData: !Base64 
-        'Fn::Join':
-          - ''
-          - - |
-              <script>
-            - </script>
-  JenkinsWindowsAgentAsg:
-    Type: 'AWS::AutoScaling::AutoScalingGroup'
-    Properties:
-      VPCZoneIdentifier:
-        - !Ref PvtSubnet1Id
-      AvailabilityZones:
-        - !Select 
-          - '0'
-          - !GetAZs ''
-      LaunchConfigurationName: !Ref JenkinsWindowsAgentLc
-      MinSize: '0'
-      MaxSize: '20'
-      Tags:
-        - Key: Name
-          Value: Jenkins Agent
-          PropagateAtLaunch: 'True'
-  JenkinsLinuxAgentLc:
-    Type: 'AWS::AutoScaling::LaunchConfiguration'
-    Properties:
-      InstanceType: !Ref AgentInstanceType
-      ImageId: !Ref BcUbuntuBaseAmiId
-      IamInstanceProfile: !Ref WebServersInstanceProfile
-      KeyName: !If 
-        - HasNoKeypair
-        - !Ref 'AWS::NoValue'
-        - !Ref KeyPairName
-      SecurityGroups:
-        - !Ref AgentSg
-      UserData: !Base64 
-        'Fn::Join':
-          - ''
-          - - |
-              #!/bin/bash
-            - |
-              ECID=$(curl http://169.254.169.254/latest/meta-data/instance-id)
-            - |
-              CWLA=cwlagent_$ECID
-            - 'docker run -d --restart=always '
-            - '--name $CWLA --log-opt awslogs-stream=$CWLA '
-            - '-v /var/log:/var/log-host:ro '
-            - !Ref CwlLinuxParams
-            - ' '
-            - !Ref CwlDockerParams
-            - ' '
-            - !Ref CwlUbuntuAgentDocker
-            - |+
 
-            - 'docker run -d --restart=always --name cwlcron '
-            - !Ref CwlUbuntuAgentDocker
-            - |2
-               cron
-            - |
-              JENKINS_AGENT=jenkins-agent_$ECID
-            - >-
-              docker run -d --restart=always --name $JENKINS_AGENT --log-opt
-              awslogs-stream=$JENKINS_AGENT 
-            - '-v /var/run/docker.sock:/var/run/docker.sock --privileged '
-            - !Ref CwlLinuxParams
-            - ' '
-            - '-e JENKINS_HOST='
-            - !GetAtt 
-              - JenkinsMaster
-              - PrivateIp
-            - ' '
-            - '-e JENKINS_USERNAME='
-            - !Ref JenkinsAgentUsername
-            - ' '
-            - '-e JENKINS_PASSWORD='
-            - !Ref JenkinsAgentPassword
-            - ' '
-            - !Ref JenkinsLxAgentContainer
-      BlockDeviceMappings:
-        - DeviceName: /dev/xvda
-          Ebs:
-            VolumeSize: !Ref JenkinsAgentDiskSize
-            VolumeType: gp2
-  JenkinsLinuxAgentAsg:
+  # Hooking up to the load balancer
+  Route53:
+    Type: 'AWS::Route53::RecordSet'
+    Properties:
+      HostedZoneName: !Sub ${HostedZoneName}.
+      Comment: Hostname
+      Name: !Sub ${Subdomain}.${HostedZoneName}.
+      Type: A
+      AliasTarget:
+        DNSName: !Ref GatewayDnsName
+        HostedZoneId: !Ref GatewayCanonicalZoneId
+  AlbListenerRule:
+    Type: 'AWS::ElasticLoadBalancingV2::ListenerRule'
+    Properties:
+      Actions:
+        - Type: forward
+          TargetGroupArn: !Ref AlbTargetGroup
+      Conditions:
+        - Field: host-header
+          Values: [!Sub '${Subdomain}.${HostedZoneName}']
+      ListenerArn: !Ref HttpListener
+      Priority: !Ref ListenerPriority
+  AlbTargetGroup:
+    Type: 'AWS::ElasticLoadBalancingV2::TargetGroup'
+    Properties:
+      Targets:
+        - Id: !Ref JenkinsMaster
+          Port: 8080
+      HealthCheckPort: 8080
+      HealthCheckProtocol: HTTP
+      HealthCheckPath: /robots.txt
+      Port: 8080
+      Protocol: HTTP
+      UnhealthyThresholdCount: 10
+      VpcId: !Ref VpcId
+  # End load balancer stuff
+
+  WindowsAgentTemplate:
+    Type: "AWS::EC2::LaunchTemplate"
+    Properties:
+      LaunchTemplateData:
+        InstanceInitiatedShutdownBehavior: stop
+        BlockDeviceMappings: 
+          - DeviceName: /dev/xvda
+            Ebs:
+              VolumeSize: !Ref JenkinsAgentDiskSize
+              VolumeType: gp2
+        IamInstanceProfile:
+          Name: !Ref AgentInstanceProfile
+        SecurityGroupIds: [!Ref AgentSg]
+        KeyName: !If 
+          - HasNoKeypair
+          - !Ref 'AWS::NoValue'
+          - !Ref KeyPairName
+        ImageId: !Ref WindowsContainerAmiId
+        InstanceType: !Ref AgentInstanceType
+        Monitoring:
+          Enabled: true
+        UserData: !Base64 
+          'Fn::Sub': |
+            <PowerShell>
+              mkdir c:\cfn\
+              $javaurl = "http://javadl.sun.com/webapps/download/AutoDL?BundleId=104768"
+              Invoke-WebRequest -Uri $javaurl -OutFile c:\cfn\java-installer.exe
+              start-process -FilePath C:\cfn\java-installer.exe -ArgumentList "/s","/L",".\java-installer.log" -PassThru -Wait
+              
+              $giturl = "https://github.com/git-for-windows/git/releases/download/v2.21.0.windows.1/Git-2.21.0-64-bit.exe"
+              [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+              Invoke-WebRequest -Uri $giturl -OutFile c:\cfn\git-installer.exe
+              start-process -FilePath C:\cfn\git-installer.exe -ArgumentList "/SILENT","/COMPONENTS=`"icons,ext\reg\shellhere,assoc,assoc_sh`"" -PassThru -Wait
+              $env:Path += ";C:\Program Files\git\bin\"
+              
+              $swarmjarurl = "http://repo.jenkins-ci.org/releases/org/jenkins-ci/plugins/swarm-client/3.9/swarm-client-3.9.jar"
+              Invoke-WebRequest -Uri $swarmjarurl -OutFile c:\cfn\swarm-client-with-dependencies.jar
+
+              mkdir c:\jenkins\
+              $instanceId = Invoke-RestMethod http://169.254.169.254/latest/meta-data/instance-id
+              $ipv4address = Invoke-RestMethod http://169.254.169.254/latest/meta-data/local-ipv4
+              $javaPath = (Get-ChildItem "C:\Program Files\Java\" -Filter java.exe -Recurse).FullName
+              Start-Process $javaPath -ArgumentList `
+                "-jar","C:\cfn\swarm-client-with-dependencies.jar",`
+                "-master","http://${JenkinsMaster.PrivateIp}:8080",`
+                "-username","${JenkinsAgentUsername}",`
+                "-password","${JenkinsAgentPassword}",`
+                "-name","win-$instanceId",`
+                "-description","$ipv4address",`
+                "-fsroot","C:\jenkins\",`
+                "-executors","2",`
+                "-labels","windows"
+            </PowerShell>
+  WindowsAgentAsg:
     Type: 'AWS::AutoScaling::AutoScalingGroup'
     Properties:
-      VPCZoneIdentifier:
-        - !Ref PvtSubnet1Id
-      AvailabilityZones:
-        - !Select 
-          - '0'
-          - !GetAZs ''
-      LaunchConfigurationName: !Ref JenkinsLinuxAgentLc
+      VPCZoneIdentifier: !Ref ServerSubnets
+      LaunchTemplate:
+        LaunchTemplateId: !Ref WindowsAgentTemplate
+        Version: !GetAtt WindowsAgentTemplate.LatestVersionNumber
       MinSize: '0'
       MaxSize: '20'
       Tags:
         - Key: Name
           Value: Jenkins Agent
           PropagateAtLaunch: 'True'
-  ServerSg:
-    Type: 'AWS::EC2::SecurityGroup'
+  LinuxAgentTemplate:
+    Type: "AWS::EC2::LaunchTemplate"
     Properties:
-      GroupDescription: Jenkins Master Server Security Group
-      VpcId: !Ref VpcId
-      SecurityGroupIngress:
-        - IpProtocol: '-1'
-          SourceSecurityGroupId: !Ref AgentSg
-      SecurityGroupEgress:
-        - IpProtocol: '-1'
-          CidrIp: 0.0.0.0/0
+      LaunchTemplateData:
+        InstanceInitiatedShutdownBehavior: stop
+        BlockDeviceMappings: 
+          - DeviceName: /dev/xvda
+            Ebs:
+              VolumeSize: !Ref JenkinsAgentDiskSize
+              VolumeType: gp2
+        IamInstanceProfile:
+          Name: !Ref AgentInstanceProfile
+        SecurityGroupIds: [!Ref AgentSg]
+        KeyName: !If 
+        - HasNoKeypair
+        - !Ref 'AWS::NoValue'
+        - !Ref KeyPairName
+        ImageId: !Ref BcUbuntuBaseAmiId
+        InstanceType: !Ref AgentInstanceType
+        Monitoring:
+          Enabled: true
+        UserData: !Base64 
+          'Fn::Sub': |
+            #!/bin/bash
+            ECID=$(curl http://169.254.169.254/latest/meta-data/instance-id)
+            $JENKINS_AGENT=${AWS::StackName}/jenkins-linux-agent/$ECID
+            docker run -d --restart=always --name jenkins-linux-agent \
+              --log-opt awslogs-stream=$JENKINS_AGENT \
+              -v /var/run/docker.sock:/var/run/docker.sock --privileged \
+              ${CwlLinuxParams} \
+              -e JENKINS_HOST=${JenkinsMaster.PrivateIp} \
+              -e JENKINS_USERNAME=${JenkinsAgentUsername} \
+              -e JENKINS_PASSWORD=${JenkinsAgentPassword} \
+              ${JenkinsLxAgentContainer}
+  LinuxAgentAsg:
+    Type: 'AWS::AutoScaling::AutoScalingGroup'
+    Properties:
+      VPCZoneIdentifier: !Ref ServerSubnets
+      LaunchTemplate:
+        LaunchTemplateId: !Ref LinuxAgentTemplate
+        Version: !GetAtt LinuxAgentTemplate.LatestVersionNumber
+      MinSize: '0'
+      MaxSize: '20'
       Tags:
         - Key: Name
-          Value: Jenkins Master Server Security Group
-  AgentSg:
-    Type: 'AWS::EC2::SecurityGroup'
-    Properties:
-      GroupDescription: Jenkins Agent Security Group. No in bound traffic other than Go Server.
-      SecurityGroupEgress:
-        - IpProtocol: '-1'
-          CidrIp: 0.0.0.0/0
-      VpcId: !Ref VpcId
-      Tags:
-        - Key: Name
-          Value: Jenkins Agent Security Group
-  DeploymentTargetSg:
-    Type: 'AWS::EC2::SecurityGroup'
-    Properties:
-      GroupDescription: Jenkins Agent Security Group. No in bound traffic other than Go Server.
-      SecurityGroupIngress:
-        - IpProtocol: '-1'
-          SourceSecurityGroupId: !Ref AgentSg
-      VpcId: !Ref VpcId
-      Tags:
-        - Key: Name
-          Value: Jenkins Agent Security Group
+          Value: Jenkins Agent
+          PropagateAtLaunch: 'True'
+
 Outputs:
   EsClusterMasters:
     Value: !GetAtt 
       - JenkinsMaster
       - PrivateIp
-    Description: IP of the Go server.
+    Description: IP of the Jenkins server.

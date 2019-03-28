@@ -12,13 +12,13 @@ Metadata:
         AccessS3Log: AccessS3Log
 Parameters:
   VpcId:
-    Description: 'VPCid associated with the subnets. [elb-subnets.parameters.VpcId]'
+    Description: 'VPCid associated with the subnets.'
     Type: 'AWS::EC2::VPC::Id'
   AccessS3Log:
-    Description: 'Managed policy for linux logging. [logs-store.resources.AccessS3Log]'
+    Description: 'Managed policy for linux logging.'
     Type: String
   CwlPolicy:
-    Description: 'Managed policy for linux logging. [logs-store.resources.LinuxLogPolicy]'
+    Description: 'Managed policy for linux logging.'
     Type: String
 Resources:
   Utility:
@@ -225,3 +225,7 @@ Resources:
       Tags:
         - Key: Name
           Value: Deployment Target Security Group
+
+Outputs:
+  AgentRoleArn:
+    Value: !GetAtt AgentRole.Arn
