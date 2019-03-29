@@ -65,6 +65,10 @@ Parameters:
     MinValue: 1
     MaxValue: 4000
     Default: 60
+    
+  HttpsDefaultAction:
+    Type: String
+    Value: www.google.com
 
 Conditions:
   HasCertificateArn: !Not [!Equals [!Ref CertificateArn, '']]
@@ -112,7 +116,7 @@ Resources:
       DefaultActions:
         - Type: redirect
           RedirectConfig:
-            Host: "#{host}"
+            Host: !Ref HttpsDefaultAction
             Path: "/#{path}"
             Protocol: HTTPS
             StatusCode: HTTP_302
