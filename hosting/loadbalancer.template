@@ -111,7 +111,7 @@ Resources:
       Port: '443'
       DefaultActions:
         - Type: fixed-response
-          FixedREsponseConfig:
+          FixedResponseConfig:
             StatusCode: 505
       Protocol: HTTPS
       Certificates:
