@@ -114,12 +114,9 @@ Resources:
       LoadBalancerArn: !Ref HttpGateway
       Port: '443'
       DefaultActions:
-        - Type: redirect
-          RedirectConfig:
-            Host: !Ref HttpsDefaultAction
-            Path: "/#{path}"
-            Protocol: HTTPS
-            StatusCode: HTTP_302
+        - Type: fixed-response
+          FixedREsponseConfig:
+            StatusCode: 505
       Protocol: HTTPS
       Certificates:
         - CertificateArn: !Ref CertificateArn
