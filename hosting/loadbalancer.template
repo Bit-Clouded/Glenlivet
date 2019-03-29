@@ -113,7 +113,7 @@ Resources:
         - Type: redirect
           RedirectConfig:
             Host: "#{host}"
-            Path: "#{path}"
+            Path: "/#{path}"
             Protocol: HTTPS
             StatusCode: HTTP_302
       Protocol: HTTPS
