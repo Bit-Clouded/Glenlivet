@@ -66,10 +66,6 @@ Parameters:
     MaxValue: 4000
     Default: 60
     
-  HttpsDefaultAction:
-    Type: String
-    Value: www.google.com
-
 Conditions:
   HasCertificateArn: !Not [!Equals [!Ref CertificateArn, '']]
 
