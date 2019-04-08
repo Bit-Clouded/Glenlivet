@@ -166,7 +166,7 @@ Resources:
         - HasNoHttpsListener
         - !Ref HttpListener
         - !Ref HttpsListener
-      Priority: 1
+      Priority: !Ref ListenerPriority
   AlbTargetGroup:
     Type: 'AWS::ElasticLoadBalancingV2::TargetGroup'
     Properties:
