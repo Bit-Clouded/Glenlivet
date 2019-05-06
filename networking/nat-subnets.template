@@ -74,7 +74,7 @@ Conditions:
 
   IsMultiAzActive: !Equals [!Ref IsMultiAz, 'true']
   IsThreeMultiAz: !And [!Condition IsThreeAz, !Condition IsMultiAzActive]
-  EnableGatewayEndpointsActive: !Equals [!Ref IsMultiAz, 'true']
+  EnableGatewayEndpointsActive: !Equals [!Ref EnableGatewayEndpoints, 'true']
 
 Resources:
 
