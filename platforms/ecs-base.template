@@ -28,23 +28,22 @@ Parameters:
   AzCount:
     Description: >-
       Number of AZ. Third subnet will only be created if number is 3
-      [vpc.outputs.AzCount]
     Type: String
   ServerSubnets:
-    Description: 'VPCid associated with the subnets. [elb-subnets.outputs.WebServerSubnets]'
+    Description: 'VPCid associated with the subnets.'
     Type: 'List<AWS::EC2::Subnet::Id>'
   ElbTargetSg:
-    Description: 'Elb Target Security Group. [vpc.resources.ElbTargetSecGroup]'
+    Description: 'Elb Target Security Group.'
     Type: String
   InstanceType:
     Description: Phabricator server instance type
     Type: String
-    Default: t2.medium
+    Default: t3.medium
     AllowedValues:
-      - t2.micro
-      - t2.small
-      - t2.medium
-      - t2.large
+      - t3.micro
+      - t3.small
+      - t3.medium
+      - t3.large
       - m5.large
       - m5.xlarge
       - m5.2xlarge
@@ -285,20 +284,35 @@ Resources:
           iptables -t nat -A PREROUTING -p tcp -d 169.254.170.2 --dport 80 -j DNAT --to-destination 127.0.0.1:51679
           iptables -t nat -A OUTPUT -d 169.254.170.2 -p tcp -m tcp --dport 80 -j REDIRECT --to-ports 51679
           docker run -d --restart=always \
-            -e ECS_AVAILABLE_LOGGING_DRIVERS=[\"json-file\",\"awslogs\"] \
-            -e ECS_ENABLE_TASK_IAM_ROLE_NETWORK_HOST=true \
-            -e ECS_ENABLE_TASK_IAM_ROLE=true \
-            -e ECS_CLUSTER=${EcsCluster} \
-            -e ECS_LOGFILE=/log/ecs-agent.log \
-            -e ECS_DATADIR=/data \
+            --init \
+            -v /var/run:/var/run \
+            -v /var/log/ecs/:/log:Z \
+            -v /var/lib/ecs/data:/data:Z \
+            -v /etc/ecs:/etc/ecs \
+            -v /sbin:/sbin \
+            -v /lib:/lib \
+            -v /lib64:/lib64 \
+            -v /usr/lib:/usr/lib \
+            -v /usr/lib64:/usr/lib64 \
+            -v /proc:/host/proc \
+            -v /sys/fs/cgroup:/sys/fs/cgroup \
             -v /var/run/docker.sock:/var/run/docker.sock \
-            -v /var/log/ecs/:/log \
-            -v /var/lib/ecs/data:/data \
-            -p 127.0.0.1:51678:51678 \
-            -p 127.0.0.1:51679:51679 \
+            --net=host \
+            --cap-add=sys_admin \
+            --cap-add=net_admin \
+            -e ECS_CLUSTER=${EcsCluster} \
+            -e ECS_ENABLE_TASK_ENI=true \
+            -e ECS_UPDATES_ENABLED=false \
+            -e ECS_ENGINE_TASK_CLEANUP_WAIT_DURATION=1h \
+            -e ECS_DATADIR=/data \
+            -e ECS_ENABLE_TASK_IAM_ROLE=true \
+            -e ECS_ENABLE_TASK_IAM_ROLE_NETWORK_HOST=true \
+            -e ECS_LOGFILE=/log/ecs-agent.log \
+            -e ECS_AVAILABLE_LOGGING_DRIVERS=["json-file","awslogs","none"] \
+            -e ECS_LOGLEVEL=info \
             ${EcsAgentImage}:${EcsAgentVersion}
           
-          sudo chmod a+rwx /var/run/docker.sock
+          chmod a+rwx /var/run/docker.sock
 
       BlockDeviceMappings:
         - DeviceName: /dev/sda1
@@ -411,7 +425,7 @@ Resources:
       Description: ECS scaling event processor
       Role:
          Fn::GetAtt: ["ScalingEventsProcessorPermission", "Arn"]
-      Runtime: nodejs6.10
+      Runtime: nodejs10.x
       Timeout: 300
       Environment:
         Variables:
