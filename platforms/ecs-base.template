@@ -308,7 +308,7 @@ Resources:
             -e ECS_ENABLE_TASK_IAM_ROLE=true \
             -e ECS_ENABLE_TASK_IAM_ROLE_NETWORK_HOST=true \
             -e ECS_LOGFILE=/log/ecs-agent.log \
-            -e ECS_AVAILABLE_LOGGING_DRIVERS=["json-file","awslogs","none"] \
+            -e ECS_AVAILABLE_LOGGING_DRIVERS='["json-file","awslogs","none"]' \
             -e ECS_LOGLEVEL=info \
             ${EcsAgentImage}:${EcsAgentVersion}
           
