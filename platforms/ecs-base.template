@@ -90,45 +90,7 @@ Parameters:
   EcsAgentVersion:
     Description: 'AWS ECS Agent Name'
     Type: String
-    Default: v1.16.0
-
-  # Scaling Parameters
-  ScaleTestPeriod:
-    Description: Length of time block in seconds to test for thresholds.
-    Type: Number
-    Default: 60
-  ScaleUpPercentage:
-    Description: Percentage of extra servers to provision when scaling up.
-    Type: Number
-    Default: 60
-  ScaleUpCooldown:
-    Description: Number of seconds before anothe round of scale up happens.
-    Type: Number
-    Default: 90
-  ScaleUpThreshold:
-    Description: CPU allocation threshold to scale up at.
-    Type: Number
-    Default: 75
-  ScaleUpTestPeriodCount:
-    Description: Number of time block to test for scaling up.
-    Type: Number
-    Default: 1
-  ScaleDownCount:
-    Description: Number of servers to decomission when scaling down.
-    Type: Number
-    Default: -1
-  ScaleDownCooldown:
-    Description: Number of seconds before anothe round of scale down happens.
-    Type: Number
-    Default: 120
-  ScaleDownThreshold:
-    Description: CPU allocation threshold to scale down at.
-    Type: Number
-    Default: 50
-  ScaleDownTestPeriodCount:
-    Description: Number of time block to test for scaling up.
-    Type: Number
-    Default: 2
+    Default: v1.28.0
 
 Conditions:
   IsThreeAz: !Equals 
@@ -181,7 +143,7 @@ Resources:
       VPCZoneIdentifier: !Ref ServerSubnets
       LaunchConfigurationName: !Ref WindowsAgentLc
       MinSize: '0'
-      MaxSize: '100'
+      MaxSize: '0'
       Tags:
         - Key: Name
           Value: !Sub '${AWS::StackName} Windows Agent'
@@ -312,7 +274,7 @@ Resources:
             -e ECS_LOGLEVEL=info \
             ${EcsAgentImage}:${EcsAgentVersion}
           
-          chmod a+rwx /var/run/docker.sock
+          sudo chmod a+rwx /var/run/docker.sock
 
       BlockDeviceMappings:
         - DeviceName: /dev/sda1
@@ -381,7 +343,7 @@ Resources:
       IpProtocol: '-1'
       SourceSecurityGroupId: !Ref DbTargetClusterSg
 
-  # Start of Instance Draining Handling
+  # Start of Instance Draining Handling 
   LinuxTerminateHook:
     Type: "AWS::AutoScaling::LifecycleHook"
     Properties:
@@ -392,6 +354,15 @@ Resources:
       NotificationTargetARN: !Ref ScalingEvents
       RoleARN:
          Fn::GetAtt: ["LinuxTerminateHookPermission", "Arn"]
+  WindowsTerminateHook:
+    Type: "AWS::AutoScaling::LifecycleHook"
+    Properties:
+      AutoScalingGroupName: !Ref WindowsAgentGroups
+      DefaultResult: ABANDON
+      HeartbeatTimeout: 900
+      LifecycleTransition: autoscaling:EC2_INSTANCE_TERMINATING
+      NotificationTargetARN: !Ref ScalingEvents
+      RoleARN: Fn::GetAtt: ["LinuxTerminateHookPermission", "Arn"]	   
   LinuxTerminateHookPermission:
     Type: "AWS::IAM::Role"
     Properties:
@@ -425,8 +396,8 @@ Resources:
       Description: ECS scaling event processor
       Role:
          Fn::GetAtt: ["ScalingEventsProcessorPermission", "Arn"]
-      Runtime: nodejs10.x
-      Timeout: 300
+      Runtime: nodejs8.10
+      Timeout: 900
       Environment:
         Variables:
           CLUSTER_NAME: !Ref EcsCluster
@@ -488,52 +459,6 @@ Resources:
   # End of Instance Draining Handling
 
   # Start of ECS Auto Scaling
-  LinuxScaleUpPolicy:
-    Type: "AWS::AutoScaling::ScalingPolicy"
-    Properties:
-      AdjustmentType: "PercentChangeInCapacity"
-      AutoScalingGroupName: !Ref "EcsAutoScalingGroup"
-      Cooldown: !Ref ScaleUpCooldown
-      ScalingAdjustment: !Ref ScaleUpPercentage
-  LinuxScaleDownPolicy:
-    Type: "AWS::AutoScaling::ScalingPolicy"
-    Properties:
-      AdjustmentType: "ChangeInCapacity"
-      AutoScalingGroupName: !Ref "EcsAutoScalingGroup"
-      Cooldown: !Ref ScaleUpCooldown
-      ScalingAdjustment: !Ref ScaleDownCount
-  LinuxCapacityAlarmLow:
-    Type: "AWS::CloudWatch::Alarm"
-    Properties:
-      AlarmDescription: !Sub |
-        Scale-down if cpu reservation < ${ScaleUpThreshold}% for ${ScaleUpTestPeriodCount} * ${ScaleTestPeriod} seconds
-      MetricName: "CPUReservation"
-      Namespace: "AWS/ECS"
-      Statistic: "Maximum"
-      Period: !Ref ScaleTestPeriod
-      EvaluationPeriods: !Ref ScaleUpTestPeriodCount
-      Threshold: !Ref ScaleUpThreshold
-      AlarmActions: [!Ref LinuxScaleUpPolicy]
-      Dimensions:
-        - Name: "ClusterName"
-          Value: !Ref "EcsCluster"
-      ComparisonOperator: "GreaterThanThreshold"
-  LinuxCapacityAlarmHigh:
-    Type: "AWS::CloudWatch::Alarm"
-    Properties:
-      AlarmDescription: !Sub |
-        Scale-down if cpu reservation < ${ScaleDownThreshold}% for ${ScaleDownTestPeriodCount} * ${ScaleTestPeriod} seconds
-      MetricName: "CPUReservation"
-      Namespace: "AWS/ECS"
-      Statistic: "Maximum"
-      Period: !Ref ScaleTestPeriod
-      EvaluationPeriods: !Ref ScaleDownTestPeriodCount
-      Threshold: !Ref ScaleDownThreshold
-      AlarmActions: [!Ref LinuxScaleDownPolicy]
-      Dimensions: 
-        - Name: "ClusterName"
-          Value: !Ref "EcsCluster"
-      ComparisonOperator: "LessThanThreshold"
   # End of ECS Auto Scaling
 
   # Shared Roles
