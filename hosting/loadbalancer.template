@@ -95,6 +95,7 @@ Resources:
     Properties:
       LoadBalancerArn: !Ref HttpGateway
       Port: '80'
+      Protocol: HTTP
       DefaultActions:
         - Type: redirect
           RedirectConfig:
@@ -102,7 +103,7 @@ Resources:
             Path: "/#{path}"
             Protocol: HTTPS
             StatusCode: HTTP_302
-      Protocol: HTTP
+            Port: 443
   HttpsListener:
     Type: 'AWS::ElasticLoadBalancingV2::Listener'
     Condition: HasCertificateArn
