@@ -18,6 +18,14 @@ Metadata:
       Resources:
         DiagnosticsMp: LinuxLogPolicy
 Parameters:
+  ClusterMinimumHosts:
+    Description: 'Minimum number of ec2 hosts to run in the auto scaling group'
+    Default: 2
+    Type: String
+  ClusterMaximumHosts:
+    Description: 'Maximum number of ec2 hosts to run in the auto scaling group'
+    Default: 100
+    Type: String
   KeyPairName:
     Type: String
     Description: Name of an existing EC2 KeyPair to enable SSH access to the ECS instances.
@@ -91,8 +99,17 @@ Parameters:
     Description: 'AWS ECS Agent Name'
     Type: String
     Default: v1.28.0
+  PlatformType:
+    Description: Ec2 host type
+    Type: String
+    Default: Linux
+    AllowedValues:
+      - Linux
+      - Windows
 
 Conditions:
+  CreateWindowsResources: !Equals [ !Ref PlatformType, Windows ]
+  CreateLinuxResources: !Equals [ !Ref PlatformType, Linux ]
   IsThreeAz: !Equals 
     - !Ref AzCount
     - '3'
@@ -142,8 +159,14 @@ Resources:
     Properties:
       VPCZoneIdentifier: !Ref ServerSubnets
       LaunchConfigurationName: !Ref WindowsAgentLc
-      MinSize: '0'
-      MaxSize: '0'
+      MinSize: !If 
+        - CreateWindowsResources
+        - !Ref ClusterMinimumHosts
+        - '0'
+      MaxSize: !If 
+        - CreateWindowsResources
+        - !Ref ClusterMaximumHosts
+        - '0'
       Tags:
         - Key: Name
           Value: !Sub '${AWS::StackName} Windows Agent'
@@ -204,8 +227,14 @@ Resources:
     Properties:
       VPCZoneIdentifier: !Ref ServerSubnets
       LaunchConfigurationName: !Ref ContainerInstances
-      MinSize: '2'
-      MaxSize: '100'
+      MinSize: !If 
+        - CreateLinuxResources
+        - !Ref ClusterMinimumHosts
+        - '0'
+      MaxSize: !If 
+        - CreateLinuxResources
+        - !Ref ClusterMaximumHosts
+        - '0'
       Tags:
         - Key: Name
           Value: !Sub '${AWS::StackName} Linux Agent'
@@ -362,7 +391,7 @@ Resources:
       HeartbeatTimeout: 900
       LifecycleTransition: autoscaling:EC2_INSTANCE_TERMINATING
       NotificationTargetARN: !Ref ScalingEvents
-      RoleARN: Fn::GetAtt: ["LinuxTerminateHookPermission", "Arn"]	   
+      RoleARN: !GetAtt LinuxTerminateHookPermission.Arn
   LinuxTerminateHookPermission:
     Type: "AWS::IAM::Role"
     Properties:
