@@ -99,6 +99,10 @@ Parameters:
     Description: 'AWS ECS Agent Name'
     Type: String
     Default: v1.28.0
+  EcsCpuReservationTrackingTarget:
+    Description: Target CPU % to target for autoscaling
+    Default: 60
+    Type: Number
   PlatformType:
     Description: Ec2 host type
     Type: String
@@ -381,8 +385,7 @@ Resources:
       HeartbeatTimeout: 900
       LifecycleTransition: autoscaling:EC2_INSTANCE_TERMINATING
       NotificationTargetARN: !Ref ScalingEvents
-      RoleARN:
-         Fn::GetAtt: ["LinuxTerminateHookPermission", "Arn"]
+      RoleARN: !GetAtt LinuxTerminateHookPermission.Arn
   WindowsTerminateHook:
     Type: "AWS::AutoScaling::LifecycleHook"
     Properties:
@@ -488,6 +491,34 @@ Resources:
   # End of Instance Draining Handling
 
   # Start of ECS Auto Scaling
+  LinuxScalingPolicy:
+    Type: "AWS::AutoScaling::ScalingPolicy"
+    Properties:
+      AutoScalingGroupName: !Ref "EcsAutoScalingGroup"
+      PolicyType: TargetTrackingScaling
+      TargetTrackingConfiguration:
+        CustomizedMetricSpecification:
+          Dimensions:
+            - Name: "ClusterName"
+              Value: !Ref "EcsCluster"
+          MetricName: "CPUReservation"
+          Statistic: "Maximum"
+          Namespace: "AWS/ECS"
+        TargetValue: !Ref EcsCpuReservationTrackingTarget
+  WindowsScalingPolicy:
+    Type: AWS::AutoScaling::ScalingPolicy
+    Properties:
+      AutoScalingGroupName: !Ref WindowsAgentGroups
+      PolicyType: TargetTrackingScaling
+      TargetTrackingConfiguration:
+        TargetValue: !Ref EcsCpuReservationTrackingTarget
+        CustomizedMetricSpecification:
+          Dimensions:
+            - Name: "ClusterName"
+              Value: !Ref "EcsCluster"
+          MetricName: "CPUReservation"
+          Statistic: "Maximum"
+          Namespace: "AWS/ECS"
   # End of ECS Auto Scaling
 
   # Shared Roles
