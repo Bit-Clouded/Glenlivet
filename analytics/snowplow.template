@@ -21,8 +21,7 @@ Metadata:
         CwlPolicy: LinuxLogPolicy
         AccessS3Log: AccessS3Log
       Outputs:
-        # TODO fix name
-        CwlLinuxParams: LxDockerLogParams
+        CwlDockerParams: LxDockerLogParams
     - TemplatePath: datastore/elasticsearch
       Resources:
         EsHost: EsElb
@@ -103,7 +102,7 @@ Parameters:
   AccessLogBucket:
     Description: 'Loadbalancer access log bucket.'
     Type: String
-  CwlLinuxParams:
+  CwlDockerParams:
     Description: Environment variables for syslog and authlog cwl group names.
     Type: String
   CwlPolicy:
@@ -361,7 +360,7 @@ Resources:
           #!/bin/bash
           ECID=$(curl http://169.254.169.254/latest/meta-data/instance-id)
           docker run --name ssc -d --restart=always -p 80:80 \
-            ${CwlLinuxParams} \
+            ${CwlDockerParams} \
             --log-opt awslogs-stream=${AWS::StackName}/ssc/$ECID \
             -e STREAM_GOOD=${RawStream} -e STREAM_BAD=${RawStreamBad} \
             ${ContainerSssc}
@@ -450,7 +449,7 @@ Resources:
           #!/bin/bash
           ECID=$(curl http://169.254.169.254/latest/meta-data/instance-id)
           docker run --name sse -d --restart=always --log-opt \
-            awslogs-stream=${AWS::StackName}/sse/$ECID ${CwlLinuxParams} \
+            awslogs-stream=${AWS::StackName}/sse/$ECID ${CwlDockerParams} \
             -e STREAM_SOURCE=${RawStream} \
             -e DDB_CHECKPOINT=${RawReadCheckpoint} \
             -e STREAM_GOOD=${EnrichedStream} \
@@ -569,7 +568,7 @@ Resources:
                 #!/bin/bash
                 ECID=$(curl http://169.254.169.254/latest/meta-data/instance-id)
                 docker run --name sks -d --restart=always --log-opt \
-                  awslogs-stream=${AWS::StackName}/sks/$ECID ${CwlLinuxParams} \
+                  awslogs-stream=${AWS::StackName}/sks/$ECID ${CwlDockerParams} \
                   -e STREAM_SOURCE=${EnrichedStream} \
                   -e DDB_CHECKPOINT=${EnrichedToS3Checkpoint} \
                   -e BUCKET_NAME=${RawDataStore} \
@@ -579,7 +578,7 @@ Resources:
               - HasEsHost
               - !Sub |
                   docker run --name sess -d --restart=always --log-opt \
-                    awslogs-stream=${AWS::StackName}/sess/$ECID ${CwlLinuxParams} \
+                    awslogs-stream=${AWS::StackName}/sess/$ECID ${CwlDockerParams} \
                     -e STREAM_SOURCE=${EnrichedStream} \
                     -e DDB_CHECKPOINT=${EnrichedToEsCheckpoint} \
                     -e ES_HOST=${EsHost} \
