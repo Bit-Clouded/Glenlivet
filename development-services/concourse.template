@@ -413,7 +413,9 @@ Resources:
                 "ssm:GetParametersByPath"
             ]
             Resource: [
-                !Sub "arn:aws:ssm:::parameter/${AWS::StackName}/*"
+                !Sub "arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/${AWS::StackName}/*",
+                !Sub "arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/${AWS::StackName}/*/*",
+                !Sub "arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/${AWS::StackName}/*/*/*"
             ]
           - Sid: KmsPermission
             Effect: "Allow"
