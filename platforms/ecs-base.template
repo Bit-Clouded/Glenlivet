@@ -616,3 +616,5 @@ Outputs:
     Value: !GetAtt ShareEcsServiceTaskExecutionRole.Arn
   ShareScheduleTaskRole:
     Value: !GetAtt ShareEcsServiceScheduleTaskRole.Arn
+  Ec2InstanceProfileArn:
+    Value: !GetAtt Ec2InstanceProfile.Arn
