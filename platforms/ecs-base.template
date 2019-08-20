@@ -230,7 +230,9 @@ Resources:
     Type: 'AWS::AutoScaling::AutoScalingGroup'
     Properties:
       VPCZoneIdentifier: !Ref ServerSubnets
-      LaunchConfigurationName: !Ref ContainerInstances
+      LaunchTemplate: 
+        LaunchTemplateId: !Ref LinuxLaunchTemplate
+        Version: !GetAtt LinuxLaunchTemplate.LatestVersionNumber
       MinSize: !If 
         - CreateLinuxResources
         - !Ref ClusterMinimumHosts
@@ -246,74 +248,7 @@ Resources:
     #CreationPolicy:
     #  ResourceSignal:
     #    Timeout: PT15M
-  ContainerInstances:
-    Type: 'AWS::AutoScaling::LaunchConfiguration'
-    DependsOn:
-      - MountTarget1
-      - MountTarget2
-    Properties:
-      ImageId: !Ref BcUbuntuBaseAmiId
-      InstanceType: !Ref InstanceType
-      IamInstanceProfile: !Ref Ec2InstanceProfile
-      KeyName: !If 
-        - HasNoKeypair
-        - !Ref 'AWS::NoValue'
-        - !Ref KeyPairName
-      SecurityGroups:
-        - !Ref ElbTargetSg
-        - !Ref DbTargetClusterSg
-      UserData: !Base64
-        'Fn::Sub': |
-          #!/bin/bash
-          apt-get update -qqy && apt-get install -qqy nfs-common
-          EC2_AVAIL_ZONE=`curl -s http://169.254.169.254/latest/meta-data/placement/availability-zone`
-          DIR_SRC=$EC2_AVAIL_ZONE.${SharedDiskGp}.efs.${AWS::Region}.amazonaws.com
-          mkdir /mnt/efs
-          echo -e "$DIR_SRC:/ /mnt/efs nfs defaults 0 0" | tee -a /etc/fstab
-          mount -a
-          # restart docker service so efs mount can come into effect.
-          service docker restart
 
-          sh -c "echo 'net.ipv4.conf.all.route_localnet = 1' >> /etc/sysctl.conf"
-          sysctl -p /etc/sysctl.conf
-          iptables -t nat -A PREROUTING -p tcp -d 169.254.170.2 --dport 80 -j DNAT --to-destination 127.0.0.1:51679
-          iptables -t nat -A OUTPUT -d 169.254.170.2 -p tcp -m tcp --dport 80 -j REDIRECT --to-ports 51679
-          docker run -d --restart=always \
-            --init \
-            -v /var/run:/var/run \
-            -v /var/log/ecs/:/log:Z \
-            -v /var/lib/ecs/data:/data:Z \
-            -v /etc/ecs:/etc/ecs \
-            -v /sbin:/sbin \
-            -v /lib:/lib \
-            -v /lib64:/lib64 \
-            -v /usr/lib:/usr/lib \
-            -v /usr/lib64:/usr/lib64 \
-            -v /proc:/host/proc \
-            -v /sys/fs/cgroup:/sys/fs/cgroup \
-            -v /var/run/docker.sock:/var/run/docker.sock \
-            --net=host \
-            --cap-add=sys_admin \
-            --cap-add=net_admin \
-            -e ECS_CLUSTER=${EcsCluster} \
-            -e ECS_ENABLE_TASK_ENI=true \
-            -e ECS_UPDATES_ENABLED=false \
-            -e ECS_ENGINE_TASK_CLEANUP_WAIT_DURATION=1h \
-            -e ECS_DATADIR=/data \
-            -e ECS_ENABLE_TASK_IAM_ROLE=true \
-            -e ECS_ENABLE_TASK_IAM_ROLE_NETWORK_HOST=true \
-            -e ECS_LOGFILE=/log/ecs-agent.log \
-            -e ECS_AVAILABLE_LOGGING_DRIVERS='["json-file","awslogs","none"]' \
-            -e ECS_LOGLEVEL=info \
-            ${EcsAgentImage}:${EcsAgentVersion}
-          
-          sudo chmod a+rwx /var/run/docker.sock
-
-      BlockDeviceMappings:
-        - DeviceName: /dev/sda1
-          Ebs:
-            VolumeSize: !Ref DiskSize
-            VolumeType: gp2
   Ec2Role:
     Type: 'AWS::IAM::Role'
     Properties:
@@ -604,6 +539,74 @@ Resources:
                   - 'ecs:RunTask'
                 Resource: '*'
 
+  LinuxLaunchTemplate:
+    Type: "AWS::EC2::LaunchTemplate"
+    Properties:
+      LaunchTemplateData:
+        IamInstanceProfile:
+          Arn: !GetAtt Ec2InstanceProfile.Arn
+        SecurityGroupIds: 
+        - !Ref ElbTargetSg
+        - !Ref DbTargetClusterSg
+        KeyName: !If 
+          - HasNoKeypair
+          - !Ref 'AWS::NoValue'
+          - !Ref KeyPairName
+        ImageId: !Ref BcUbuntuBaseAmiId
+        Monitoring:
+          Enabled: true
+        BlockDeviceMappings:
+          - DeviceName: /dev/sda1
+            Ebs:
+              VolumeSize: !Ref DiskSize
+              VolumeType: gp2
+        UserData:  !Base64
+          'Fn::Sub': |
+            #!/bin/bash
+            apt-get update -qqy && apt-get install -qqy nfs-common
+            EC2_AVAIL_ZONE=`curl -s http://169.254.169.254/latest/meta-data/placement/availability-zone`
+            DIR_SRC=$EC2_AVAIL_ZONE.${SharedDiskGp}.efs.${AWS::Region}.amazonaws.com
+            mkdir /mnt/efs
+            echo -e "$DIR_SRC:/ /mnt/efs nfs defaults 0 0" | tee -a /etc/fstab
+            mount -a
+            # restart docker service so efs mount can come into effect.
+            service docker restart
+            
+            sh -c "echo 'net.ipv4.conf.all.route_localnet = 1' >> /etc/sysctl.conf"
+            sysctl -p /etc/sysctl.conf
+            iptables -t nat -A PREROUTING -p tcp -d 169.254.170.2 --dport 80 -j DNAT --to-destination 127.0.0.1:51679
+            iptables -t nat -A OUTPUT -d 169.254.170.2 -p tcp -m tcp --dport 80 -j REDIRECT --to-ports 51679
+            docker run -d --restart=always \
+              --init \
+              -v /var/run:/var/run \
+              -v /var/log/ecs/:/log:Z \
+              -v /var/lib/ecs/data:/data:Z \
+              -v /etc/ecs:/etc/ecs \
+              -v /sbin:/sbin \
+              -v /lib:/lib \
+              -v /lib64:/lib64 \
+              -v /usr/lib:/usr/lib \
+              -v /usr/lib64:/usr/lib64 \
+              -v /proc:/host/proc \
+              -v /sys/fs/cgroup:/sys/fs/cgroup \
+              -v /var/run/docker.sock:/var/run/docker.sock \
+              --net=host \
+              --cap-add=sys_admin \
+              --cap-add=net_admin \
+              -e ECS_CLUSTER=${EcsCluster} \
+              -e ECS_ENABLE_TASK_ENI=true \
+              -e ECS_UPDATES_ENABLED=false \
+              -e ECS_ENGINE_TASK_CLEANUP_WAIT_DURATION=1h \
+              -e ECS_DATADIR=/data \
+              -e ECS_ENABLE_TASK_IAM_ROLE=true \
+              -e ECS_ENABLE_TASK_IAM_ROLE_NETWORK_HOST=true \
+              -e ECS_LOGFILE=/log/ecs-agent.log \
+              -e ECS_AVAILABLE_LOGGING_DRIVERS='["json-file","awslogs","none"]' \
+              -e ECS_LOGLEVEL=info \
+              ${EcsAgentImage}:${EcsAgentVersion}
+            
+            sudo chmod a+rwx /var/run/docker.sock
+
 Outputs:
   EcsAdminUrl:
     Description: Ec2 Container Service Cluster
@@ -616,5 +619,8 @@ Outputs:
     Value: !GetAtt ShareEcsServiceTaskExecutionRole.Arn
   ShareScheduleTaskRole:
     Value: !GetAtt ShareEcsServiceScheduleTaskRole.Arn
-  Ec2InstanceProfileArn:
-    Value: !GetAtt Ec2InstanceProfile.Arn
+  LinuxLaunchTemplateArn:
+    Value: !GetAtt LinuxLaunchTemplate.Arn
+  LinuxLaunchTemplateVersion:
+    Value: !GetAtt LinuxLaunchTemplate.LatestVersionNumber
+    
