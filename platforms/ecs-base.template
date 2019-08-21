@@ -543,6 +543,7 @@ Resources:
     Type: "AWS::EC2::LaunchTemplate"
     Properties:
       LaunchTemplateData:
+        InstanceType: !Ref InstanceType
         IamInstanceProfile:
           Arn: !GetAtt Ec2InstanceProfile.Arn
         SecurityGroupIds: 
@@ -619,8 +620,8 @@ Outputs:
     Value: !GetAtt ShareEcsServiceTaskExecutionRole.Arn
   ShareScheduleTaskRole:
     Value: !GetAtt ShareEcsServiceScheduleTaskRole.Arn
-  LinuxLaunchTemplateArn:
-    Value: !GetAtt LinuxLaunchTemplate.Arn
+  LinuxLaunchTemplateId:
+    Value: !Ref LinuxLaunchTemplate
   LinuxLaunchTemplateVersion:
     Value: !GetAtt LinuxLaunchTemplate.LatestVersionNumber
     
