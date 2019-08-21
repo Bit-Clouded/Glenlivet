@@ -16,7 +16,10 @@ Metadata:
         NatServerSubnet1: Subnet1
         NatServerSubnet2: Subnet2
         NatServerSubnet3: Subnet3
-      NestedDependency: networking/vpc.template
+    - TemplatePath: analytics/logs-store
+      Resources:
+        WarningEventsTopic: WarningEvents
+        CriticalEventsTopic: CriticalEvents
 Parameters:
   NatServerSubnet1:
     Description: Subnet ID for NAT server in the first AZ.
@@ -68,13 +71,214 @@ Parameters:
       - 'true'
       - 'false'
 
+  WarningEventsTopic:
+    Description: SNS Warnings topic.
+    Type: String
+  CriticalEventsTopic:
+    Description: SNS Critical Events topic.
+    Type: String
+
+  CreateAlarms:
+    Description: Create cloudwatch gateway alarms
+    Type: String
+    Default: 'false'
+    AllowedValues:
+      - 'true'
+      - 'false'
+
+  AttemptedVEstablishedPercentage:
+    Description: Trigger alarm at this percentage
+    Default: 2
+    Type: String
+  AttemptedVEstablishedPeriod:
+    Description: Metric period for Attemped v Established alarm
+    Default: 60
+    Type: String
+  AttemptedVEstablishedEvaluationPeriods:
+    Description: No. of metric periods for assessment of the attemped v established alarm
+    Default: 1
+    Type: String
+  AttemptedVEstablishedEvaluationThreshold:
+    Description: Threshold for assessment of the attemped v established alarm
+    Default: 0
+    Type: String
+  AttemptedVEstablishedMissingDataTreatment:
+    Description: How to treat missing data for the attemped v established alarm.
+    Type: String
+    Default: 'missing'
+    AllowedValues:
+      - 'breaching'
+      - 'notBreaching'
+      - 'ignore'
+      - 'missing'
+  AttemptedVEstablishedComparisonOperator: 
+    Description: How to compare returned value with threshold for alarm assessment
+    Default: 'GreaterThanThreshold'
+    Type: String
+    AllowedValues:
+      - 'GreaterThanOrEqualToThreshold'
+      - 'GreaterThanThreshold'
+      - 'GreaterThanUpperThreshold'
+      - 'LessThanLowerOrGreaterThanUpperThreshold'
+      - 'LessThanLowerThreshold'
+      - 'LessThanOrEqualToThreshold'
+      - 'LessThanThreshold'
+
+  BytesInOutPeriod:
+    Description: Metric period for BytesIn v BytesOut alarm
+    Default: 60
+    Type: String
+  BytesInOutEvaluationPeriods:
+    Description: No. of metric periods for assessment of the BytesIn v BytesOut alarm
+    Default: 1
+    Type: String
+  BytesInOutEvaluationThreshold:
+    Description: Threshold for assessment of the BytesIn v BytesOut alarm
+    Default: 1
+    Type: String  
+  BytesInOutMissingDataTreatment:
+    Description: How to treat missing data for the BytesInOut alarm.
+    Type: String
+    Default: 'missing'
+    AllowedValues:
+      - 'breaching'
+      - 'notBreaching'
+      - 'ignore'
+      - 'missing'
+  BytesInOutComparisonOperator: 
+    Description: How to compare returned value with threshold for alarm assessment
+    Default: 'GreaterThanOrEqualToThreshold'
+    Type: String
+    AllowedValues:
+      - 'GreaterThanOrEqualToThreshold'
+      - 'GreaterThanThreshold'
+      - 'GreaterThanUpperThreshold'
+      - 'LessThanLowerOrGreaterThanUpperThreshold'
+      - 'LessThanLowerThreshold'
+      - 'LessThanOrEqualToThreshold'
+      - 'LessThanThreshold'
+
+
+
+  PacketsInOutPeriod:
+    Description: Metric period for PacketsIn v PacketsOut alarm
+    Default: 60
+    Type: String
+  PacketsInOutEvaluationPeriods:
+    Description: No. of metric periods for assessment of the PacketsIn v PacketsOut alarm
+    Default: 1
+    Type: String
+  PacketsInOutEvaluationThreshold:
+    Description: Threshold for assessment of the PacketsIn v PacketsOut alarm
+    Default: 1
+    Type: String  
+  PacketsInOutMissingDataTreatment:
+    Description: How to treat missing data for the PacketsInOut alarm.
+    Type: String
+    Default: 'missing'
+    AllowedValues:
+      - 'breaching'
+      - 'notBreaching'
+      - 'ignore'
+      - 'missing'
+  PacketsInOutComparisonOperator: 
+    Description: How to compare returned value with threshold for alarm assessment
+    Default: 'GreaterThanOrEqualToThreshold'
+    Type: String
+    AllowedValues:
+      - 'GreaterThanOrEqualToThreshold'
+      - 'GreaterThanThreshold'
+      - 'GreaterThanUpperThreshold'
+      - 'LessThanLowerOrGreaterThanUpperThreshold'
+      - 'LessThanLowerThreshold'
+      - 'LessThanOrEqualToThreshold'
+      - 'LessThanThreshold'
+
+  ErrorPortAllocationPeriod:
+    Description: Metric period for ErrorPortAllocation alarm
+    Default: 60
+    Type: String
+  ErrorPortAllocationEvaluationPeriods:
+    Description: No. of metric periods for assessment of the ErrorPortAllocation alarm
+    Default: 1
+    Type: String
+  ErrorPortAllocationEvaluationThreshold:
+    Description: Threshold for assessment of the ErrorPortAllocation alarm
+    Default: 1
+    Type: String  
+  ErrorPortAllocationMissingDataTreatment:
+    Description: How to treat missing data for the ErrorPortAllocation alarm.
+    Type: String
+    Default: 'missing'
+    AllowedValues:
+      - 'breaching'
+      - 'notBreaching'
+      - 'ignore'
+      - 'missing'
+  ErrorPortAllocationComparisonOperator: 
+    Description: How to compare returned value with threshold for alarm assessment
+    Default: 'GreaterThanOrEqualToThreshold'
+    Type: String
+    AllowedValues:
+      - 'GreaterThanOrEqualToThreshold'
+      - 'GreaterThanThreshold'
+      - 'GreaterThanUpperThreshold'
+      - 'LessThanLowerOrGreaterThanUpperThreshold'
+      - 'LessThanLowerThreshold'
+      - 'LessThanOrEqualToThreshold'
+      - 'LessThanThreshold'
+
+  PacketDropPeriod:
+    Description: Metric period for PacketDrop alarm
+    Default: 60
+    Type: String
+  PacketDropEvaluationPeriodsWarning:
+    Description: No. of metric periods for assessment of the PacketDrop alarm
+    Default: 1
+    Type: String
+  PacketDropEvaluationPeriodsCritical:
+    Description: No. of metric periods for assessment of the PacketDrop alarm
+    Default: 3
+    Type: String
+  PacketDropEvaluationThreshold:
+    Description: Threshold for assessment of the PacketDrop alarm
+    Default: 1
+    Type: String  
+  PacketDropMissingDataTreatment:
+    Description: How to treat missing data for the PacketDrop alarm.
+    Type: String
+    Default: 'breaching'
+    AllowedValues:
+      - 'breaching'
+      - 'notBreaching'
+      - 'ignore'
+      - 'missing'
+  PacketDropComparisonOperator: 
+    Description: How to compare returned value with threshold for alarm assessment
+    Default: 'GreaterThanOrEqualToThreshold'
+    Type: String
+    AllowedValues:
+      - 'GreaterThanOrEqualToThreshold'
+      - 'GreaterThanThreshold'
+      - 'GreaterThanUpperThreshold'
+      - 'LessThanLowerOrGreaterThanUpperThreshold'
+      - 'LessThanLowerThreshold'
+      - 'LessThanOrEqualToThreshold'
+      - 'LessThanThreshold'
+
 Conditions:
+
   IsThreeAz: !Equals [!Ref AzCount, '3']
   IsAzSupplied: !Not [!Equals [!Select ['0', !Ref AvailableAzs], '']]
 
   IsMultiAzActive: !Equals [!Ref IsMultiAz, 'true']
   IsThreeMultiAz: !And [!Condition IsThreeAz, !Condition IsMultiAzActive]
   EnableGatewayEndpointsActive: !Equals [!Ref EnableGatewayEndpoints, 'true']
+
+  AlarmsRequired: !Equals [!Ref CreateAlarms, 'true']
+  Az2Alarms: !And [!Condition IsMultiAzActive, !Condition AlarmsRequired]
+  Az3Alarms: !And [!Condition IsThreeMultiAz, !Condition AlarmsRequired]
+
 
 Resources:
 
@@ -333,6 +537,823 @@ Resources:
       ServiceName: !Sub 'com.amazonaws.${AWS::Region}.dynamodb'
       VpcId: !Ref VpcId
   # /Gateway Endpoints
+
+
+  # Start Nat1 Gateway Alarms 
+
+  Nat1AttemptedVEstablishedPercentageAlarm:
+    Type: 'AWS::CloudWatch::Alarm'
+    Condition: AlarmsRequired
+    Properties:
+      AlarmDescription: >-
+        Connections attempted - connections established
+        Over 0 alarm, 0 or less healthy.
+      AlarmActions:
+        - !Ref WarningEventsTopic
+      TreatMissingData: !Ref   AttemptedVEstablishedMissingDataTreatment
+      Metrics:
+        - Id: e1
+          Expression: attempted-established
+          Label: Attempted not established (Actual)
+          ReturnData: false
+        - Id: e2
+          Expression: !Sub 'attempted/100 * ${AttemptedVEstablishedPercentage}'
+          Label: Attempted not established (Acceptable)
+          ReturnData: false
+        - Id: e3
+          Expression: e2 - e1
+          Label: result (Acceptable - actual)
+          ReturnData: true
+        - Id: attempted
+          MetricStat:
+            Metric:
+              Namespace: AWS/NATGateway
+              MetricName: ConnectionAttemptCount
+              Dimensions:
+                - Name: NatGatewayId
+                  Value: !Ref Nat1
+            Period: !Ref   AttemptedVEstablishedPeriod
+            Stat: Sum   
+            Unit: Count
+          ReturnData: false
+        - Id: established
+          MetricStat:
+            Metric:
+              Namespace: AWS/NATGateway
+              MetricName: ConnectionEstablishedCount
+              Dimensions:
+                - Name: NatGatewayId
+                  Value: !Ref Nat1
+            Period: !Ref   AttemptedVEstablishedPeriod
+            Stat: Sum
+            Unit: Count
+          ReturnData: false
+      EvaluationPeriods: !Ref AttemptedVEstablishedEvaluationPeriods
+      Threshold: !Ref AttemptedVEstablishedEvaluationThreshold
+      ComparisonOperator: !Ref AttemptedVEstablishedComparisonOperator
+
+  # duplicate... see BC dev 
+  Nat1AttemptedVEstablishedPercentageAlarmUnitRemoved:
+    Type: 'AWS::CloudWatch::Alarm'
+    Condition: AlarmsRequired
+    Properties:
+      AlarmDescription: >-
+        Connections attempted - connections established
+        Over 0 alarm, 0 or less healthy.
+      AlarmActions:
+        - !Ref WarningEventsTopic
+      TreatMissingData: !Ref   AttemptedVEstablishedMissingDataTreatment
+      Metrics:
+        - Id: e1
+          Expression: attempted-established
+          Label: Attempted not established (Actual)
+          ReturnData: false
+        - Id: e2
+          Expression: !Sub 'attempted/100 * ${AttemptedVEstablishedPercentage}'
+          Label: Attempted not established (Acceptable)
+          ReturnData: false
+        - Id: e3
+          Expression: e2 - e1
+          Label: result (Acceptable - actual)
+          ReturnData: true
+        - Id: attempted
+          MetricStat:
+            Metric:
+              Namespace: AWS/NATGateway
+              MetricName: ConnectionAttemptCount
+              Dimensions:
+                - Name: NatGatewayId
+                  Value: !Ref Nat1
+            Period: !Ref   AttemptedVEstablishedPeriod
+            Stat: Sum   
+          ReturnData: false
+        - Id: established
+          MetricStat:
+            Metric:
+              Namespace: AWS/NATGateway
+              MetricName: ConnectionEstablishedCount
+              Dimensions:
+                - Name: NatGatewayId
+                  Value: !Ref Nat1
+            Period: !Ref   AttemptedVEstablishedPeriod
+            Stat: Sum
+          ReturnData: false
+      EvaluationPeriods: !Ref AttemptedVEstablishedEvaluationPeriods
+      Threshold: !Ref AttemptedVEstablishedEvaluationThreshold
+      ComparisonOperator: !Ref AttemptedVEstablishedComparisonOperator
+
+  # Bytes alarm - unit is removed
+  Nat1BytesOutToDestinationNotLessThanBytesInFromSourceAlarm:
+    Type: 'AWS::CloudWatch::Alarm'
+    Condition: AlarmsRequired
+    Properties:
+      AlarmDescription: >-
+        BytesInFromSource - BytesOutToDestination
+        Should return 0
+      AlarmActions:
+        - !Ref WarningEventsTopic
+      TreatMissingData: !Ref BytesInOutMissingDataTreatment
+      Metrics:
+        - Id: e1
+          Expression: m1-m2
+          Label: BytesInFromSource - BytesOutToDestination
+          ReturnData: true
+        - Id: m1
+          MetricStat:
+            Metric:
+              Namespace: AWS/NATGateway
+              MetricName: BytesInFromSource
+              Dimensions:
+                - Name: NatGatewayId
+                  Value: !Ref Nat1
+            Period: !Ref BytesInOutPeriod
+            Stat: Sum   
+          ReturnData: false
+        - Id: m2
+          MetricStat:
+            Metric:
+              Namespace: AWS/NATGateway
+              MetricName: BytesOutToDestination
+              Dimensions:
+                - Name: NatGatewayId
+                  Value: !Ref Nat1
+            Period: !Ref BytesInOutPeriod
+            Stat: Sum
+          ReturnData: false
+      EvaluationPeriods: !Ref BytesInOutEvaluationPeriods
+      Threshold: !Ref BytesInOutEvaluationThreshold
+      ComparisonOperator: !Ref BytesInOutComparisonOperator
+
+  #Packets alarm - unit stays in
+  Nat1PacketsOutToDestinationNotLessThanPacketsInFromSourceAlarm:
+    Type: 'AWS::CloudWatch::Alarm'
+    Condition: AlarmsRequired
+    Properties:
+      AlarmDescription: >-
+        PacketsInFromSource - PacketsOutToDestination
+        Should return 0
+      AlarmActions:
+        - !Ref WarningEventsTopic
+      TreatMissingData: !Ref PacketsInOutMissingDataTreatment
+      Metrics:
+        - Id: e1
+          Expression: m1-m2
+          Label: PacketsInFromSource - PacketsOutToDestination
+          ReturnData: true
+        - Id: m1
+          MetricStat:
+            Metric:
+              Namespace: AWS/NATGateway
+              MetricName: PacketsInFromSource
+              Dimensions:
+                - Name: NatGatewayId
+                  Value: !Ref Nat1
+            Period: !Ref PacketsInOutPeriod
+            Stat: Sum   
+            Unit: Count
+          ReturnData: false
+        - Id: m2
+          MetricStat:
+            Metric:
+              Namespace: AWS/NATGateway
+              MetricName: PacketsOutToDestination
+              Dimensions:
+                - Name: NatGatewayId
+                  Value: !Ref Nat1
+            Period: !Ref PacketsInOutPeriod
+            Stat: Sum
+            Unit: Count
+          ReturnData: false
+      EvaluationPeriods: !Ref PacketsInOutEvaluationPeriods
+      Threshold: !Ref PacketsInOutEvaluationThreshold
+      ComparisonOperator: !Ref PacketsInOutComparisonOperator
+
+  Nat1ErrorPortAllocationNotGreaterThanZero:
+    Condition: AlarmsRequired
+    Type: 'AWS::CloudWatch::Alarm'
+    Properties:
+      AlarmDescription: >-
+        ErrorPortAllocation Not GreaterThanZero
+        Should return 0 or null.
+      AlarmActions:
+        - !Ref WarningEventsTopic
+      TreatMissingData: !Ref ErrorPortAllocationMissingDataTreatment
+      Metrics:
+        - Id: m1
+          MetricStat:
+            Metric:
+              Namespace: AWS/NATGateway
+              MetricName: ErrorPortAllocation
+              Dimensions:
+                - Name: NatGatewayId
+                  Value: !Ref Nat1
+            Period: !Ref ErrorPortAllocationPeriod
+            Stat: Sum   
+            Unit: Count
+          ReturnData: true
+      EvaluationPeriods: !Ref ErrorPortAllocationEvaluationPeriods
+      Threshold: !Ref ErrorPortAllocationEvaluationThreshold
+      ComparisonOperator:  !Ref ErrorPortAllocationComparisonOperator
+
+  Nat1PacketsDropCountNotGreaterThanZero:
+    Condition: AlarmsRequired
+    Type: 'AWS::CloudWatch::Alarm'
+    Properties:
+      AlarmDescription: >-
+        ErrorPortAllocation Not GreaterThanZero
+        Should return 0 or null.
+      AlarmActions:
+        - !Ref WarningEventsTopic
+      TreatMissingData: !Ref PacketDropMissingDataTreatment
+      Metrics:
+        - Id: m1
+          MetricStat:
+            Metric:
+              Namespace: AWS/NATGateway
+              MetricName: ErrorPortAllocation
+              Dimensions:
+                - Name: NatGatewayId
+                  Value: !Ref Nat1
+            Period: !Ref PacketDropPeriod
+            Stat: Sum
+            Unit: Count
+          ReturnData: true
+      EvaluationPeriods: !Ref PacketDropEvaluationPeriodsWarning
+      Threshold: !Ref PacketDropEvaluationThreshold
+      ComparisonOperator: !Ref PacketDropComparisonOperator
+  
+  Nat1PacketsDropCountNotGreaterThanZeroCritical:
+    Type: 'AWS::CloudWatch::Alarm'
+    Condition: AlarmsRequired
+    Properties:
+      AlarmDescription: >-
+        ErrorPortAllocation Not GreaterThanZero
+        Should return 0 or null.
+      AlarmActions:
+        - !Ref WarningEventsTopic
+      TreatMissingData: !Ref PacketDropMissingDataTreatment
+      Metrics:
+        - Id: m1
+          MetricStat:
+            Metric:
+              Namespace: AWS/NATGateway
+              MetricName: ErrorPortAllocation
+              Dimensions:
+                - Name: NatGatewayId
+                  Value: !Ref Nat1
+            Period: !Ref PacketDropPeriod
+            Stat: Sum   
+            Unit: Count
+          ReturnData: true
+      EvaluationPeriods: !Ref PacketDropEvaluationPeriodsCritical
+      Threshold: !Ref PacketDropEvaluationThreshold
+      ComparisonOperator: !Ref PacketDropComparisonOperator
+
+  # End Nat1 alarms
+
+  # Start Nat2 GatewayAlarms 
+
+  Nat2AttemptedVEstablishedPercentageAlarm:
+    Type: 'AWS::CloudWatch::Alarm'
+    Condition: Az2Alarms
+    Properties:
+      AlarmDescription: >-
+        Connections attempted - connections established
+        Over 0 alarm, 0 or less healthy.
+      AlarmActions:
+        - !Ref WarningEventsTopic
+      TreatMissingData: !Ref   AttemptedVEstablishedMissingDataTreatment
+      Metrics:
+        - Id: e1
+          Expression: attempted-established
+          Label: Attempted not established (Actual)
+          ReturnData: false
+        - Id: e2
+          Expression: !Sub 'attempted/100 * ${AttemptedVEstablishedPercentage}'
+          Label: Attempted not established (Acceptable)
+          ReturnData: false
+        - Id: e3
+          Expression: e2 - e1
+          Label: result (Acceptable - actual)
+          ReturnData: true
+        - Id: attempted
+          MetricStat:
+            Metric:
+              Namespace: AWS/NATGateway
+              MetricName: ConnectionAttemptCount
+              Dimensions:
+                - Name: NatGatewayId
+                  Value: !Ref Nat2
+            Period: !Ref   AttemptedVEstablishedPeriod
+            Stat: Sum   
+            Unit: Count
+          ReturnData: false
+        - Id: established
+          MetricStat:
+            Metric:
+              Namespace: AWS/NATGateway
+              MetricName: ConnectionEstablishedCount
+              Dimensions:
+                - Name: NatGatewayId
+                  Value: !Ref Nat2
+            Period: !Ref   AttemptedVEstablishedPeriod
+            Stat: Sum
+            Unit: Count
+          ReturnData: false
+      EvaluationPeriods: !Ref AttemptedVEstablishedEvaluationPeriods
+      Threshold: !Ref AttemptedVEstablishedEvaluationThreshold
+      ComparisonOperator: !Ref AttemptedVEstablishedComparisonOperator
+  
+  # duplicate... see BC dev
+  Nat2AttemptedVEstablishedPercentageAlarmUnitRemoved:
+    Type: 'AWS::CloudWatch::Alarm'
+    Condition: Az2Alarms
+    Properties:
+      AlarmDescription: >-
+        Connections attempted - connections established
+        Over 0 alarm, 0 or less healthy.
+      AlarmActions:
+        - !Ref WarningEventsTopic
+      TreatMissingData: !Ref   AttemptedVEstablishedMissingDataTreatment
+      Metrics:
+        - Id: e1
+          Expression: attempted-established
+          Label: Attempted not established (Actual)
+          ReturnData: false
+        - Id: e2
+          Expression: !Sub 'attempted/100 * ${AttemptedVEstablishedPercentage}'
+          Label: Attempted not established (Acceptable)
+          ReturnData: false
+        - Id: e3
+          Expression: e2 - e1
+          Label: result (Acceptable - actual)
+          ReturnData: true
+        - Id: attempted
+          MetricStat:
+            Metric:
+              Namespace: AWS/NATGateway
+              MetricName: ConnectionAttemptCount
+              Dimensions:
+                - Name: NatGatewayId
+                  Value: !Ref Nat2
+            Period: !Ref   AttemptedVEstablishedPeriod
+            Stat: Sum   
+          ReturnData: false
+        - Id: established
+          MetricStat:
+            Metric:
+              Namespace: AWS/NATGateway
+              MetricName: ConnectionEstablishedCount
+              Dimensions:
+                - Name: NatGatewayId
+                  Value: !Ref Nat2
+            Period: !Ref   AttemptedVEstablishedPeriod
+            Stat: Sum
+          ReturnData: false
+      EvaluationPeriods: !Ref AttemptedVEstablishedEvaluationPeriods
+      Threshold: !Ref AttemptedVEstablishedEvaluationThreshold
+      ComparisonOperator: !Ref AttemptedVEstablishedComparisonOperator
+
+  # Bytes alarm - unit is removed
+  Nat2BytesOutToDestinationNotLessThanBytesInFromSourceAlarm:
+    Type: 'AWS::CloudWatch::Alarm'
+    Condition: Az2Alarms
+    Properties:
+      AlarmDescription: >-
+        BytesInFromSource - BytesOutToDestination
+        Should return 0
+      AlarmActions:
+        - !Ref WarningEventsTopic
+      TreatMissingData: !Ref BytesInOutMissingDataTreatment
+      Metrics:
+        - Id: e1
+          Expression: m1-m2
+          Label: BytesInFromSource - BytesOutToDestination
+          ReturnData: true
+        - Id: m1
+          MetricStat:
+            Metric:
+              Namespace: AWS/NATGateway
+              MetricName: BytesInFromSource
+              Dimensions:
+                - Name: NatGatewayId
+                  Value: !Ref Nat2
+            Period: !Ref BytesInOutPeriod
+            Stat: Sum   
+          ReturnData: false
+        - Id: m2
+          MetricStat:
+            Metric:
+              Namespace: AWS/NATGateway
+              MetricName: BytesOutToDestination
+              Dimensions:
+                - Name: NatGatewayId
+                  Value: !Ref Nat2
+            Period: !Ref BytesInOutPeriod
+            Stat: Sum
+          ReturnData: false
+      EvaluationPeriods: !Ref BytesInOutEvaluationPeriods
+      Threshold: !Ref BytesInOutEvaluationThreshold
+      ComparisonOperator: !Ref BytesInOutComparisonOperator
+
+  # Packets alarm - unit stays in
+  Nat2PacketsOutToDestinationNotLessThanPacketsInFromSourceAlarm:
+    Type: 'AWS::CloudWatch::Alarm'
+    Condition: Az2Alarms
+    Properties:
+      AlarmDescription: >-
+        PacketsInFromSource - PacketsOutToDestination
+        Should return 0
+      AlarmActions:
+        - !Ref WarningEventsTopic
+      TreatMissingData: !Ref PacketsInOutMissingDataTreatment
+      Metrics:
+        - Id: e1
+          Expression: m1-m2
+          Label: PacketsInFromSource - PacketsOutToDestination
+          ReturnData: true
+        - Id: m1
+          MetricStat:
+            Metric:
+              Namespace: AWS/NATGateway
+              MetricName: PacketsInFromSource
+              Dimensions:
+                - Name: NatGatewayId
+                  Value: !Ref Nat2
+            Period: !Ref PacketsInOutPeriod
+            Stat: Sum   
+            Unit: Count
+          ReturnData: false
+        - Id: m2
+          MetricStat:
+            Metric:
+              Namespace: AWS/NATGateway
+              MetricName: PacketsOutToDestination
+              Dimensions:
+                - Name: NatGatewayId
+                  Value: !Ref Nat2
+            Period: !Ref PacketsInOutPeriod
+            Stat: Sum
+            Unit: Count
+          ReturnData: false
+      EvaluationPeriods: !Ref PacketsInOutEvaluationPeriods
+      Threshold: !Ref PacketsInOutEvaluationThreshold
+      ComparisonOperator: !Ref PacketsInOutComparisonOperator
+
+  Nat2ErrorPortAllocationNotGreaterThanZero:
+    Condition: Az2Alarms
+    Type: 'AWS::CloudWatch::Alarm'
+    Properties:
+      AlarmDescription: >-
+        ErrorPortAllocation Not GreaterThanZero
+        Should return 0 or null.
+      AlarmActions:
+        - !Ref WarningEventsTopic
+      TreatMissingData: !Ref ErrorPortAllocationMissingDataTreatment
+      Metrics:
+        - Id: m1
+          MetricStat:
+            Metric:
+              Namespace: AWS/NATGateway
+              MetricName: ErrorPortAllocation
+              Dimensions:
+                - Name: NatGatewayId
+                  Value: !Ref Nat2
+            Period: !Ref ErrorPortAllocationPeriod
+            Stat: Sum   
+            Unit: Count
+          ReturnData: true
+      EvaluationPeriods: !Ref ErrorPortAllocationEvaluationPeriods
+      Threshold: !Ref ErrorPortAllocationEvaluationThreshold
+      ComparisonOperator:  !Ref ErrorPortAllocationComparisonOperator
+
+  Nat2PacketsDropCountNotGreaterThanZero:
+    Condition: Az2Alarms
+    Type: 'AWS::CloudWatch::Alarm'
+    Properties:
+      AlarmDescription: >-
+        ErrorPortAllocation Not GreaterThanZero
+        Should return 0 or null.
+      AlarmActions:
+        - !Ref WarningEventsTopic
+      TreatMissingData: !Ref PacketDropMissingDataTreatment
+      Metrics:
+        - Id: m1
+          MetricStat:
+            Metric:
+              Namespace: AWS/NATGateway
+              MetricName: ErrorPortAllocation
+              Dimensions:
+                - Name: NatGatewayId
+                  Value: !Ref Nat2
+            Period: !Ref PacketDropPeriod
+            Stat: Sum
+            Unit: Count
+          ReturnData: true
+      EvaluationPeriods: !Ref PacketDropEvaluationPeriodsWarning
+      Threshold: !Ref PacketDropEvaluationThreshold
+      ComparisonOperator: !Ref PacketDropComparisonOperator
+  
+  Nat2PacketsDropCountNotGreaterThanZeroCritical:
+    Type: 'AWS::CloudWatch::Alarm'
+    Condition: Az2Alarms
+    Properties:
+      AlarmDescription: >-
+        ErrorPortAllocation Not GreaterThanZero
+        Should return 0 or null.
+      AlarmActions:
+        - !Ref WarningEventsTopic
+      TreatMissingData: !Ref PacketDropMissingDataTreatment
+      Metrics:
+        - Id: m1
+          MetricStat:
+            Metric:
+              Namespace: AWS/NATGateway
+              MetricName: ErrorPortAllocation
+              Dimensions:
+                - Name: NatGatewayId
+                  Value: !Ref Nat2
+            Period: !Ref PacketDropPeriod
+            Stat: Sum   
+            Unit: Count
+          ReturnData: true
+      EvaluationPeriods: !Ref PacketDropEvaluationPeriodsCritical
+      Threshold: !Ref PacketDropEvaluationThreshold
+      ComparisonOperator: !Ref PacketDropComparisonOperator
+
+  # End Nat2 alarms
+
+  # Start Nat3 Gateway Alarms 
+
+  Nat3AttemptedVEstablishedPercentageAlarm:
+    Type: 'AWS::CloudWatch::Alarm'
+    Condition: Az3Alarms
+    Properties:
+      AlarmDescription: >-
+        Connections attempted - connections established
+        Over 0 alarm, 0 or less healthy.
+      AlarmActions:
+        - !Ref WarningEventsTopic
+      TreatMissingData: !Ref   AttemptedVEstablishedMissingDataTreatment
+      Metrics:
+        - Id: e1
+          Expression: attempted-established
+          Label: Attempted not established (Actual)
+          ReturnData: false
+        - Id: e2
+          Expression: !Sub 'attempted/100 * ${AttemptedVEstablishedPercentage}'
+          Label: Attempted not established (Acceptable)
+          ReturnData: false
+        - Id: e3
+          Expression: e2 - e1
+          Label: result (Acceptable - actual)
+          ReturnData: true
+        - Id: attempted
+          MetricStat:
+            Metric:
+              Namespace: AWS/NATGateway
+              MetricName: ConnectionAttemptCount
+              Dimensions:
+                - Name: NatGatewayId
+                  Value: !Ref Nat3
+            Period: !Ref   AttemptedVEstablishedPeriod
+            Stat: Sum   
+            Unit: Count
+          ReturnData: false
+        - Id: established
+          MetricStat:
+            Metric:
+              Namespace: AWS/NATGateway
+              MetricName: ConnectionEstablishedCount
+              Dimensions:
+                - Name: NatGatewayId
+                  Value: !Ref Nat3
+            Period: !Ref   AttemptedVEstablishedPeriod
+            Stat: Sum
+            Unit: Count
+          ReturnData: false
+      EvaluationPeriods: !Ref AttemptedVEstablishedEvaluationPeriods
+      Threshold: !Ref AttemptedVEstablishedEvaluationThreshold
+      ComparisonOperator: !Ref AttemptedVEstablishedComparisonOperator
+
+  # Duplicate - see BC dev
+  Nat3AttemptedVEstablishedPercentageAlarmUnitRemoved:
+    Type: 'AWS::CloudWatch::Alarm'
+    Condition: Az3Alarms
+    Properties:
+      AlarmDescription: >-
+        Connections attempted - connections established
+        Over 0 alarm, 0 or less healthy.
+      AlarmActions:
+        - !Ref WarningEventsTopic
+      TreatMissingData: !Ref   AttemptedVEstablishedMissingDataTreatment
+      Metrics:
+        - Id: e1
+          Expression: attempted-established
+          Label: Attempted not established (Actual)
+          ReturnData: false
+        - Id: e2
+          Expression: !Sub 'attempted/100 * ${AttemptedVEstablishedPercentage}'
+          Label: Attempted not established (Acceptable)
+          ReturnData: false
+        - Id: e3
+          Expression: e2 - e1
+          Label: result (Acceptable - actual)
+          ReturnData: true
+        - Id: attempted
+          MetricStat:
+            Metric:
+              Namespace: AWS/NATGateway
+              MetricName: ConnectionAttemptCount
+              Dimensions:
+                - Name: NatGatewayId
+                  Value: !Ref Nat3
+            Period: !Ref   AttemptedVEstablishedPeriod
+            Stat: Sum   
+          ReturnData: false
+        - Id: established
+          MetricStat:
+            Metric:
+              Namespace: AWS/NATGateway
+              MetricName: ConnectionEstablishedCount
+              Dimensions:
+                - Name: NatGatewayId
+                  Value: !Ref Nat3
+            Period: !Ref   AttemptedVEstablishedPeriod
+            Stat: Sum
+          ReturnData: false
+      EvaluationPeriods: !Ref AttemptedVEstablishedEvaluationPeriods
+      Threshold: !Ref AttemptedVEstablishedEvaluationThreshold
+      ComparisonOperator: !Ref AttemptedVEstablishedComparisonOperator
+
+  # Bytes alarm - unit is removed
+  Nat3BytesOutToDestinationNotLessThanBytesInFromSourceAlarm:
+    Type: 'AWS::CloudWatch::Alarm'
+    Condition: Az3Alarms
+    Properties:
+      AlarmDescription: >-
+        BytesInFromSource - BytesOutToDestination
+        Should return 0
+      AlarmActions:
+        - !Ref WarningEventsTopic
+      TreatMissingData: !Ref BytesInOutMissingDataTreatment
+      Metrics:
+        - Id: e1
+          Expression: m1-m2
+          Label: BytesInFromSource - BytesOutToDestination
+          ReturnData: true
+        - Id: m1
+          MetricStat:
+            Metric:
+              Namespace: AWS/NATGateway
+              MetricName: BytesInFromSource
+              Dimensions:
+                - Name: NatGatewayId
+                  Value: !Ref Nat3
+            Period: !Ref BytesInOutPeriod
+            Stat: Sum   
+          ReturnData: false
+        - Id: m2
+          MetricStat:
+            Metric:
+              Namespace: AWS/NATGateway
+              MetricName: BytesOutToDestination
+              Dimensions:
+                - Name: NatGatewayId
+                  Value: !Ref Nat3
+            Period: !Ref BytesInOutPeriod
+            Stat: Sum
+          ReturnData: false
+      EvaluationPeriods: !Ref BytesInOutEvaluationPeriods
+      Threshold: !Ref BytesInOutEvaluationThreshold
+      ComparisonOperator: !Ref BytesInOutComparisonOperator
+
+  # Packets alarm - unit stays in
+  Nat3PacketsOutToDestinationNotLessThanPacketsInFromSourceAlarm:
+    Type: 'AWS::CloudWatch::Alarm'
+    Condition: Az3Alarms
+    Properties:
+      AlarmDescription: >-
+        PacketsInFromSource - PacketsOutToDestination
+        Should return 0
+      AlarmActions:
+        - !Ref WarningEventsTopic
+      TreatMissingData: !Ref PacketsInOutMissingDataTreatment
+      Metrics:
+        - Id: e1
+          Expression: m1-m2
+          Label: PacketsInFromSource - PacketsOutToDestination
+          ReturnData: true
+        - Id: m1
+          MetricStat:
+            Metric:
+              Namespace: AWS/NATGateway
+              MetricName: PacketsInFromSource
+              Dimensions:
+                - Name: NatGatewayId
+                  Value: !Ref Nat3
+            Period: !Ref PacketsInOutPeriod
+            Stat: Sum   
+            Unit: Count
+          ReturnData: false
+        - Id: m2
+          MetricStat:
+            Metric:
+              Namespace: AWS/NATGateway
+              MetricName: PacketsOutToDestination
+              Dimensions:
+                - Name: NatGatewayId
+                  Value: !Ref Nat3
+            Period: !Ref PacketsInOutPeriod
+            Stat: Sum
+            Unit: Count
+          ReturnData: false
+      EvaluationPeriods: !Ref PacketsInOutEvaluationPeriods
+      Threshold: !Ref PacketsInOutEvaluationThreshold
+      ComparisonOperator: !Ref PacketsInOutComparisonOperator
+
+  Nat3ErrorPortAllocationNotGreaterThanZero:
+    Condition: Az3Alarms
+    Type: 'AWS::CloudWatch::Alarm'
+    Properties:
+      AlarmDescription: >-
+        ErrorPortAllocation Not GreaterThanZero
+        Should return 0 or null.
+      AlarmActions:
+        - !Ref WarningEventsTopic
+      TreatMissingData: !Ref ErrorPortAllocationMissingDataTreatment
+      Metrics:
+        - Id: m1
+          MetricStat:
+            Metric:
+              Namespace: AWS/NATGateway
+              MetricName: ErrorPortAllocation
+              Dimensions:
+                - Name: NatGatewayId
+                  Value: !Ref Nat3
+            Period: !Ref ErrorPortAllocationPeriod
+            Stat: Sum   
+            Unit: Count
+          ReturnData: true
+      EvaluationPeriods: !Ref ErrorPortAllocationEvaluationPeriods
+      Threshold: !Ref ErrorPortAllocationEvaluationThreshold
+      ComparisonOperator:  !Ref ErrorPortAllocationComparisonOperator
+
+  Nat3PacketsDropCountNotGreaterThanZero:
+    Condition: Az3Alarms
+    Type: 'AWS::CloudWatch::Alarm'
+    Properties:
+      AlarmDescription: >-
+        ErrorPortAllocation Not GreaterThanZero
+        Should return 0 or null.
+      AlarmActions:
+        - !Ref WarningEventsTopic
+      TreatMissingData: !Ref PacketDropMissingDataTreatment
+      Metrics:
+        - Id: m1
+          MetricStat:
+            Metric:
+              Namespace: AWS/NATGateway
+              MetricName: ErrorPortAllocation
+              Dimensions:
+                - Name: NatGatewayId
+                  Value: !Ref Nat3
+            Period: !Ref PacketDropPeriod
+            Stat: Sum
+            Unit: Count
+          ReturnData: true
+      EvaluationPeriods: !Ref PacketDropEvaluationPeriodsWarning
+      Threshold: !Ref PacketDropEvaluationThreshold
+      ComparisonOperator: !Ref PacketDropComparisonOperator
+  
+  Nat3PacketsDropCountNotGreaterThanZeroCritical:
+    Type: 'AWS::CloudWatch::Alarm'
+    Condition: Az3Alarms
+    Properties:
+      AlarmDescription: >-
+        ErrorPortAllocation Not GreaterThanZero
+        Should return 0 or null.
+      AlarmActions:
+        - !Ref WarningEventsTopic
+      TreatMissingData: !Ref PacketDropMissingDataTreatment
+      Metrics:
+        - Id: m1
+          MetricStat:
+            Metric:
+              Namespace: AWS/NATGateway
+              MetricName: ErrorPortAllocation
+              Dimensions:
+                - Name: NatGatewayId
+                  Value: !Ref Nat3
+            Period: !Ref PacketDropPeriod
+            Stat: Sum   
+            Unit: Count
+          ReturnData: true
+      EvaluationPeriods: !Ref PacketDropEvaluationPeriodsCritical
+      Threshold: !Ref PacketDropEvaluationThreshold
+      ComparisonOperator: !Ref PacketDropComparisonOperator
+  
+  # End Nat3 alarms
 
 Outputs:
   # This comma delimited string helps piece together
