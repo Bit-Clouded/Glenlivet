@@ -5,7 +5,7 @@ pwd
 
 git config --global user.email "ci@bit-clouded.com"
 
-git pull --no-edit ../$internal master
+git pull --no-edit ../../$internal master
 
 if [[ `git diff --check` ]]; then
   echo 'Merge conflict!'
