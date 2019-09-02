@@ -3,6 +3,7 @@ set -e
 
 pwd
 
+
 git config --global user.email "ci@bit-clouded.com"
 
 git pull --no-edit ../../$internal master
@@ -14,14 +15,13 @@ else
   echo 'no merge conflict detected'
 fi
 
-bash validate-templates.sh
+bash cicd/validate-templates.sh
 
-if [$? -ne 0]
-then
-   echo "Validation failed!"
-   exit 1
+if [[ $? -ne 0 ]]; then
+  echo "Validation failed!"
+  exit 1
 else
-   echo "Validation passed!"
+  echo "Validation passed!"
 fi
 
 if [[ `git status --porcelain` ]]; then
