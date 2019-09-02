@@ -1,8 +1,7 @@
 #!/bin/bash
 set -e
 
-
-find "$(pwd -P)" -name "*.template" -print0 | while read -d $'\0' file
+find . -name "*.template" -print0 | while read -d $'\0' file
 do
 	if  [[ $file == *nat-subnets.template || $file == *mesosphere.template ]] ;
 	then
