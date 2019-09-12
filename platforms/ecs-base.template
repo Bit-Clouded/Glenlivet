@@ -26,6 +26,14 @@ Parameters:
     Description: 'Maximum number of ec2 hosts to run in the auto scaling group'
     Default: 100
     Type: String
+  WaitTimeout:
+    Description: Timeout (seconds) for the ASG's wait condition. Default 1hr.
+    Type: String
+    Default: "3600"
+  WaitConditionInstanceCount:
+    Description: 'Used to delay the cloudformation cleanup. Leave blank to disable.'
+    Type: String
+    Default: ''
   KeyPairName:
     Type: String
     Description: Name of an existing EC2 KeyPair to enable SSH access to the ECS instances.
@@ -110,8 +118,12 @@ Parameters:
     AllowedValues:
       - Linux
       - Windows
-
+  ContainerAwsUtil:
+    Description: Container image for awscli and cfn-signal
+    Type: String
+    Default: 'bitclouded/aws-util:2-1'
 Conditions:
+  DelayCleanUp: !Not [ !Equals [ !Ref WaitConditionInstanceCount, "" ]]
   CreateWindowsResources: !Equals [ !Ref PlatformType, Windows ]
   CreateLinuxResources: !Equals [ !Ref PlatformType, Linux ]
   IsThreeAz: !Equals 
@@ -158,96 +170,141 @@ Resources:
         - !Ref DatabaseSg
   EcsCluster:
     Type: 'AWS::ECS::Cluster'
-  WindowsAgentGroups:
-    Type: 'AWS::AutoScaling::AutoScalingGroup'
-    Properties:
-      VPCZoneIdentifier: !Ref ServerSubnets
-      LaunchConfigurationName: !Ref WindowsAgentLc
-      MinSize: !If 
-        - CreateWindowsResources
-        - !Ref ClusterMinimumHosts
-        - '0'
-      MaxSize: !If 
-        - CreateWindowsResources
-        - !Ref ClusterMaximumHosts
-        - '0'
-      Tags:
-        - Key: Name
-          Value: !Sub '${AWS::StackName} Windows Agent'
-          PropagateAtLaunch: 'true'
-  WindowsAgentLc:
-    Type: 'AWS::AutoScaling::LaunchConfiguration'
-    Properties:
-      ImageId: !Ref WindowsContainerAmiId
-      SecurityGroups:
-        - !Ref DbTargetClusterSg
-        - !Ref ElbTargetSg
-      InstanceType: !Ref InstanceType
-      IamInstanceProfile: !Ref Ec2InstanceProfile
-      KeyName: !If 
-        - HasNoKeypair
-        - !Ref 'AWS::NoValue'
-        - !Ref KeyPairName
-      BlockDeviceMappings:
-        - DeviceName: /dev/sda1
-          Ebs:
-            VolumeSize: !Ref DiskSize
-            VolumeType: gp2
-      UserData: !Base64 
-        'Fn::Sub': |
-            <powershell> 
-            [Environment]::SetEnvironmentVariable("ECS_CLUSTER", "${EcsCluster}", "Machine")
-            [Environment]::SetEnvironmentVariable("ECS_ENABLE_TASK_IAM_ROLE", "true", "Machine")
 
-            $gateway = (Get-WMIObject -Class Win32_IP4RouteTable | ? {
-              $_.Destination -eq '0.0.0.0' -and $_.Mask -eq '0.0.0.0' } |
-              Sort-Object Metric1 |
-              Select NextHop).NextHop
-            $ifIndex = (Get-NetAdapter -InterfaceDescription "Hyper-V Virtual Ethernet*" | Sort-Object | Select ifIndex).ifIndex
-            New-NetRoute -DestinationPrefix 169.254.170.2/32 -InterfaceIndex $ifIndex -NextHop $gateway
-
-            $agentZipUri = "https://s3.amazonaws.com/amazon-ecs-agent/ecs-agent-windows-${EcsAgentVersion}.zip";
-            $ecsExeDir = "$env:ProgramFiles\Amazon\ECS";
-            $zipFile = "$env:TEMP\ecs-agent.zip";
-            Invoke-RestMethod -OutFile $zipFile -Uri $agentZipUri;
-            Expand-Archive -Path $zipFile -DestinationPath $ecsExeDir -Force;
-
-            $jobname = "ECS-Agent-Init";
-            $script = "cd '$ecsExeDir'; .\amazon-ecs-agent.ps1";
-            $repeat = (New-TimeSpan -Minutes 1);
-            try {Unregister-ScheduledJob -Name $jobname | out-null} catch{};
-            Invoke-Expression("cd $ecsExeDir; .\amazon-ecs-agent.ps1");
-            $scriptblock = [scriptblock]::Create("$script");
-            $trigger = New-JobTrigger -At (Get-Date).Date -RepeatIndefinitely -RepetitionInterval $repeat -Once;
-            $options = New-ScheduledJobOption -RunElevated -ContinueIfGoingOnBattery -StartIfOnBattery;
-            Register-ScheduledJob -Name $jobname -ScriptBlock $scriptblock -Trigger $trigger -ScheduledJobOption $options -RunNow;
-
-            # end of script
-            cfn-signal.exe -e $lastexitcode --stack ${AWS::StackName} --resource ECSAutoScalingGroup --region ${AWS::Region};
-            </powershell>
-            <persist>true</persist>
-  EcsAutoScalingGroup:
+  ClusterAutoScalingGroup:
     Type: 'AWS::AutoScaling::AutoScalingGroup'
     Properties:
       VPCZoneIdentifier: !Ref ServerSubnets
       LaunchTemplate: 
-        LaunchTemplateId: !Ref LinuxLaunchTemplate
-        Version: !GetAtt LinuxLaunchTemplate.LatestVersionNumber
-      MinSize: !If 
-        - CreateLinuxResources
-        - !Ref ClusterMinimumHosts
-        - '0'
-      MaxSize: !If 
-        - CreateLinuxResources
-        - !Ref ClusterMaximumHosts
-        - '0'
+        LaunchTemplateId: !Ref ClusterLaunchTemplate
+        Version: !GetAtt ClusterLaunchTemplate.LatestVersionNumber
+      MinSize: !Ref ClusterMinimumHosts
+      MaxSize:  !Ref ClusterMaximumHosts
       Tags:
         - Key: Name
-          Value: !Sub '${AWS::StackName} Linux Agent'
+          Value: !Sub '${AWS::StackName} ${PlatformType} Agent'
           PropagateAtLaunch: 'true'
-    #CreationPolicy:
-    #  ResourceSignal:
-    #    Timeout: PT15M
+
+  WaitHandle: 
+    Type: AWS::CloudFormation::WaitConditionHandle
+  WaitCondition: 
+    Type: AWS::CloudFormation::WaitCondition
+    DependsOn: "ClusterAutoScalingGroup"
+    Properties: 
+      Handle: 
+        Ref: "WaitHandle"
+      Timeout: !Ref WaitTimeout
+      Count: !If
+        - DelayCleanUp
+        - !Ref WaitConditionInstanceCount
+        - !Ref ClusterMinimumHosts
+
+  ClusterLaunchTemplate:
+    Type: "AWS::EC2::LaunchTemplate"
+    Properties:
+      LaunchTemplateData:
+        InstanceType: !Ref InstanceType
+        IamInstanceProfile:
+          Arn: !GetAtt Ec2InstanceProfile.Arn
+        SecurityGroupIds: 
+        - !Ref ElbTargetSg
+        - !Ref DbTargetClusterSg
+        KeyName: !If 
+          - HasNoKeypair
+          - !Ref 'AWS::NoValue'
+          - !Ref KeyPairName
+        ImageId: !If 
+        - CreateLinuxResources
+        - !Ref BcUbuntuBaseAmiId
+        - !Ref WindowsContainerAmiId		
+        Monitoring:
+          Enabled: true
+        BlockDeviceMappings:
+          - DeviceName: /dev/sda1
+            Ebs:
+              VolumeSize: !Ref DiskSize
+              VolumeType: gp2
+        UserData:  !If 
+          - CreateLinuxResources
+          - !Base64
+            'Fn::Sub': |
+              #!/bin/bash
+              apt-get update -qqy && apt-get install -qqy nfs-common
+              EC2_AVAIL_ZONE=`curl -s http://169.254.169.254/latest/meta-data/placement/availability-zone`
+              DIR_SRC=$EC2_AVAIL_ZONE.${SharedDiskGp}.efs.${AWS::Region}.amazonaws.com
+              mkdir /mnt/efs
+              echo -e "$DIR_SRC:/ /mnt/efs nfs defaults 0 0" | tee -a /etc/fstab
+              mount -a
+              # restart docker service so efs mount can come into effect.
+              service docker restart
+              
+              sh -c "echo 'net.ipv4.conf.all.route_localnet = 1' >> /etc/sysctl.conf"
+              sysctl -p /etc/sysctl.conf
+              iptables -t nat -A PREROUTING -p tcp -d 169.254.170.2 --dport 80 -j DNAT --to-destination 127.0.0.1:51679
+              iptables -t nat -A OUTPUT -d 169.254.170.2 -p tcp -m tcp --dport 80 -j REDIRECT --to-ports 51679
+              docker run -d --restart=always \
+                --init \
+                -v /var/run:/var/run \
+                -v /var/log/ecs/:/log:Z \
+                -v /var/lib/ecs/data:/data:Z \
+                -v /etc/ecs:/etc/ecs \
+                -v /sbin:/sbin \
+                -v /lib:/lib \
+                -v /lib64:/lib64 \
+                -v /usr/lib:/usr/lib \
+                -v /usr/lib64:/usr/lib64 \
+                -v /proc:/host/proc \
+                -v /sys/fs/cgroup:/sys/fs/cgroup \
+                -v /var/run/docker.sock:/var/run/docker.sock \
+                --net=host \
+                --cap-add=sys_admin \
+                --cap-add=net_admin \
+                -e ECS_CLUSTER=${EcsCluster} \
+                -e ECS_ENABLE_TASK_ENI=true \
+                -e ECS_UPDATES_ENABLED=false \
+                -e ECS_ENGINE_TASK_CLEANUP_WAIT_DURATION=1h \
+                -e ECS_DATADIR=/data \
+                -e ECS_ENABLE_TASK_IAM_ROLE=true \
+                -e ECS_ENABLE_TASK_IAM_ROLE_NETWORK_HOST=true \
+                -e ECS_LOGFILE=/log/ecs-agent.log \
+                -e ECS_AVAILABLE_LOGGING_DRIVERS='["json-file","awslogs","none"]' \
+                -e ECS_LOGLEVEL=info \
+                ${EcsAgentImage}:${EcsAgentVersion}
+              
+              sudo chmod a+rwx /var/run/docker.sock
+              docker run -t --rm ${ContainerAwsUtil} cfn-signal -e $? --region ${AWS::Region} "${WaitHandle}"
+
+          #otherwise windows 
+          - !Base64 
+            'Fn::Sub': |
+              <powershell> 
+              [Environment]::SetEnvironmentVariable("ECS_CLUSTER", "${EcsCluster}", "Machine")
+              [Environment]::SetEnvironmentVariable("ECS_ENABLE_TASK_IAM_ROLE", "true", "Machine")    
+              $gateway = (Get-WMIObject -Class Win32_IP4RouteTable | ? {
+                $_.Destination -eq '0.0.0.0' -and $_.Mask -eq '0.0.0.0' } |
+                Sort-Object Metric1 |
+                Select NextHop).NextHop
+              $ifIndex = (Get-NetAdapter -InterfaceDescription "Hyper-V Virtual Ethernet*" | Sort-Object | Select ifIndex).ifIndex
+              New-NetRoute -DestinationPrefix 169.254.170.2/32 -InterfaceIndex $ifIndex -NextHop $gateway
+              $agentZipUri = "https://s3.amazonaws.com/amazon-ecs-agent/ecs-agent-windows-${EcsAgentVersion}.zip";
+              $ecsExeDir = "$env:ProgramFiles\Amazon\ECS";
+              $zipFile = "$env:TEMP\ecs-agent.zip";
+              Invoke-RestMethod -OutFile $zipFile -Uri $agentZipUri;
+              Expand-Archive -Path $zipFile -DestinationPath $ecsExeDir -Force;
+              $jobname = "ECS-Agent-Init";
+              $script = "cd '$ecsExeDir'; .\amazon-ecs-agent.ps1";
+              $repeat = (New-TimeSpan -Minutes 1);
+              try {Unregister-ScheduledJob -Name $jobname | out-null} catch{};
+              Invoke-Expression("cd $ecsExeDir; .\amazon-ecs-agent.ps1");
+              $scriptblock = [scriptblock]::Create("$script");
+              $trigger = New-JobTrigger -At (Get-Date).Date -RepeatIndefinitely -RepetitionInterval $repeat -Once;
+              $options = New-ScheduledJobOption -RunElevated -ContinueIfGoingOnBattery -StartIfOnBattery;
+              Register-ScheduledJob -Name $jobname -ScriptBlock $scriptblock -Trigger $trigger -ScheduledJobOption $options -RunNow;
+              # end of script
+              # signal the cfn wait condition that this instance is up- note success (0) hard coded
+              cfn-signal.exe -e 0 "${WaitHandle}"
+              </powershell>
+              <persist>true</persist>
 
   Ec2Role:
     Type: 'AWS::IAM::Role'
@@ -311,26 +368,18 @@ Resources:
       IpProtocol: '-1'
       SourceSecurityGroupId: !Ref DbTargetClusterSg
 
-  # Start of Instance Draining Handling 
-  LinuxTerminateHook:
+
+  InstanceTerminateHook:
     Type: "AWS::AutoScaling::LifecycleHook"
     Properties:
-      AutoScalingGroupName: !Ref EcsAutoScalingGroup
+      AutoScalingGroupName: !Ref ClusterAutoScalingGroup
       DefaultResult: ABANDON
       HeartbeatTimeout: 900
       LifecycleTransition: autoscaling:EC2_INSTANCE_TERMINATING
       NotificationTargetARN: !Ref ScalingEvents
-      RoleARN: !GetAtt LinuxTerminateHookPermission.Arn
-  WindowsTerminateHook:
-    Type: "AWS::AutoScaling::LifecycleHook"
-    Properties:
-      AutoScalingGroupName: !Ref WindowsAgentGroups
-      DefaultResult: ABANDON
-      HeartbeatTimeout: 900
-      LifecycleTransition: autoscaling:EC2_INSTANCE_TERMINATING
-      NotificationTargetARN: !Ref ScalingEvents
-      RoleARN: !GetAtt LinuxTerminateHookPermission.Arn
-  LinuxTerminateHookPermission:
+      RoleARN: !GetAtt InstanceTerminateHookPermission.Arn
+
+  InstanceTerminateHookPermission:
     Type: "AWS::IAM::Role"
     Properties:
       AssumeRolePolicyDocument:
@@ -425,25 +474,11 @@ Resources:
       TopicArn: !Ref ScalingEvents
   # End of Instance Draining Handling
 
-  # Start of ECS Auto Scaling
-  LinuxScalingPolicy:
-    Type: "AWS::AutoScaling::ScalingPolicy"
-    Properties:
-      AutoScalingGroupName: !Ref "EcsAutoScalingGroup"
-      PolicyType: TargetTrackingScaling
-      TargetTrackingConfiguration:
-        CustomizedMetricSpecification:
-          Dimensions:
-            - Name: "ClusterName"
-              Value: !Ref "EcsCluster"
-          MetricName: "CPUReservation"
-          Statistic: "Maximum"
-          Namespace: "AWS/ECS"
-        TargetValue: !Ref EcsCpuReservationTrackingTarget
-  WindowsScalingPolicy:
+
+  AsgScalingPolicy:
     Type: AWS::AutoScaling::ScalingPolicy
     Properties:
-      AutoScalingGroupName: !Ref WindowsAgentGroups
+      AutoScalingGroupName: !Ref ClusterAutoScalingGroup
       PolicyType: TargetTrackingScaling
       TargetTrackingConfiguration:
         TargetValue: !Ref EcsCpuReservationTrackingTarget
@@ -454,7 +489,6 @@ Resources:
           MetricName: "CPUReservation"
           Statistic: "Maximum"
           Namespace: "AWS/ECS"
-  # End of ECS Auto Scaling
 
   # Shared Roles
   # Role used for scheduling the ecs services and registering them with the loadbalancer
@@ -539,74 +573,6 @@ Resources:
                   - 'ecs:RunTask'
                 Resource: '*'
 
-  LinuxLaunchTemplate:
-    Type: "AWS::EC2::LaunchTemplate"
-    Properties:
-      LaunchTemplateData:
-        InstanceType: !Ref InstanceType
-        IamInstanceProfile:
-          Arn: !GetAtt Ec2InstanceProfile.Arn
-        SecurityGroupIds: 
-        - !Ref ElbTargetSg
-        - !Ref DbTargetClusterSg
-        KeyName: !If 
-          - HasNoKeypair
-          - !Ref 'AWS::NoValue'
-          - !Ref KeyPairName
-        ImageId: !Ref BcUbuntuBaseAmiId
-        Monitoring:
-          Enabled: true
-        BlockDeviceMappings:
-          - DeviceName: /dev/sda1
-            Ebs:
-              VolumeSize: !Ref DiskSize
-              VolumeType: gp2
-        UserData:  !Base64
-          'Fn::Sub': |
-            #!/bin/bash
-            apt-get update -qqy && apt-get install -qqy nfs-common
-            EC2_AVAIL_ZONE=`curl -s http://169.254.169.254/latest/meta-data/placement/availability-zone`
-            DIR_SRC=$EC2_AVAIL_ZONE.${SharedDiskGp}.efs.${AWS::Region}.amazonaws.com
-            mkdir /mnt/efs
-            echo -e "$DIR_SRC:/ /mnt/efs nfs defaults 0 0" | tee -a /etc/fstab
-            mount -a
-            # restart docker service so efs mount can come into effect.
-            service docker restart
-            
-            sh -c "echo 'net.ipv4.conf.all.route_localnet = 1' >> /etc/sysctl.conf"
-            sysctl -p /etc/sysctl.conf
-            iptables -t nat -A PREROUTING -p tcp -d 169.254.170.2 --dport 80 -j DNAT --to-destination 127.0.0.1:51679
-            iptables -t nat -A OUTPUT -d 169.254.170.2 -p tcp -m tcp --dport 80 -j REDIRECT --to-ports 51679
-            docker run -d --restart=always \
-              --init \
-              -v /var/run:/var/run \
-              -v /var/log/ecs/:/log:Z \
-              -v /var/lib/ecs/data:/data:Z \
-              -v /etc/ecs:/etc/ecs \
-              -v /sbin:/sbin \
-              -v /lib:/lib \
-              -v /lib64:/lib64 \
-              -v /usr/lib:/usr/lib \
-              -v /usr/lib64:/usr/lib64 \
-              -v /proc:/host/proc \
-              -v /sys/fs/cgroup:/sys/fs/cgroup \
-              -v /var/run/docker.sock:/var/run/docker.sock \
-              --net=host \
-              --cap-add=sys_admin \
-              --cap-add=net_admin \
-              -e ECS_CLUSTER=${EcsCluster} \
-              -e ECS_ENABLE_TASK_ENI=true \
-              -e ECS_UPDATES_ENABLED=false \
-              -e ECS_ENGINE_TASK_CLEANUP_WAIT_DURATION=1h \
-              -e ECS_DATADIR=/data \
-              -e ECS_ENABLE_TASK_IAM_ROLE=true \
-              -e ECS_ENABLE_TASK_IAM_ROLE_NETWORK_HOST=true \
-              -e ECS_LOGFILE=/log/ecs-agent.log \
-              -e ECS_AVAILABLE_LOGGING_DRIVERS='["json-file","awslogs","none"]' \
-              -e ECS_LOGLEVEL=info \
-              ${EcsAgentImage}:${EcsAgentVersion}
-            
-            sudo chmod a+rwx /var/run/docker.sock
 
 Outputs:
   EcsAdminUrl:
@@ -620,8 +586,8 @@ Outputs:
     Value: !GetAtt ShareEcsServiceTaskExecutionRole.Arn
   ShareScheduleTaskRole:
     Value: !GetAtt ShareEcsServiceScheduleTaskRole.Arn
-  LinuxLaunchTemplateId:
-    Value: !Ref LinuxLaunchTemplate
-  LinuxLaunchTemplateVersion:
-    Value: !GetAtt LinuxLaunchTemplate.LatestVersionNumber
+  ClusterLaunchTemplateId:
+    Value: !Ref ClusterLaunchTemplate
+  ClusterLaunchTemplateVersion:
+    Value: !GetAtt ClusterLaunchTemplate.LatestVersionNumber
     
