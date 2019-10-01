@@ -17,23 +17,55 @@ Metadata:
       NestedDependency: networking/vpc.template
     - TemplatePath: analytics/logs-store
       Resources:
+        LxDockerLog: LxDockerLog
         AccessLogBucket: Raw
         CwlPolicy: LinuxLogPolicy
         AccessS3Log: AccessS3Log
-      Outputs:
-        CwlDockerParams: LxDockerLogParams
-    - TemplatePath: datastore/elasticsearch
+    - TemplatePath: hosting/loadbalancer
       Resources:
-        EsHost: EsElb
+        HttpsListener: HttpsListener
+        HttpListener: HttpListener
+      Outputs:
+        GatewayCanonicalZoneId: GatewayCanonicalZonId
+        GatewayDnsName: GatewayDnsName
+        GatewayName: GatewayName
+    - TemplatePath: platforms/ecs-base
+      Resources:
+        EcsCluster: EcsCluster
+      Outputs:
+        TaskExecutionRoleArn: SharedTaskExecutionRole
+        ServiceScalingRole: SharedScalingRole
+        ServiceSchedulingRole: SharedSchedulingRole
+        ShareScheduleTaskRole: ShareScheduleTaskRole
+
 Parameters:
-  KeyPairName:
-    Description: Name of an existing EC2 KeyPair to enable SSH access to the instances
+
+  # Hosting
+  EcsCluster:
+    Type: String
+    Description: 'ECS Cluster to run the collector and UI on'
+  TaskExecutionRoleArn:
+    Description: 'Shared task execution role'
+    Type: String
+  ServiceScalingRole:
+    Description: 'Role used for ECS service autoscaling'
+    Type: String
+  ServiceSchedulingRole:
+    Description: 'Role used for ECS service scheduling'
+    Type: String
+  ShareScheduleTaskRole:
+    Description: 'Role used for ECS cron job'
     Type: String
     Default: ''
-  SslCertId:
-    Description: Id of the SSL certificate to use.
+  # Containers
+  CpuReservation:
+    Description: ''
     Type: String
-    Default: ''
+    Default: '128'
+  MemoryReservation:
+    Description: ''
+    Type: String
+    Default: '500'
   ContainerSssc:
     Description: ''
     Type: String
@@ -50,29 +82,6 @@ Parameters:
     Description: Container image for elasticsearch sink
     Type: String
     Default: 'bitclouded/snowplow-stream-es-sink:1-1'
-  InstanceType:
-    Description: Type of EC2 instance to launch for snowplow servers. c4 family is usually recommended.
-    Type: String
-    Default: t3.micro
-    AllowedValues:
-      - t3.micro
-      - t3.small
-      - t3.medium
-      - t3.large
-      - m5.large
-      - m5.xlarge
-      - m5.2xlarge
-      - m5.4xlarge
-      - m5.10xlarge
-      - c5.large
-      - c5.xlarge
-      - c5.2xlarge
-      - c5.4xlarge
-      - c5.8xlarge
-    ConstraintDescription: Must be a valid EC2 instance type.
-  BcUbuntuBaseAmiId:
-    Description: Image id of the frontend
-    Type: 'AWS::EC2::Image::Id'
   EsHost:
     Description: 'Hostname of Elasticsearch'
     Type: String
@@ -98,12 +107,19 @@ Parameters:
     Description: 'Elb Target Security Group.'
     Type: String
 
+  HostedZoneName:
+    Description: Hosted Zone for the url (Without '.' at the end).
+    Type: String
+  Subdomain:
+    Description: Subdomain (Without '.'  at the end).
+    Type: String
+
   # Logging dependencies
   AccessLogBucket:
     Description: 'Loadbalancer access log bucket.'
     Type: String
-  CwlDockerParams:
-    Description: Environment variables for syslog and authlog cwl group names.
+  LxDockerLog:
+    Description: 'Log group for docker logs'
     Type: String
   CwlPolicy:
     Description: 'Managed policy for linux logging'
@@ -115,13 +131,80 @@ Parameters:
     Description: Container image for awscli and cfn-signal
     Type: String
     Default: 'bitclouded/aws-util:2-1'
+  GatewayName:
+    Type: String
+    Description: 'Loadbalancer full name'
+  GatewayDnsName:
+    Type: String
+    Description: 'Loadbalancer DNS name'
+  GatewayCanonicalZoneId:
+    Type: String
+    Description: 'Loadbalancer Zone ID'
+  HttpsListener:
+    Type: String
+    Description: 'Loadbalancer HTTS listener'
+    Default: ''
+  HttpListener:
+    Type: String
+    Description: 'Loadbalancer HTT listener'
+  ListenerPriority:
+    Description: ''
+    Type: Number
+    Default: 21
+  DeregistrationDelay:
+    Description: ''
+    Type: Number
+    MinValue: 0
+    MaxValue: 3600
+    Default: 20
 
 Conditions:
-  HasSsl: !Not [!Equals [!Ref SslCertId, '']]
+  HasSsl: !Not [!Equals [!Ref HttpsListener, '']]
   HasEsHost: !Not [!Equals [!Ref EsHost, '']]
-  HasNoKeypair: !Equals [!Ref KeyPairName, '']
 
 Resources:
+
+  Route53:
+    Type: 'AWS::Route53::RecordSet'
+    Properties:
+      HostedZoneName: !Sub ${HostedZoneName}.
+      Comment: Hostname
+      Name: !Sub ${Subdomain}.${HostedZoneName}.
+      Type: A
+      AliasTarget:
+        DNSName: !Ref GatewayDnsName
+        HostedZoneId: !Ref GatewayCanonicalZoneId
+  AlbListenerRule:
+    Type: 'AWS::ElasticLoadBalancingV2::ListenerRule'
+    Properties:
+      Actions:
+        - Type: forward
+          TargetGroupArn: !Ref AlbTargetGroup
+      Conditions:
+        - Field: host-header
+          Values: [!Sub '${Subdomain}.${HostedZoneName}']
+      ListenerArn: !If
+        - HasSsl
+        - !Ref HttpsListener
+        - !Ref HttpListener
+      Priority: !Ref ListenerPriority
+  AlbTargetGroup:
+    Type: 'AWS::ElasticLoadBalancingV2::TargetGroup'
+    Properties:
+      HealthCheckIntervalSeconds: '60'
+      HealthCheckPath: '/health'
+      HealthCheckProtocol: HTTP
+      HealthCheckTimeoutSeconds: '30'
+      HealthyThresholdCount: 10
+      Port: 80
+      Protocol: HTTP
+      UnhealthyThresholdCount: 10
+      VpcId: !Ref VpcId
+      TargetGroupAttributes:
+        - Key: deregistration_delay.timeout_seconds
+          Value: !Ref DeregistrationDelay
+
+  # Streams
   RawStream:
     Type: 'AWS::Kinesis::Stream'
     Properties:
@@ -142,537 +225,9 @@ Resources:
     Type: 'AWS::Kinesis::Stream'
     Properties:
       ShardCount: '1'
-  EnrichStreamPermission:
-    Type: 'AWS::IAM::ManagedPolicy'
-    Properties:
-      Roles:
-        - !Ref EnrichStreamRole
-      PolicyDocument:
-        Version: 2012-10-17
-        Statement:
-          - Action:
-              - 'kinesis:DescribeStream'
-              - 'kinesis:MergeShards'
-              - 'kinesis:PutRecord'
-              - 'kinesis:PutRecords'
-              - 'kinesis:SplitShard'
-            Effect: Allow
-            Resource:
-              - !GetAtt EnrichedStream.Arn
-              - !GetAtt EnrichedStreamBad.Arn
-          - Action:
-              - 'kinesis:DescribeStream'
-              - 'kinesis:GetShardIterator'
-              - 'kinesis:GetRecords'
-              - 'kinesis:MergeShards'
-              - 'kinesis:SplitShard'
-            Effect: Allow
-            Resource:
-              - !GetAtt 
-                - RawStream
-                - Arn
-          - Action:
-              - 'dynamodb:*'
-            Effect: Allow
-            Resource: [!GetAtt RawReadCheckpoint.Arn]
-  EnrichedStreamPermission:
-    Type: 'AWS::IAM::ManagedPolicy'
-    Properties:
-      Roles:
-        - !Ref EnrichedStreamRole
-      PolicyDocument:
-        Version: 2012-10-17
-        Statement:
-          - Action:
-              - 'kinesis:DescribeStream'
-              - 'kinesis:GetShardIterator'
-              - 'kinesis:GetRecords'
-              - 'kinesis:MergeShards'
-              - 'kinesis:SplitShard'
-            Effect: Allow
-            Resource:
-              - !GetAtt EnrichedStream.Arn
-          - Action:
-              - 'kinesis:DescribeStream'
-              - 'kinesis:MergeShards'
-              - 'kinesis:PutRecord'
-              - 'kinesis:PutRecords'
-              - 'kinesis:SplitShard'
-            Effect: Allow
-            Resource:
-              - !GetAtt 
-                - SinkOutputBad
-                - Arn
-          - Action:
-              - 'dynamodb:*'
-            Effect: Allow
-            Resource:
-              - !GetAtt EnrichedToS3Checkpoint.Arn
-              - !If 
-                - HasEsHost
-                - !GetAtt EnrichedToEsCheckpoint.Arn
-                - !Ref 'AWS::NoValue'
-          - Effect: Allow
-            Action:
-              - 's3:*'
-            Resource:
-              - !Sub 'arn:aws:s3:::${RawDataStore}/*'
-              - !Sub 'arn:aws:s3:::${RawDataStore}'
+  # End Streams
 
-  # Raw read table and scaling
-  RawReadCheckpoint:
-    Type: 'AWS::DynamoDB::Table'
-    Properties:
-      BillingMode: PAY_PER_REQUEST
-      AttributeDefinitions:
-        - AttributeName: leaseKey
-          AttributeType: S
-      KeySchema:
-        - AttributeName: leaseKey
-          KeyType: HASH
-  # Enriched to S3 table and scaling
-  EnrichedToS3Checkpoint:
-    Type: 'AWS::DynamoDB::Table'
-    Properties:
-      BillingMode: PAY_PER_REQUEST
-      AttributeDefinitions:
-        - AttributeName: leaseKey
-          AttributeType: S
-      KeySchema:
-        - AttributeName: leaseKey
-          KeyType: HASH
-
-  # Enriched to ES table and scaling
-  EnrichedToEsCheckpoint:
-    Condition: HasEsHost
-    Type: 'AWS::DynamoDB::Table'
-    Properties:
-      BillingMode: PAY_PER_REQUEST
-      AttributeDefinitions:
-        - AttributeName: leaseKey
-          AttributeType: S
-      KeySchema:
-        - AttributeName: leaseKey
-          KeyType: HASH
-
-  # End of DynamoDB Table and scaling stuff
-
-  EventCollectionRole:
-    Type: 'AWS::IAM::Role'
-    Properties:
-      AssumeRolePolicyDocument:
-        Version: 2012-10-17
-        Statement:
-          - Effect: Allow
-            Principal:
-              Service: ec2.amazonaws.com
-            Action:
-              - 'sts:AssumeRole'
-      Path: /analytics/snowplow/
-      ManagedPolicyArns:
-        - !Ref CwlPolicy
-
-  # Start Autoscaling for Event Collectors
-  EcScaleUpPolicy:
-    Type: 'AWS::AutoScaling::ScalingPolicy'
-    Properties:
-      AdjustmentType: PercentChangeInCapacity
-      AutoScalingGroupName: !Ref EventCollectionGroup
-      Cooldown: '60'
-      ScalingAdjustment: '100'
-  EcScaleDownPolicy:
-    Type: 'AWS::AutoScaling::ScalingPolicy'
-    Properties:
-      AdjustmentType: ChangeInCapacity
-      AutoScalingGroupName: !Ref EventCollectionGroup
-      Cooldown: '60'
-      ScalingAdjustment: '-1'
-  EcCpuHigh:
-    Type: 'AWS::CloudWatch::Alarm'
-    Properties:
-      AlarmDescription: Scale-up snowplow event collectors if CPU > 70% for 1 minutes
-      MetricName: CPUUtilization
-      Namespace: AWS/EC2
-      Statistic: Average
-      Period: '60'
-      EvaluationPeriods: '1'
-      Threshold: '70'
-      AlarmActions:
-        - !Ref EcScaleUpPolicy
-      Dimensions:
-        - Name: AutoScalingGroupName
-          Value: !Ref EventCollectionGroup
-      ComparisonOperator: GreaterThanThreshold
-  EcCpuLow:
-    Type: 'AWS::CloudWatch::Alarm'
-    Properties:
-      AlarmDescription: Scale-down snowplow event collectors if CPU < 30% for 10 minutes
-      MetricName: CPUUtilization
-      Namespace: AWS/EC2
-      Statistic: Average
-      Period: '300'
-      EvaluationPeriods: '2'
-      Threshold: '30'
-      AlarmActions:
-        - !Ref EcScaleDownPolicy
-      Dimensions:
-        - Name: AutoScalingGroupName
-          Value: !Ref EventCollectionGroup
-      ComparisonOperator: LessThanThreshold
-  # End Autoscaling for Event Collectors
-
-  EventCollectionGroup:
-    Type: 'AWS::AutoScaling::AutoScalingGroup'
-    Properties:
-      MinSize: '2'
-      MaxSize: '10'
-      LoadBalancerNames:
-        - !Ref EventCollectionEndPoint
-      LaunchConfigurationName: !Ref EventCollectionLc
-      VPCZoneIdentifier: !Ref WebServerSubnets
-      Tags:
-        - PropagateAtLaunch: 'true'
-          Key: Name
-          Value: Snowplow Collector
-    CreationPolicy:
-      ResourceSignal:
-        Count: 2
-        Timeout: PT10M
-    UpdatePolicy:
-      AutoScalingRollingUpdate:
-        MinInstancesInService: 1
-        WaitOnResourceSignals: 'true'
-        PauseTime: PT10M
-  EventCollectionLc:
-    Type: 'AWS::AutoScaling::LaunchConfiguration'
-    Properties:
-      KeyName: !If 
-        - HasNoKeypair
-        - !Ref 'AWS::NoValue'
-        - !Ref KeyPairName
-      ImageId: !Ref BcUbuntuBaseAmiId
-      IamInstanceProfile: !Ref EventCollectionIp
-      InstanceType: !Ref InstanceType
-      SecurityGroups:
-        - !Ref ElbTargetSg
-      UserData: !Base64 
-        'Fn::Sub': |
-          #!/bin/bash
-          ECID=$(curl http://169.254.169.254/latest/meta-data/instance-id)
-          docker run --name ssc -d --restart=always -p 80:80 \
-            ${CwlDockerParams} \
-            --log-opt awslogs-stream=${AWS::StackName}/ssc/$ECID \
-            -e STREAM_GOOD=${RawStream} -e STREAM_BAD=${RawStreamBad} \
-            ${ContainerSssc}
-          docker run -t --rm ${ContainerAwsUtil} cfn-signal -e $? --stack ${AWS::StackName} --resource EventCollectionGroup --region ${AWS::Region}
-    UpdatePolicy:
-      AutoScalingReplacingUpdate:
-        WillReplace: 'true'
-  EventCollectionPermission:
-    Type: 'AWS::IAM::ManagedPolicy'
-    Properties:
-      Roles:
-        - !Ref EventCollectionRole
-      PolicyDocument:
-        Version: 2012-10-17
-        Statement:
-          - Action:
-              - 'kinesis:DescribeStream'
-              - 'kinesis:MergeShards'
-              - 'kinesis:PutRecord'
-              - 'kinesis:PutRecords'
-              - 'kinesis:SplitShard'
-            Effect: Allow
-            Resource:
-              - !GetAtt RawStream.Arn
-              - !GetAtt RawStreamBad.Arn
-  EnrichStreamRole:
-    Type: 'AWS::IAM::Role'
-    Properties:
-      AssumeRolePolicyDocument:
-        Version: 2012-10-17
-        Statement:
-          - Effect: Allow
-            Principal:
-              Service: ec2.amazonaws.com
-            Action:
-              - 'sts:AssumeRole'
-      Path: /analytics/snowplow/
-      ManagedPolicyArns:
-        - !Ref CwlPolicy
-  EnrichStreamIp:
-    Type: 'AWS::IAM::InstanceProfile'
-    Properties:
-      Roles:
-        - !Ref EnrichStreamRole
-      Path: /analytics/snowplow/
-  EventCollectionIp:
-    Type: 'AWS::IAM::InstanceProfile'
-    Properties:
-      Roles:
-        - !Ref EventCollectionRole
-      Path: /analytics/snowplow/
-  EnrichStreamGroup:
-    Type: 'AWS::AutoScaling::AutoScalingGroup'
-    Properties:
-      MinSize: '1'
-      MaxSize: '10'
-      LaunchConfigurationName: !Ref EnrichStreamLc
-      VPCZoneIdentifier: !Ref WebServerSubnets
-      Tags:
-        - PropagateAtLaunch: 'true'
-          Key: Name
-          Value: Snowplow Enrich
-    CreationPolicy:
-      ResourceSignal:
-        Count: '1'
-        Timeout: PT10M
-    UpdatePolicy:
-      AutoScalingRollingUpdate:
-        MinInstancesInService: 1
-        WaitOnResourceSignals: 'true'
-        PauseTime: PT10M
-  EnrichStreamLc:
-    Type: 'AWS::AutoScaling::LaunchConfiguration'
-    Properties:
-      KeyName: !If 
-        - HasNoKeypair
-        - !Ref 'AWS::NoValue'
-        - !Ref KeyPairName
-      ImageId: !Ref BcUbuntuBaseAmiId
-      InstanceType: !Ref InstanceType
-      IamInstanceProfile: !Ref EnrichStreamIp
-      SecurityGroups:
-        - !Ref Outbound
-      UserData: !Base64 
-        'Fn::Sub': |
-          #!/bin/bash
-          ECID=$(curl http://169.254.169.254/latest/meta-data/instance-id)
-          docker run --name sse -d --restart=always --log-opt \
-            awslogs-stream=${AWS::StackName}/sse/$ECID ${CwlDockerParams} \
-            -e STREAM_SOURCE=${RawStream} \
-            -e DDB_CHECKPOINT=${RawReadCheckpoint} \
-            -e STREAM_GOOD=${EnrichedStream} \
-            -e STREAM_BAD=${EnrichedStreamBad} \
-            ${ContainerSse}
-          docker run -t --rm ${ContainerAwsUtil} cfn-signal -e $? --stack ${AWS::StackName} --resource EnrichStreamGroup --region ${AWS::Region}
-    UpdatePolicy:
-      AutoScalingReplacingUpdate:
-        WillReplace: 'true'
-
-  # Start Autoscaling for Stream Enrich
-  EnrichScaleUpPolicy:
-    Type: 'AWS::AutoScaling::ScalingPolicy'
-    Properties:
-      AdjustmentType: PercentChangeInCapacity
-      AutoScalingGroupName: !Ref EnrichStreamGroup
-      Cooldown: '60'
-      ScalingAdjustment: '50'
-  EnrichScaleDownPolicy:
-    Type: 'AWS::AutoScaling::ScalingPolicy'
-    Properties:
-      AdjustmentType: ChangeInCapacity
-      AutoScalingGroupName: !Ref EnrichStreamGroup
-      Cooldown: '60'
-      ScalingAdjustment: '-1'
-  EnrichCpuHigh:
-    Type: 'AWS::CloudWatch::Alarm'
-    Properties:
-      AlarmDescription: Scale-up snowplow enricher if CPU > 70% for 1 minutes
-      MetricName: CPUUtilization
-      Namespace: AWS/EC2
-      Statistic: Average
-      Period: '60'
-      EvaluationPeriods: '1'
-      Threshold: '70'
-      AlarmActions:
-        - !Ref EnrichScaleUpPolicy
-      Dimensions:
-        - Name: AutoScalingGroupName
-          Value: !Ref EnrichStreamGroup
-      ComparisonOperator: GreaterThanThreshold
-  EnrichCpuLow:
-    Type: 'AWS::CloudWatch::Alarm'
-    Properties:
-      AlarmDescription: Scale-down snowplow enricher if CPU < 30% for 10 minutes
-      MetricName: CPUUtilization
-      Namespace: AWS/EC2
-      Statistic: Average
-      Period: '300'
-      EvaluationPeriods: '2'
-      Threshold: '30'
-      AlarmActions:
-        - !Ref EnrichScaleDownPolicy
-      Dimensions:
-        - Name: AutoScalingGroupName
-          Value: !Ref EnrichStreamGroup
-      ComparisonOperator: LessThanThreshold
-  # End Autoscaling for Stream Enrich
-
-  EnrichedStreamRole:
-    Type: 'AWS::IAM::Role'
-    Properties:
-      AssumeRolePolicyDocument:
-        Version: 2012-10-17
-        Statement:
-          - Effect: Allow
-            Principal:
-              Service: ec2.amazonaws.com
-            Action:
-              - 'sts:AssumeRole'
-      Path: /analytics/snowplow/
-      ManagedPolicyArns:
-        - !Ref CwlPolicy
-  EnrichedStreamIp:
-    Type: 'AWS::IAM::InstanceProfile'
-    Properties:
-      Roles:
-        - !Ref EnrichedStreamRole
-      Path: /analytics/snowplow/
-  EnrichedStreamGroup:
-    Type: 'AWS::AutoScaling::AutoScalingGroup'
-    Properties:
-      MinSize: '1'
-      MaxSize: '10'
-      LaunchConfigurationName: !Ref EnrichedStreamLc
-      VPCZoneIdentifier: !Ref WebServerSubnets
-      Tags:
-        - PropagateAtLaunch: 'true'
-          Key: Name
-          Value: Snowplow Enriched
-    CreationPolicy:
-      ResourceSignal:
-        Count: '1'
-        Timeout: PT10M
-    UpdatePolicy:
-      AutoScalingRollingUpdate:
-        MinInstancesInService: 1
-        WaitOnResourceSignals: 'true'
-        PauseTime: PT10M
-  EnrichedStreamLc:
-    Type: 'AWS::AutoScaling::LaunchConfiguration'
-    Properties:
-      KeyName: !If 
-        - HasNoKeypair
-        - !Ref 'AWS::NoValue'
-        - !Ref KeyPairName
-      IamInstanceProfile: !Ref EnrichedStreamIp
-      ImageId: !Ref BcUbuntuBaseAmiId
-      InstanceType: !Ref InstanceType
-      SecurityGroups:
-        - !Ref Outbound
-      UserData: !Base64
-        'Fn::Join':
-          - ''
-          - - 'Fn::Sub': |
-                #!/bin/bash
-                ECID=$(curl http://169.254.169.254/latest/meta-data/instance-id)
-                docker run --name sks -d --restart=always --log-opt \
-                  awslogs-stream=${AWS::StackName}/sks/$ECID ${CwlDockerParams} \
-                  -e STREAM_SOURCE=${EnrichedStream} \
-                  -e DDB_CHECKPOINT=${EnrichedToS3Checkpoint} \
-                  -e BUCKET_NAME=${RawDataStore} \
-                  -e STREAM_BAD=${SinkOutputBad} \
-                  ${ContainerSks}
-            - !If 
-              - HasEsHost
-              - !Sub |
-                  docker run --name sess -d --restart=always --log-opt \
-                    awslogs-stream=${AWS::StackName}/sess/$ECID ${CwlDockerParams} \
-                    -e STREAM_SOURCE=${EnrichedStream} \
-                    -e DDB_CHECKPOINT=${EnrichedToEsCheckpoint} \
-                    -e ES_HOST=${EsHost} \
-                    ${ContainerSess}
-              - ''
-            - !Sub docker run -t --rm ${ContainerAwsUtil} cfn-signal -e $? --stack ${AWS::StackName} --resource EnrichedStreamGroup --region ${AWS::Region}
-    UpdatePolicy:
-      AutoScalingReplacingUpdate:
-        WillReplace: 'true'
-
-  # Start Autoscaling for Event Collectors
-  EnrichedScaleUpPolicy:
-    Type: 'AWS::AutoScaling::ScalingPolicy'
-    Properties:
-      AdjustmentType: PercentChangeInCapacity
-      AutoScalingGroupName: !Ref EnrichedStreamGroup
-      Cooldown: '60'
-      ScalingAdjustment: '50'
-  EnrichedScaleDownPolicy:
-    Type: 'AWS::AutoScaling::ScalingPolicy'
-    Properties:
-      AdjustmentType: ChangeInCapacity
-      AutoScalingGroupName: !Ref EnrichedStreamGroup
-      Cooldown: '60'
-      ScalingAdjustment: '-1'
-  EnrichedCpuHigh:
-    Type: 'AWS::CloudWatch::Alarm'
-    Properties:
-      AlarmDescription: Scale-up snowplow event collectors if CPU > 70% for 1 minutes
-      MetricName: CPUUtilization
-      Namespace: AWS/EC2
-      Statistic: Average
-      Period: '60'
-      EvaluationPeriods: '1'
-      Threshold: '70'
-      AlarmActions:
-        - !Ref EnrichedScaleUpPolicy
-      Dimensions:
-        - Name: AutoScalingGroupName
-          Value: !Ref EnrichedStreamGroup
-      ComparisonOperator: GreaterThanThreshold
-  EnrichedCpuLow:
-    Type: 'AWS::CloudWatch::Alarm'
-    Properties:
-      AlarmDescription: Scale-down snowplow event collectors if CPU < 30% for 10 minutes
-      MetricName: CPUUtilization
-      Namespace: AWS/EC2
-      Statistic: Average
-      Period: '300'
-      EvaluationPeriods: '2'
-      Threshold: '30'
-      AlarmActions:
-        - !Ref EnrichedScaleDownPolicy
-      Dimensions:
-        - Name: AutoScalingGroupName
-          Value: !Ref EnrichedStreamGroup
-      ComparisonOperator: LessThanThreshold
-  # End Autoscaling for Event Collectors
-
-  EventCollectionEndPoint:
-    Type: 'AWS::ElasticLoadBalancing::LoadBalancer'
-    Properties:
-      Subnets: !Ref ElbSubnets
-      Listeners:
-        - LoadBalancerPort: '80'
-          InstancePort: '80'
-          Protocol: HTTP
-        - !If 
-          - HasSsl
-          - LoadBalancerPort: '443'
-            InstancePort: '80'
-            Protocol: HTTPS
-            InstanceProtocol: HTTP
-            SSLCertificateId: !Ref SslCertId
-          - !Ref 'AWS::NoValue'
-      HealthCheck:
-        Target: 'HTTP:80/health'
-        HealthyThreshold: '3'
-        UnhealthyThreshold: '5'
-        Interval: '30'
-        Timeout: '5'
-      AccessLoggingPolicy:
-        EmitInterval: '5'
-        Enabled: 'true'
-        S3BucketName: !Ref AccessLogBucket
-      SecurityGroups:
-        - !Ref ElbSg
-        - !Ref HttpSg
-      Scheme: internet-facing
-  Outbound:
-    Type: 'AWS::EC2::SecurityGroup'
-    Properties:
-      GroupDescription: Unlimited outbound access.
-      VpcId: !Ref VpcId
+  # S3 Bucket
   RawDataStore:
     Type: 'AWS::S3::Bucket'
     DependsOn: NewObjectNotificationPolicy
@@ -706,6 +261,356 @@ Resources:
             ArnLike:
               'aws:SourceArn': 'arn:aws:s3:*:*:*'
       Topics: [!Ref NewObjectNotification]
+  # End S3 Bucket
+
+  # Raw read table and scaling
+  RawReadCheckpoint:
+    Type: 'AWS::DynamoDB::Table'
+    Properties:
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: leaseKey
+          AttributeType: S
+      KeySchema:
+        - AttributeName: leaseKey
+          KeyType: HASH
+  # Enriched to S3 table and scaling
+  EnrichedToS3Checkpoint:
+    Type: 'AWS::DynamoDB::Table'
+    Properties:
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: leaseKey
+          AttributeType: S
+      KeySchema:
+        - AttributeName: leaseKey
+          KeyType: HASH
+  # Enriched to ES table and scaling
+  EnrichedToEsCheckpoint:
+    Type: 'AWS::DynamoDB::Table'
+    Properties:
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: leaseKey
+          AttributeType: S
+      KeySchema:
+        - AttributeName: leaseKey
+          KeyType: HASH
+  # End of DynamoDB Table
+
+  # Start Collectors
+  CollectorTaskDefinition:
+    Type: 'AWS::ECS::TaskDefinition'
+    Properties:
+      TaskRoleArn: !GetAtt EventCollectionRole.Arn
+      ContainerDefinitions:
+        - Command: !Ref 'AWS::NoValue'
+          Name: snowplow-collector
+          Cpu: !Ref CpuReservation
+          Essential: 'true'
+          Image: !Ref ContainerSssc
+          Memory: !Ref MemoryReservation
+          Environment:
+            - Name: STREAM_GOOD
+              Value: !Ref RawStream
+            - Name: STREAM_BAD
+              Value: !Ref RawStreamBad
+          PortMappings:
+            - ContainerPort: 80
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !Ref LxDockerLog
+              awslogs-region: !Ref 'AWS::Region'
+              awslogs-stream-prefix: !Ref 'AWS::StackName'
+  CollectorService:
+    Type: 'AWS::ECS::Service'
+    DependsOn: AlbListenerRule
+    Properties:
+      Cluster: !Ref EcsCluster
+      Role: !Ref ServiceSchedulingRole
+      LoadBalancers:
+        - ContainerName: snowplow-collector
+          ContainerPort: 80
+          TargetGroupArn: !Ref AlbTargetGroup
+      DesiredCount: 2
+      TaskDefinition: !Ref CollectorTaskDefinition
+  CollectorScalingTarget:
+    Type: AWS::ApplicationAutoScaling::ScalableTarget
+    Properties:
+      RoleARN: !Ref ServiceScalingRole
+      MaxCapacity: 50
+      MinCapacity: 2
+      ResourceId: !Sub 'service/${EcsCluster}/${CollectorService.Name}'
+      ScalableDimension: ecs:service:DesiredCount
+      ServiceNamespace: ecs
+  CollectorScalingPolicy:
+    Type: AWS::ApplicationAutoScaling::ScalingPolicy
+    Properties:
+      PolicyName: !Sub '${AWS::StackName}-Collector'
+      PolicyType: TargetTrackingScaling
+      ScalingTargetId: !Ref CollectorScalingTarget
+      TargetTrackingScalingPolicyConfiguration:
+        DisableScaleIn: false
+        TargetValue: 70
+        ScaleInCooldown: 60
+        ScaleOutCooldown: 60
+        PredefinedMetricSpecification:
+          PredefinedMetricType: ECSServiceAverageCPUUtilization
+  EventCollectionRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: [ecs-tasks.amazonaws.com]
+            Action: ['sts:AssumeRole']
+      Path: /analytics/snowplow/
+      ManagedPolicyArns:
+        - !Ref CwlPolicy
+      Policies:
+        - PolicyName: "kinesis"
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Action:
+                  - 'kinesis:DescribeStream'
+                  - 'kinesis:MergeShards'
+                  - 'kinesis:PutRecord'
+                  - 'kinesis:PutRecords'
+                  - 'kinesis:SplitShard'
+                Effect: Allow
+                Resource:
+                  - !GetAtt RawStream.Arn
+                  - !GetAtt RawStreamBad.Arn
+  # End Collectors
+
+  # Start Enrich
+  EnrichTaskDefinition:
+    Type: 'AWS::ECS::TaskDefinition'
+    Properties:
+      TaskRoleArn: !GetAtt EnrichRole.Arn
+      ContainerDefinitions:
+        - Command: !Ref 'AWS::NoValue'
+          Name: snowplow-enrich
+          Cpu: !Ref CpuReservation
+          Essential: 'true'
+          Image: !Ref ContainerSse
+          Memory: !Ref MemoryReservation
+          Environment:
+            - Name: STREAM_SOURCE
+              Value: !Ref RawStream
+            - Name: DDB_CHECKPOINT
+              Value: !Ref RawReadCheckpoint
+            - Name: STREAM_GOOD
+              Value: !Ref EnrichedStream
+            - Name: STREAM_BAD
+              Value: !Ref EnrichedStreamBad
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !Ref LxDockerLog
+              awslogs-region: !Ref 'AWS::Region'
+              awslogs-stream-prefix: !Ref 'AWS::StackName'
+  EnrichService:
+    Type: 'AWS::ECS::Service'
+    Properties:
+      Cluster: !Ref EcsCluster
+      DesiredCount: 1
+      TaskDefinition: !Ref EnrichTaskDefinition
+  EnrichScalingTarget:
+    Type: AWS::ApplicationAutoScaling::ScalableTarget
+    Properties:
+      RoleARN: !Ref ServiceScalingRole
+      MaxCapacity: 50
+      MinCapacity: 1
+      ResourceId: !Sub 'service/${EcsCluster}/${EnrichService.Name}'
+      ScalableDimension: ecs:service:DesiredCount
+      ServiceNamespace: ecs
+  EnrichScalingPolicy:
+    Type: AWS::ApplicationAutoScaling::ScalingPolicy
+    Properties:
+      PolicyName: !Sub '${AWS::StackName}-Enrich'
+      PolicyType: TargetTrackingScaling
+      ScalingTargetId: !Ref EnrichScalingTarget
+      TargetTrackingScalingPolicyConfiguration:
+        DisableScaleIn: false
+        TargetValue: 85
+        ScaleInCooldown: 60
+        ScaleOutCooldown: 60
+        PredefinedMetricSpecification:
+          PredefinedMetricType: ECSServiceAverageCPUUtilization
+  EnrichRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: [ecs-tasks.amazonaws.com]
+            Action: ['sts:AssumeRole']
+      Path: /analytics/snowplow/
+      ManagedPolicyArns:
+        - !Ref CwlPolicy
+      Policies:
+        - PolicyName: "kinesis"
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Action:
+                  - 'kinesis:DescribeStream'
+                  - 'kinesis:MergeShards'
+                  - 'kinesis:PutRecord'
+                  - 'kinesis:PutRecords'
+                  - 'kinesis:SplitShard'
+                Effect: Allow
+                Resource:
+                  - !GetAtt EnrichedStream.Arn
+                  - !GetAtt EnrichedStreamBad.Arn
+              - Action:
+                  - 'kinesis:DescribeStream'
+                  - 'kinesis:GetShardIterator'
+                  - 'kinesis:GetRecords'
+                  - 'kinesis:MergeShards'
+                  - 'kinesis:SplitShard'
+                Effect: Allow
+                Resource:
+                  - !GetAtt RawStream.Arn
+              - Action:
+                  - 'dynamodb:*'
+                Effect: Allow
+                Resource: [!GetAtt RawReadCheckpoint.Arn]
+  # End Enrich
+
+  # Start Enriched
+  EnrichedTaskDefinition:
+    Type: 'AWS::ECS::TaskDefinition'
+    Properties:
+      TaskRoleArn: !GetAtt EnrichedRole.Arn
+      ContainerDefinitions:
+        - Command: !Ref 'AWS::NoValue'
+          Name: snowplow-enriched-s3
+          Cpu: !Ref CpuReservation
+          Essential: 'true'
+          Image: !Ref ContainerSks
+          Memory: !Ref MemoryReservation
+          Environment:
+            - Name: STREAM_SOURCE
+              Value: !Ref EnrichedStream
+            - Name: DDB_CHECKPOINT
+              Value: !Ref EnrichedToS3Checkpoint
+            - Name: BUCKET_NAME
+              Value: !Ref RawDataStore
+            - Name: STREAM_BAD
+              Value: !Ref SinkOutputBad
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !Ref LxDockerLog
+              awslogs-region: !Ref 'AWS::Region'
+              awslogs-stream-prefix: !Ref 'AWS::StackName'
+        - !If 
+          - HasEsHost
+          - Command: !Ref 'AWS::NoValue'
+            Name: snowplow-enriched-es
+            Cpu: !Ref CpuReservation
+            Essential: 'true'
+            Image: !Ref ContainerSess
+            Memory: !Ref MemoryReservation
+            Environment:
+              - Name: STREAM_SOURCE
+                Value: !Ref EnrichedStream
+              - Name: DDB_CHECKPOINT
+                Value: !Ref EnrichedToEsCheckpoint
+              - Name: ES_HOST
+                Value: !Ref EsHost
+            LogConfiguration:
+              LogDriver: awslogs
+              Options:
+                awslogs-group: !Ref LxDockerLog
+                awslogs-region: !Ref 'AWS::Region'
+                awslogs-stream-prefix: !Ref 'AWS::StackName'
+          - !Ref AWS::NoValue
+  EnrichedService:
+    Type: 'AWS::ECS::Service'
+    Properties:
+      Cluster: !Ref EcsCluster
+      DesiredCount: 1
+      TaskDefinition: !Ref EnrichedTaskDefinition
+  EnrichedScalingTarget:
+    Type: AWS::ApplicationAutoScaling::ScalableTarget
+    Properties:
+      RoleARN: !Ref ServiceScalingRole
+      MaxCapacity: 50
+      MinCapacity: 1
+      ResourceId: !Sub 'service/${EcsCluster}/${EnrichedService.Name}'
+      ScalableDimension: ecs:service:DesiredCount
+      ServiceNamespace: ecs
+  EnrichedScalingPolicy:
+    Type: AWS::ApplicationAutoScaling::ScalingPolicy
+    Properties:
+      PolicyName: !Sub '${AWS::StackName}-Enriched'
+      PolicyType: TargetTrackingScaling
+      ScalingTargetId: !Ref EnrichedScalingTarget
+      TargetTrackingScalingPolicyConfiguration:
+        DisableScaleIn: false
+        TargetValue: 85
+        ScaleInCooldown: 60
+        ScaleOutCooldown: 60
+        PredefinedMetricSpecification:
+          PredefinedMetricType: ECSServiceAverageCPUUtilization
+  EnrichedRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: [ecs-tasks.amazonaws.com]
+            Action: ['sts:AssumeRole']
+      Path: /analytics/snowplow/
+      ManagedPolicyArns:
+        - !Ref CwlPolicy
+      Policies:
+        - PolicyName: "kinesis"
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Action:
+                  - 'kinesis:DescribeStream'
+                  - 'kinesis:GetShardIterator'
+                  - 'kinesis:GetRecords'
+                  - 'kinesis:MergeShards'
+                  - 'kinesis:SplitShard'
+                Effect: Allow
+                Resource:
+                  - !GetAtt EnrichedStream.Arn
+              - Action:
+                  - 'kinesis:DescribeStream'
+                  - 'kinesis:MergeShards'
+                  - 'kinesis:PutRecord'
+                  - 'kinesis:PutRecords'
+                  - 'kinesis:SplitShard'
+                Effect: Allow
+                Resource:
+                  - !GetAtt SinkOutputBad.Arn
+              - Action:
+                  - 'dynamodb:*'
+                Effect: Allow
+                Resource:
+                  - !GetAtt EnrichedToS3Checkpoint.Arn
+                  - !GetAtt EnrichedToEsCheckpoint.Arn
+              - Effect: Allow
+                Action:
+                  - 's3:*'
+                Resource:
+                  - !Sub 'arn:aws:s3:::${RawDataStore}/*'
+                  - !Sub 'arn:aws:s3:::${RawDataStore}'
+  # End Enriched
 
 Outputs:
   EnrichedStreamArn:
