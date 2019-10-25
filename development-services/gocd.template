@@ -19,32 +19,40 @@ Metadata:
       Resources:
         CwlPolicy: LinuxLogPolicy
         RawLogBucket: Raw
+        LxDockerLog: LxDockerLog
       Outputs:
         CwlLinuxParams: LxDockerLogParams
-        CwlDockerParams: DockerCwlParams
     - TemplatePath: development-services/cicd-base
       Resources:
         AgentInstanceProfile: AgentInstanceProfile
+        AgentRole: AgentRole
 Parameters:
   KeyPairName:
     Description: Name of an existing EC2 KeyPair
     Type: String
     Default: ''
+  EcsCluster:
+    Type: String
+    Description: Ecs cluster to run the linux agent on.
   ServerInstanceType:
     Description: GoCDmaster server EC2 instance type
     Type: String
-    Default: t2.micro
+    Default: t3.micro
     AllowedValues:
-      - t2.micro
-      - t2.small
-      - t2.medium
-      - t2.large
+      - t3.micro
+      - t3.small
+      - t3.medium
+      - t3.large
+      - m3.medium
       - m5.large
       - m5.xlarge
       - m5.2xlarge
     ConstraintDescription: must be a valid EC2 instance type.
   BcUbuntuBaseAmiId:
     Description: Debian Jessie AMI Id
+    Type: String
+  AgentRole:
+    Description: Shared role for ecs task based build agents.
     Type: String
   GocdStateDiskSnapshot:
     Description: Snapshot of GoCD state disk
@@ -61,13 +69,14 @@ Parameters:
   AgentInstanceType:
     Description: Agent EC2 instance type
     Type: String
-    Default: t2.medium
+    Default: t3.medium
     AllowedValues:
-      - t2.nano
-      - t2.micro
-      - t2.small
-      - t2.medium
-      - t2.large
+      - t3.nano
+      - t3.micro
+      - t3.small
+      - t3.medium
+      - t3.large
+      - m3.medium
       - m5.large
       - m5.xlarge
       - m5.2xlarge
@@ -82,11 +91,11 @@ Parameters:
     Type: String
   GocdServerContainer:
     Description: Gocd container name with tag.
-    Default: 'gocd/gocd-server:v18.7.0'
+    Default: 'gocd/gocd-server:v18.11.0'
     Type: String
   GocdLxAgentContainer:
     Description: Gocd swarm agent container name with tag.
-    Default: 'gocd/gocd-agent-alpine-3.6:v18.7.0'
+    Default: 'gocd/gocd-agent-alpine-3.6:v18.11.0'
     Type: String
   SslCertId:
     Description: Id of the SSL certificate to use.
@@ -108,7 +117,6 @@ Parameters:
       - internet-facing
       - internal
     Default: internal
-    ConstraintDescription: 'Valid schemes: ''internet-facing'' or ''internal''.'
   RawLogBucket:
     Description: 'Elb Target Security Group. [logs-store.resources.Raw]'
     Type: String
@@ -121,35 +129,28 @@ Parameters:
   ServerSubnets:
     Description: 'VPCid associated with the subnets. [elb-subnets.outputs.WebServerSubnets]'
     Type: 'List<AWS::EC2::Subnet::Id>'
-  CwlUbuntuAgentDocker:
-    Description: Name of cluster. This is used for discovery.
-    Type: String
-    Default: 'bitclouded/aws-cwl-agent:4.1'
   CwlLinuxParams:
     Description: >-
       Environment variables for syslog and authlog cwl group names
       [logs-store.outputs.LxDockerLogParams]
     Type: String
-  CwlDockerParams:
-    Description: 'Docker log driver params [logs-store.outputs.DockerCwlParams]'
-    Type: String
   CwlPolicy:
     Description: 'Managed policy for linux logging. [logs-store.resources.LinuxLogPolicy]'
     Type: String
+  LxDockerLog:
+    Description: Log group for docker logs.
+    Type: String
   AgentInstanceProfile:
     Type: String
+
 Conditions:
   HasStateSnapshot: !Not 
-    - !Equals 
-      - !Ref GocdStateDiskSnapshot
-      - ''
+    - !Equals [!Ref GocdStateDiskSnapshot, '']
   HasSsl: !Not 
-    - !Equals 
-      - !Ref SslCertId
-      - ''
-  HasNoKeypair: !Equals 
-    - !Ref KeyPairName
-    - ''
+    - !Equals [!Ref SslCertId, '']
+  HasNoKeypair:
+    !Equals [!Ref KeyPairName, '']
+
 Resources:
   HttpGateway:
     Type: 'AWS::ElasticLoadBalancing::LoadBalancer'
@@ -287,8 +288,8 @@ Resources:
             <powershell>
               $gocd_bin = "c:\gocd\bin"
               $gocd_workspace = "c:\gocd\workspace"
-              $gocd_installer_url = "https://download.go.cd/binaries/16.11.0-4185/win/go-agent-16.11.0-4185-setup.exe"
-              $java_installer_url = "http://javadl.oracle.com/webapps/download/AutoDL?BundleId=216434"
+              $gocd_installer_url = "https://download.gocd.org/binaries/18.11.0-8024/win/go-agent-18.11.0-8024-jre-64bit-setup.exe"
+              $java_installer_url = "https://javadl.oracle.com/webapps/download/AutoDL?BundleId=235727_2787e4a523244c269598db4e85c51e0c"
               [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
               [Environment]::SetEnvironmentVariable("GO_SERVER_URL", "https://${GoCdMasterIp}:8154/go", "Machine")
               mkdir $gocd_bin -Force
@@ -312,7 +313,7 @@ Resources:
                   Remove-Item ".\$filename" -Force
               }
 
-              GetAndInstall -url https://github.com/git-for-windows/git/releases/download/v2.18.0.windows.1/Git-2.18.0-64-bit.exe `
+              GetAndInstall -url https://github.com/git-for-windows/git/releases/download/v2.19.2.windows.1/Git-2.19.2-64-bit.exe `
                 -argstring '/silent /log="git-installer.log"'
               GetAndInstall -url $java_installer_url -filename java-installer.exe `
                 -argstring "STATIC=0 WEB_JAVA=0 /s /L $gocd_bin\java-installer.log"
@@ -365,8 +366,6 @@ Resources:
               ${CwlLinuxParams} \
               -e GO_SERVER=${GoCdMasterIp} \
               ${GocdLxAgentContainer})
-            docker exec -it $CONTAINER_ID apk -Uuv add groff less python py-pip
-            docker exec -it $CONTAINER_ID pip install awscli
           - GoCdMasterIp: !GetAtt GocdMaster.PrivateIp
 
       BlockDeviceMappings:
@@ -415,6 +414,41 @@ Resources:
       Tags:
         - Key: Name
           Value: Gocd Agent Security Group
+
+  LinxuAgentTaskDef:
+    Type: 'AWS::ECS::TaskDefinition'
+    Properties:
+      ContainerDefinitions:
+        - Command: !Ref 'AWS::NoValue'
+          Name: linux-agent
+          Cpu: 500
+          Essential: 'true'
+          Image: !Ref GocdLxAgentContainer
+          Memory: 2000
+          Environment:
+            - Name: GO_SERVER
+              Value: !GetAtt GocdMaster.PrivateIp
+          MountPoints:
+            - ContainerPath: /var/run/docker.sock
+              SourceVolume: docker-socket
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !Ref LxDockerLog
+              awslogs-region: !Ref 'AWS::Region'
+              awslogs-stream-prefix: !Ref 'AWS::StackName'
+      TaskRoleArn: !Ref AgentRole
+      Volumes:
+        - Name: docker-socket
+          Host:
+            SourcePath: /var/run/docker.sock
+  LinxuAgentService:
+    Type: 'AWS::ECS::Service'
+    Properties:
+      Cluster: !Ref EcsCluster
+      DesiredCount: 2
+      TaskDefinition: !Ref LinxuAgentTaskDef
+
 Outputs:
   Gateway:
     Value: !GetAtt GocdMaster.PrivateIp
