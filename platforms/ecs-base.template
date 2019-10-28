@@ -188,16 +188,14 @@ Resources:
   WaitHandle: 
     Type: AWS::CloudFormation::WaitConditionHandle
   WaitCondition: 
+    Condition: DelayCleanUp
     Type: AWS::CloudFormation::WaitCondition
     DependsOn: "ClusterAutoScalingGroup"
     Properties: 
       Handle: 
         Ref: "WaitHandle"
       Timeout: !Ref WaitTimeout
-      Count: !If
-        - DelayCleanUp
-        - !Ref WaitConditionInstanceCount
-        - !Ref ClusterMinimumHosts
+      Count: !Ref WaitConditionInstanceCount
 
   ClusterLaunchTemplate:
     Type: "AWS::EC2::LaunchTemplate"
