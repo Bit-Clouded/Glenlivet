@@ -1,7 +1,7 @@
 AWSTemplateFormatVersion: 2010-09-09
 Description: HA Wordpress on ECS
 Metadata:
-  DefaultName: JoomlaOnEcs
+  DefaultName: WordPressOnEcs
   Dependencies:
     - TemplatePath: networking/vpc
       Resources:

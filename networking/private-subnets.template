@@ -1,7 +1,7 @@
 AWSTemplateFormatVersion: 2010-09-09
 Description: Subnets thave have no access outbound access whatsoever.
 Metadata:
-  DefaultName: Private Subnets
+  DefaultName: PrivateSubnets
   Dependencies:
     - TemplatePath: networking/vpc
       Resources:
@@ -12,27 +12,25 @@ Metadata:
         AzCount: AzCount
 Parameters:
   Subnet1Suffix:
-    Description: 'Subnet suffix to be concatenated with the VPC prefix. '
+    Description: 'Subnet suffix to be concatenated with the VPC prefix'
     Type: Number
     Default: '32'
   Subnet2Suffix:
-    Description: 'Subnet suffix to be concatenated with the VPC prefix. '
+    Description: 'Subnet suffix to be concatenated with the VPC prefix'
     Type: Number
     Default: '33'
   Subnet3Suffix:
-    Description: 'Subnet suffix to be concatenated with the VPC prefix. '
+    Description: 'Subnet suffix to be concatenated with the VPC prefix'
     Type: Number
     Default: '34'
   VpcPrefix:
-    Description: 'Prefix for the VPC [vpc.parameters.VpcPrefix]'
+    Description: 'Prefix for the VPC'
     Type: String
   VpcId:
-    Description: 'VPC id [vpc.resources.Vpc]'
+    Description: 'VPC id'
     Type: String
   AzCount:
-    Description: >-
-      Number of AZ. Third subnet will only be created if number is 3
-      [vpc.outputs.AzCount]
+    Description: 'Number of AZ. Third subnet will only be created if number is 3'
     Type: String
   AvailableAzs:
     Description: Comma-delimited list of three IP blocks
