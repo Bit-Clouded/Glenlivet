@@ -13,6 +13,18 @@ Parameters:
     Description: Prefix for the VPC
     Type: String
     Default: '10.0'
+  VpcSuffix:
+    Description: Prefix for the VPC
+    Type: String
+    Default: '0.0/16'
+    AllowedValues: 
+      - 0.0/16
+      - 0.0/17
+      - 128.0/17
+      - 0.0/18
+      - 64.0/18
+      - 128.0/18
+      - 192.0/18
   VpcName:
     Description: Display name for the VPC
     Type: String
@@ -59,10 +71,7 @@ Resources:
   Vpc:
     Type: 'AWS::EC2::VPC'
     Properties:
-      CidrBlock: !Join 
-        - ''
-        - - !Ref VpcPrefix
-          - .0.0/16
+      CidrBlock: !Sub '${VpcPrefix}.${VpcSuffix}'
       Tags:
         - Key: Name
           Value: !Ref VpcName
@@ -90,9 +99,7 @@ Resources:
   HttpNsSecGroup:
     Type: 'AWS::EC2::SecurityGroup'
     Metadata:
-      Comment: !Join 
-        - ' '
-        - - A security group to allow inbound http(s) traffic.
+      Comment: A security group to allow inbound http(s) traffic.
     Properties:
       GroupDescription: A generic security group for targets that serve http(s) traffic.
       SecurityGroupIngress:

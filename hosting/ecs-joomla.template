@@ -29,36 +29,36 @@ Metadata:
         LxDockerLog: LxDockerLog
 Parameters:
   VpcId:
-    Description: 'VPCid associated with the subnets. [elb-subnets.parameters.VpcId]'
+    Description: 'VPCid associated with the subnets.'
     Type: 'AWS::EC2::VPC::Id'
   EcsCluster:
     Type: String
-    Description: '[ecs-base.resources.EcsCluster]'
+    Description: 'Name of the ECS cluster'
   ElbSg:
-    Description: 'Elb Security Group. [vpc.resources.ElbSecGroup]'
+    Description: 'Elb Security Group'
     Type: String
   HttpSg:
-    Description: 'Elb Target Security Group. [vpc.resources.HttpNsSecGroup]'
+    Description: 'Elb Target Security Group'
     Type: String
   ElbSubnets:
-    Description: 'VPCid associated with the subnets. [elb-subnets.outputs.ElbSubnets]'
+    Description: 'VPCid associated with the subnets'
     Type: 'List<AWS::EC2::Subnet::Id>'
   TaskRole:
-    Description: '[ecs-app-base.resources.TaskRole]'
+    Description: 'Name of the task role'
     Type: String
   DbUsername:
-    Description: 'MariaDB server username [ecs-app-base.parameters.DbUsername]'
+    Description: 'MariaDB server username'
     Type: String
   DbPassword:
-    Description: MariaDB server password
+    Description: 'MariaDB server password'
     Type: String
     Default: Password1234
     NoEcho: 'True'
   EcsServiceRole:
-    Description: '[ecs-app-base.resources.EcsServiceRole]'
+    Description: 'ECS Service Role used for managing hooking up service to the load balancer.'
     Type: String
   DatabaseEndpointAddress:
-    Description: '[ecs-app-base.outputs.DatabaseEndpointAddress]'
+    Description: 'FQDN of the rds instance'
     Type: String
   LxDockerLog:
     Description: ''

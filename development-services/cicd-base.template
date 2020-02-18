@@ -229,3 +229,5 @@ Resources:
 Outputs:
   AgentRoleArn:
     Value: !GetAtt AgentRole.Arn
+  ServerRoleArn:
+    Value: !GetAtt ServerRole.Arn

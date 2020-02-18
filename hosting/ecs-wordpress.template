@@ -1,7 +1,7 @@
 AWSTemplateFormatVersion: 2010-09-09
-Description: HA Redmine on ECS
+Description: HA Wordpress on ECS
 Metadata:
-  DefaultName: JoomlaOnEcs
+  DefaultName: WordPressOnEcs
   Dependencies:
     - TemplatePath: networking/vpc
       Resources:
@@ -28,7 +28,39 @@ Metadata:
       Resources:
         AccessLogBucket: Raw
         LxDockerLog: LxDockerLog
+    - TemplatePath: hosting/loadbalancer
+      Resources:
+        HttpsListener: HttpsListener
+        HttpListener: HttpListener
+      Outputs:
+        GatewayCanonicalZoneId: GatewayCanonicalZonId
+        GatewayDnsName: GatewayDnsName
+        GatewayName: GatewayName
+
 Parameters:
+  # LoadBalancer Parameters
+  GatewayName:
+    Type: String
+    Description: 'Loadbalancer full name'
+  GatewayDnsName:
+    Type: String
+    Description: 'Loadbalancer DNS name'
+  GatewayCanonicalZoneId:
+    Type: String
+    Description: 'Loadbalancer Zone ID'
+  HttpsListener:
+    Type: String
+    Description: 'Loadbalancer HTTS listener'
+    Default: ''
+  HttpListener:
+    Type: String
+    Description: 'Loadbalancer HTT listener'
+  ListenerPriority:
+    Description: ''
+    Type: Number
+    Default: 40
+  # /LoadBalancer Parameters
+
   VpcId:
     Description: 'VPCid associated with the subnets. [elb-subnets.parameters.VpcId]'
     Type: 'AWS::EC2::VPC::Id'
@@ -62,10 +94,10 @@ Parameters:
     Default: Password1234
     NoEcho: 'True'
   EcsServiceRole:
-    Description: '[ecs-app-base.resources.EcsServiceRole]'
+    Description: ''
     Type: String
   DatabaseEndpointAddress:
-    Description: '[ecs-app-base.outputs.DatabaseEndpointAddress]'
+    Description: ''
     Type: String
   ImageName:
     Description: ''
@@ -78,33 +110,28 @@ Parameters:
     Description: Elb Target Security Group.
     Type: String
   EfsPath:
-    Description: >-
-      EFS disk path segment. It has a /mnt/efs/ prefix followed by the guid of
-      the CloudFormation stack id when left blank.
+    Description:
+      EFS disk path segment. It has a /mnt/efs/ prefix followed by the guid of the CloudFormation stack id when left blank.
     Type: String
     Default: ''
   CpuReservation:
     Description: CPU Unit to Reserve
     Type: Number
-    Default: 1000
+    Default: 512
   MemoryReservation:
     Description: Memory in MB to Reserve
     Type: Number
-    Default: 1000
+    Default: 1024
 
   # Domain
   HostedZoneName:
-    Description: >-
-      Hosted Zone for the url (Without '.'). You need to fill in Subdomain as
-      well for custom domain to work.
+    Description:
+      Hosted Zone for the url (Without trailing '.')
     Type: String
-    Default: ''
   Subdomain:
-    Description: >-
-      Subdomain (Without '.'). You need to fill in HostedZoneName as well for
-      custom domain to work.
+    Description:
+      Subdomain (Without trailing '.')
     Type: String
-    Default: ''
 
 Conditions:
   HasNoEfsPath: !Equals 
@@ -113,70 +140,38 @@ Conditions:
   HasNoDbName: !Equals 
     - !Ref DbName
     - ''
-  HasHostname: !And 
-    - !Not 
-      - !Equals 
-        - !Ref Subdomain
-        - ''
-    - !Not 
-      - !Equals 
-        - !Ref HostedZoneName
-        - ''
+  HasNoHttpsListener: !Equals [!Ref HttpsListener, '']
+
 Resources:
   Route53:
     Type: 'AWS::Route53::RecordSet'
-    Condition: HasHostname
     Properties:
       HostedZoneName: !Sub '${HostedZoneName}.'
       Comment: Hostname
       Name: !Sub ${Subdomain}.${HostedZoneName}.
       Type: A
       AliasTarget:
-        DNSName: !GetAtt [HttpGateway, DNSName]
-        HostedZoneId: !GetAtt [HttpGateway, CanonicalHostedZoneID]
-  HttpGateway:
-    Type: 'AWS::ElasticLoadBalancingV2::LoadBalancer'
-    Properties:
-      Scheme: internet-facing
-      LoadBalancerAttributes:
-        - Key: idle_timeout.timeout_seconds
-          Value: '30'
-        - Key: access_logs.s3.enabled
-          Value: 'true'
-        - Key: access_logs.s3.bucket
-          Value: !Ref AccessLogBucket
-      Subnets: !Ref ElbSubnets
-      SecurityGroups:
-        - !Ref ElbSg
-        - !Ref HttpSg
-  AlbListener:
-    Type: 'AWS::ElasticLoadBalancingV2::Listener'
-    Properties:
-      DefaultActions:
-        - Type: forward
-          TargetGroupArn: !Ref AlbTargetGroup
-      LoadBalancerArn: !Ref HttpGateway
-      Port: '80'
-      Protocol: HTTP
+        DNSName: !Ref GatewayDnsName
+        HostedZoneId: !Ref GatewayCanonicalZoneId
   AlbListenerRule:
     Type: 'AWS::ElasticLoadBalancingV2::ListenerRule'
-    DependsOn: AlbListener
     Properties:
       Actions:
         - Type: forward
           TargetGroupArn: !Ref AlbTargetGroup
       Conditions:
-        - Field: path-pattern
-          Values:
-            - /
-      ListenerArn: !Ref AlbListener
-      Priority: 1
+        - Field: host-header
+          Values: [!Sub '${Subdomain}.${HostedZoneName}']
+      ListenerArn: !If
+        - HasNoHttpsListener
+        - !Ref HttpListener
+        - !Ref HttpsListener
+      Priority: !Ref ListenerPriority
   AlbTargetGroup:
     Type: 'AWS::ElasticLoadBalancingV2::TargetGroup'
-    DependsOn: HttpGateway
     Properties:
       HealthCheckIntervalSeconds: 30
-      HealthCheckPath: /favicon.ico
+      HealthCheckPath: /wp-admin/images/wordpress-logo.svg
       HealthCheckProtocol: HTTP
       HealthCheckTimeoutSeconds: 5
       HealthyThresholdCount: 10
@@ -246,7 +241,7 @@ Resources:
                   - !Ref EfsPath
   EcsService:
     Type: 'AWS::ECS::Service'
-    DependsOn: AlbListener
+    DependsOn: AlbListenerRule
     Properties:
       Cluster: !Ref EcsCluster
       DesiredCount: '1'
@@ -261,14 +256,8 @@ Outputs:
     Value: !Sub https://${AWS::Region}.console.aws.amazon.com/ecs/home?region=${AWS::Region}#/clusters/${EcsCluster}/services/${EcsService.Name}/tasks
     Description: ECS service that manages the containers running wordpress.
   BackofficeUrl:
-    Value: !If
-      - HasHostname
-      - !Sub http://${Subdomain}.${HostedZoneName}/wp-admin/
-      - !Sub http://${HttpGateway.DNSName}/wp-admin/
+    Value: !Sub http://${Subdomain}.${HostedZoneName}/wp-admin/
     Description: Url to the admin page.
   PublicUrl:
-    Value: !If
-      - HasHostname
-      - !Sub http://${Subdomain}.${HostedZoneName}/
-      - !Sub http://${HttpGateway.DNSName}/
+    Value: !Sub http://${Subdomain}.${HostedZoneName}/
     Description: Url to the public facing site.

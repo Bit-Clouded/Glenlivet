@@ -1,0 +1,498 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: HA Concourse on ECS
+Metadata:
+  DefaultName: JoomlaOnEcs
+  Dependencies:
+    - TemplatePath: networking/vpc
+      Resources:
+        ElbSg: ElbSecGroup
+        HttpSg: HttpNsSecGroup
+    - TemplatePath: networking/elb-subnets
+      Parameters:
+        VpcId: VpcId
+      Outputs:
+        ElbSubnets: ElbSubnets
+        WebServerSubnets: WebServerSubnets
+      NestedDependency: networking/vpc
+    - TemplatePath: platforms/ecs-base
+      Resources:
+        EcsCluster: EcsCluster
+      Outputs:
+        EcsServiceRole: ShareScheduleTaskRole
+    - TemplatePath: analytics/logs-store
+      Resources:
+        LogBucket: Raw
+        LxDockerLog: LxDockerLog
+    - TemplatePath: networking/private-subnets
+      Resources:
+        DbSubnetGroup: RdsSubnetGroup
+      NestedDependency: networking/vpc
+    - TemplatePath: development-services/cicd-base
+      Resources:
+        AgentBasePermissions: AgentBasePermissions
+
+Parameters:
+  DefaultConcourseAdminUsername:
+    Type: String
+    Default: admin
+    Description: Default Admin username
+  DefaultConcourseAdminPassword:
+    Type: String
+    Default: Password1234
+    Description: Default Admin password
+
+  AgentBasePermissions:
+    Type: String
+    Description: Base set of IAM permission for the build agents.
+  VpcId:
+    Description: 'VPCid associated with the subnets.'
+    Type: 'AWS::EC2::VPC::Id'
+  EcsCluster:
+    Type: String
+    Description: 'ECS Cluster'
+  DbStorageQuota:
+    Description: Disk size of MariaDB server.
+    Default: '20'
+    Type: Number
+  DbInstanceType:
+    Description: MariaDB server instance type
+    Type: String
+    Default: db.t2.micro
+    AllowedValues:
+      - db.t2.micro
+      - db.t2.small
+      - db.t2.medium
+      - db.t2.large
+      - db.m3.medium
+      - db.m4.large
+      - db.m4.xlarge
+      - db.m4.2xlarge
+      - db.r3.large
+      - db.r3.xlarge
+      - db.r3.2xlarge
+      - db.r3.4xlarge
+      - db.r3.8xlarge
+    ConstraintDescription: must be a valid RDS instance type.
+  DbName:
+    Default: 'appdefault'
+    Type: String
+    Description: Name of the database in the database server.
+  DbUsername:
+    Default: 'sqladmin'
+    Type: String
+    Description: Postgre server username
+  DbPassword:
+    Description: Postgre server password
+    Type: String
+    Default: Password1234
+    NoEcho: 'True'
+  DbSnapshot:
+    Description: Database snapshot to restore from.
+    Type: String
+    Default: ''
+  DbSubnetGroup:
+    Description: >-
+      Subnet Group for hosting the MariaDB server.
+      [private-subnets.resources.RdsSubnetGroup]
+    Type: String
+  ElbSg:
+    Description: 'Elb Security Group.'
+    Type: String
+  HttpSg:
+    Description: 'Elb Target Security Group.'
+    Type: String
+  ElbSubnets:
+    Description: 'VPCid associated with the subnets.'
+    Type: 'List<AWS::EC2::Subnet::Id>'
+  WebServerSubnets:
+    Description: ''
+    Type: 'List<AWS::EC2::Subnet::Id>'
+  EcsServiceRole:
+    Description: ''
+    Type: String
+  ImageName:
+    Description: ''
+    Type: String
+    Default: 'concourse/concourse:5.4.0'
+  LxDockerLog:
+    Description: ''
+    Type: String
+  CpuReservation:
+    Description: CPU Unit to Reserve
+    Type: Number
+    Default: 512
+  MemoryReservation:
+    Description: Memory in MB to Reserve
+    Type: Number
+    Default: 1024
+  LogBucket:
+    Description: ''
+    Type: String
+  GatewayScheme:
+    Description: ''
+    Type: String
+    Default: 'internal'
+    AllowedValues:
+      - internal
+      - internet-facing
+  IdleTimeout:
+    Description: 'Idle timeout attribute setting for the load balancer'
+    Type: Number
+    MinValue: 1
+    MaxValue: 4000
+    Default: 60
+
+  # Domain
+  HostedZoneName:
+    Description:
+      Hosted Zone for the url (Without trailing '.')
+    Type: String
+  Subdomain:
+    Description:
+      Subdomain (Without trailing '.')
+    Type: String
+  CertificateArn:
+    Description: 'Certificate to associate with HTTPS listener'
+    Type: String
+    Default: ''
+
+Conditions:
+  HasDbSnapshot: !Not [!Equals [!Ref DbSnapshot, '']]
+  HasCertificateArn: !Not [!Equals [!Ref CertificateArn, '']]
+
+Resources:
+  Route53:
+    Type: 'AWS::Route53::RecordSet'
+    Properties:
+      HostedZoneName: !Sub '${HostedZoneName}.'
+      Comment: Hostname
+      Name: !Sub ${Subdomain}.${HostedZoneName}.
+      Type: A
+      AliasTarget:
+        DNSName: !GetAtt TcpGateway.DNSName
+        HostedZoneId: !GetAtt TcpGateway.CanonicalHostedZoneID
+  TcpGateway:
+    Type: 'AWS::ElasticLoadBalancingV2::LoadBalancer'
+    Properties:
+      Scheme: !Ref GatewayScheme
+      Type: network
+      #LoadBalancerAttributes:
+      #  - Key: access_logs.s3.enabled
+      #    Value: 'true'
+      #  - Key: access_logs.s3.bucket
+      #    Value: !Ref LogBucket
+      Subnets: !Ref ElbSubnets
+  HttpListener:
+    Type: 'AWS::ElasticLoadBalancingV2::Listener'
+    Properties:
+      LoadBalancerArn: !Ref TcpGateway
+      Port: '80'
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref HttpTargetGroup
+      Protocol: TCP
+  HttpsListener:
+    Type: 'AWS::ElasticLoadBalancingV2::Listener'
+    Condition: HasCertificateArn
+    Properties:
+      LoadBalancerArn: !Ref TcpGateway
+      Port: '443'
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref HttpTargetGroup
+      Protocol: TLS
+      Certificates:
+        - CertificateArn: !Ref CertificateArn
+  HttpTargetGroup:
+    Type: 'AWS::ElasticLoadBalancingV2::TargetGroup'
+    Properties:
+      HealthCheckIntervalSeconds: 30
+      HealthCheckProtocol: TCP
+      HealthyThresholdCount: 2
+      HealthCheckPort: 8080
+      Port: 8080
+      Protocol: TCP
+      UnhealthyThresholdCount: 2
+      VpcId: !Ref VpcId
+      TargetType: ip
+  SshListener:
+    Type: 'AWS::ElasticLoadBalancingV2::Listener'
+    Properties:
+      LoadBalancerArn: !Ref TcpGateway
+      Port: '2222'
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref SshTargetGroup
+      Protocol: TCP
+  SshTargetGroup:
+    Type: 'AWS::ElasticLoadBalancingV2::TargetGroup'
+    Properties:
+      HealthCheckIntervalSeconds: 30
+      HealthCheckProtocol: TCP
+      HealthyThresholdCount: 2
+      Port: 2222
+      Protocol: TCP
+      UnhealthyThresholdCount: 2
+      VpcId: !Ref VpcId
+      TargetType: ip
+  WebEcsService:
+    Type: 'AWS::ECS::Service'
+    Properties:
+      Cluster: !Ref EcsCluster
+      DesiredCount: '1'
+      #Role: !Ref EcsServiceRole
+      NetworkConfiguration: 
+        AwsvpcConfiguration:
+          SecurityGroups: 
+            - !Ref WebSg
+            - !Ref HttpSg
+          Subnets: !Ref WebServerSubnets
+      LoadBalancers:
+        - ContainerName: concourse-web
+          ContainerPort: '8080'
+          TargetGroupArn: !Ref HttpTargetGroup
+        - ContainerName: concourse-web
+          ContainerPort: '2222'
+          TargetGroupArn: !Ref SshTargetGroup
+      TaskDefinition: !Ref WebTaskDef
+  WebTaskDef:
+    Type: 'AWS::ECS::TaskDefinition'
+    Properties:
+      ContainerDefinitions:
+        - EntryPoint: [bash]
+          # using a hack to init the key.
+          # we'll make it go to 2 task instances by setting scaling setting with minimum of 2.
+          # TODO: set peer URL by curling metadata or something
+          Command:
+            - '-c'
+            - |
+              if [ ! -f "$CONCOURSE_SESSION_SIGNING_KEY" ]; then
+                  /usr/local/concourse/bin/concourse generate-key -t rsa -f $CONCOURSE_SESSION_SIGNING_KEY
+              fi
+              if [ ! -f "$CONCOURSE_TSA_WORKER_PRIVATE_KEY" ]; then
+                  /usr/local/concourse/bin/concourse generate-key -t ssh -f $CONCOURSE_TSA_WORKER_PRIVATE_KEY
+                  chmod 600 $CONCOURSE_TSA_WORKER_PRIVATE_KEY
+                  cp ${CONCOURSE_TSA_WORKER_PRIVATE_KEY}.pub $CONCOURSE_TSA_AUTHORIZED_KEYS
+              fi
+              if [ ! -f "$CONCOURSE_TSA_HOST_KEY" ]; then
+                  /usr/local/concourse/bin/concourse generate-key -t ssh -f $CONCOURSE_TSA_HOST_KEY
+              fi
+              CONCOURSE_PEER_ADDRESS=$(cat /etc/hostname)
+              dumb-init /usr/local/concourse/bin/concourse web
+          Name: concourse-web
+          Cpu: !Ref CpuReservation
+          Essential: 'true'
+          Image: !Ref ImageName
+          Memory: !Ref MemoryReservation
+          Environment:
+            - Name: CONCOURSE_ADD_LOCAL_USER
+              Value: !Sub '${DefaultConcourseAdminUsername}:${DefaultConcourseAdminPassword}'
+            - Name: CONCOURSE_MAIN_TEAM_LOCAL_USER
+              Value: !Ref DefaultConcourseAdminUsername
+            - Name: CONCOURSE_POSTGRES_DATABASE
+              Value: !Ref DbName
+            - Name: CONCOURSE_POSTGRES_HOST
+              Value: !GetAtt Database.Endpoint.Address
+            - Name: CONCOURSE_POSTGRES_PORT
+              Value: !GetAtt Database.Endpoint.Port
+            - Name: CONCOURSE_POSTGRES_USER
+              Value: !Ref DbUsername
+            - Name: CONCOURSE_POSTGRES_PASSWORD
+              Value: !Ref DbPassword
+            - Name: CONCOURSE_EXTERNAL_URL
+              Value: !If
+                - HasCertificateArn
+                - !Sub 'https://${Subdomain}.${HostedZoneName}'
+                - !Sub 'http://${Subdomain}.${HostedZoneName}'
+            - Name: CONCOURSE_AWS_SSM_REGION
+              Value: !Ref AWS::Region
+            - Name: CONCOURSE_AWS_SSM_PIPELINE_SECRET_TEMPLATE
+              Value: !Sub '/${AWS::StackName}/{{.Team}}/{{.Pipeline}}/{{.Secret}}'
+            - Name: CONCOURSE_AWS_SSM_TEAM_SECRET_TEMPLATE
+              Value: !Sub '/${AWS::StackName}/{{.Team}}/{{.Secret}}'
+          PortMappings:
+            - ContainerPort: 8080
+            - ContainerPort: 2222
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !Ref LxDockerLog
+              awslogs-region: !Ref 'AWS::Region'
+              awslogs-stream-prefix: !Ref AWS::StackName
+          MountPoints:
+            - SourceVolume: efs
+              ContainerPath: /concourse-keys/
+              ReadOnly: false
+      TaskRoleArn: !GetAtt TaskRole.Arn
+      NetworkMode: awsvpc
+      Volumes:
+        - Name: efs
+          Host:
+            SourcePath: !Join 
+              - ''
+              - - /mnt/efs/
+                - !Select ['2', !Split ['/', !Ref 'AWS::StackId']]
+  WorkerEcsService:
+    Type: 'AWS::ECS::Service'
+    Properties:
+      Cluster: !Ref EcsCluster
+      DesiredCount: '1'
+      TaskDefinition: !Ref WorkerTaskDef
+      NetworkConfiguration: 
+        AwsvpcConfiguration:
+          SecurityGroups: 
+            - !Ref WebSg
+          Subnets: !Ref WebServerSubnets
+  WorkerTaskDef:
+    Type: 'AWS::ECS::TaskDefinition'
+    Properties:
+      ContainerDefinitions:
+        - Command: [worker]
+          Name: concourse-worker
+          Cpu: !Ref CpuReservation
+          Essential: 'true'
+          Image: !Ref ImageName
+          Memory: !Ref MemoryReservation
+          Privileged: true
+          Environment:
+            - Name: CONCOURSE_TSA_HOST
+              Value: !Sub '${Subdomain}.${HostedZoneName}:2222'
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !Ref LxDockerLog
+              awslogs-region: !Ref 'AWS::Region'
+              awslogs-stream-prefix: !Ref AWS::StackName
+          PortMappings:
+            - ContainerPort: 7777
+            - ContainerPort: 7788
+            - ContainerPort: 7799
+          MountPoints:
+            #- ContainerPath: /var/run/docker.sock
+            #  SourceVolume: docker-socket
+            - SourceVolume: efs
+              ContainerPath: /concourse-keys/
+              ReadOnly: false
+      TaskRoleArn: !GetAtt TaskRole.Arn
+      NetworkMode: awsvpc
+      Volumes:
+        #- Name: docker-socket
+        #  Host:
+        #    SourcePath: /var/run/docker.sock
+        - Name: efs
+          Host:
+            SourcePath: !Join 
+              - ''
+              - - /mnt/efs/
+                - !Select ['2', !Split ['/', !Ref 'AWS::StackId']]
+  TaskRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: [ecs-tasks.amazonaws.com]
+            Action:
+              - 'sts:AssumeRole'
+      Path: /bitclouded/development-services/
+      ManagedPolicyArns:
+        - !Ref AgentBasePermissions
+  AdditionalTaskPermissions:
+    Type: AWS::IAM::Policy
+    Properties: 
+      PolicyName: concourse-required-permission
+      Roles: [!Ref TaskRole]
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: SsmParametersPermission
+            Effect: "Allow"
+            Action: [
+                "ssm:GetParameter",
+                "ssm:GetParametersByPath"
+            ]
+            Resource: [
+                !Sub "arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/${AWS::StackName}/*",
+                !Sub "arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/${AWS::StackName}/*/*",
+                !Sub "arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/${AWS::StackName}/*/*/*"
+            ]
+          - Sid: KmsPermission
+            Effect: "Allow"
+            Action: [
+                "kms:Decrypt",
+                "kms:DescribeKey",
+                "kms:ListAliases",
+                "kms:ListKeys"
+            ]
+            Resource: '*'
+            # use key policy to restrict which keys to ues.
+  WebSg:
+    Type: 'AWS::EC2::SecurityGroup'
+    Metadata:
+      Comment: A security group to allow inbound http(s) traffic.
+    Properties:
+      GroupDescription: !Sub '${AWS::StackName} Web'
+      SecurityGroupIngress:
+        # opening 8080 is for health check.
+        - IpProtocol: '6'
+          FromPort: 8080
+          ToPort: 8080
+          CidrIp: '0.0.0.0/0'
+        - IpProtocol: '6'
+          FromPort: 2222
+          ToPort: 2222
+          CidrIp: '0.0.0.0/0'
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName} Web'
+      VpcId: !Ref VpcId
+  WebSgSelfIngress:
+    Type: 'AWS::EC2::SecurityGroupIngress'
+    Properties:
+      GroupId: !Ref WebSg
+      IpProtocol: '-1'
+      SourceSecurityGroupId: !Ref WebSg
+  DatabaseSg:
+    Type: 'AWS::EC2::SecurityGroup'
+    Metadata:
+      Comment: A security group to allow inbound http(s) traffic.
+    Properties:
+      GroupDescription: !Sub '${AWS::StackName} Database'
+      SecurityGroupIngress:
+        - IpProtocol: '-1'
+          SourceSecurityGroupId: !Ref WebSg
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName} Database'
+      VpcId: !Ref VpcId
+  Database:
+    Type: 'AWS::RDS::DBInstance'
+    Properties:
+      VPCSecurityGroups:
+        - !Ref DatabaseSg
+      AllocatedStorage: !Ref DbStorageQuota
+      DBInstanceClass: !Ref DbInstanceType
+      DBParameterGroupName: !Ref DbParamGroup
+      DBName: !Ref DbName
+      Engine: postgres
+      EngineVersion: 11.4
+      MasterUsername: !Ref DbUsername
+      MasterUserPassword: !Ref DbPassword
+      DBSnapshotIdentifier: !If 
+        - HasDbSnapshot
+        - !Ref DbSnapshot
+        - !Ref 'AWS::NoValue'
+      DBSubnetGroupName: !Ref DbSubnetGroup
+      Tags:
+        - Key: Name
+          Value: Database
+      StorageType: gp2
+      MultiAZ: 'false'
+    DeletionPolicy: Snapshot
+  DbParamGroup:
+    Type: 'AWS::RDS::DBParameterGroup'
+    Properties:
+      Description: Concourse Database Parameters
+      Family: postgres11
+      Parameters: {}
