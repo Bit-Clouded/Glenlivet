@@ -23,9 +23,71 @@ Parameters:
     Description: Name tag of log shipping agent container.
     Type: String
     Default: 'bitclouded/aws-cwl-agent:4.1'
+  SendCloudWatchEvents:
+    Description: ''
+    Default: False
+    Type: String
+    AllowedValues:
+      - True
+      - False
 Metadata:
   DefaultName: LogStore
+Conditions:
+  ShipCloudWatchEvents: !Equals [ !Ref SendCloudWatchEvents, True ]
 Resources:
+  CloudWatchTargetRole:
+    Type: 'AWS::IAM::Role'
+    Condition: ShipCloudWatchEvents
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: 'events.amazonaws.com'
+            Action: 'sts:AssumeRole'
+      Path: /bit-clouded/analytics/
+      Policies:
+        - PolicyName: default
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action:
+                  - 'SNS:*'
+                Resource: 
+                  - !Ref CloudWatchEventSNS
+              - Effect: Allow
+                Action:
+                  - 'logs:*'
+                Resource: 
+                  - !GetAtt 'CloudWatchEventLog.Arn'
+                  - !Sub "${CloudWatchEventLog.Arn}:log-stream:*"
+  CloudWatchEventRule:
+    Type: AWS::Events::Rule
+    Condition: ShipCloudWatchEvents
+    Properties: 
+      EventPattern: { "account": [ !Sub '${AWS::AccountId}' ] }
+      Name: "AccountCloudWatchEvents"
+      RoleArn: !GetAtt 'CloudWatchTargetRole.Arn'
+      State: ENABLED
+      Targets: 
+        - Arn: !GetAtt 
+            - CloudWatchEventLog
+            - Arn
+          Id: logTarget
+        - Arn: !Ref CloudWatchEventSNS
+          Id: SNSTarget  
+  CloudWatchEventLog:
+    Type: 'AWS::Logs::LogGroup'
+    Condition: ShipCloudWatchEvents
+    Properties: 
+      LogGroupName: !Sub '/aws/events/CloudWatchEventLog-${AWS::StackName}'
+  CloudWatchEventSNS:
+    Type: 'AWS::SNS::Topic'
+    Condition: ShipCloudWatchEvents
+    Properties:
+      DisplayName: CloudWatch Events 
   CriticalEvents:
     Type: 'AWS::SNS::Topic'
     Properties:
