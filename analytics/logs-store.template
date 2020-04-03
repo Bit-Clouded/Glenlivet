@@ -88,6 +88,19 @@ Resources:
     Condition: ShipCloudWatchEvents
     Properties:
       DisplayName: CloudWatch Events 
+  CloudWatchEventSnsPolicy:
+    Type: 'AWS::SNS::TopicPolicy'
+    Condition: ShipCloudWatchEvents 
+    Properties:
+      PolicyDocument:
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: events.amazonaws.com
+            Action: 'sns:Publish'
+            Resource: '*'
+      Topics:
+        - !Ref CloudWatchEventSNS
   CriticalEvents:
     Type: 'AWS::SNS::Topic'
     Properties:
