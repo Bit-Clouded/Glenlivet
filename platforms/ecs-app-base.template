@@ -114,7 +114,10 @@ Resources:
       AllocatedStorage: !Ref DbStorageQuota
       DBInstanceClass: !Ref DbInstanceType
       DBParameterGroupName: !Ref DbParamGroup
-      DBName: !Ref DbName
+      DBName: !If
+        - HasDbSnapshot
+        - !Ref 'AWS::NoValue'
+        - !Ref DbName
       Engine: mariadb
       EngineVersion: 10.1.23
       MasterUsername: !Ref DbUsername
